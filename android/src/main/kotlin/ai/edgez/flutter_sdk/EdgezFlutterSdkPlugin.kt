@@ -261,6 +261,8 @@ class EdgezFlutterSdkPlugin :
 
     @SuppressLint("MissingPermission")
     private fun publishScanResult(result: ScanResult) {
+        val serviceUuids = result.scanRecord?.serviceUuids.orEmpty()
+        if (serviceUuids.none { it.uuid == EDGEZ_SERVICE_UUID }) return
         val device = result.device ?: return
         val id = device.address ?: return
         val name = result.scanRecord?.deviceName ?: device.name ?: ""
