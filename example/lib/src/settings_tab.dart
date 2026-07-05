@@ -121,7 +121,7 @@ class SettingsScreen extends StatelessWidget {
           Text('Settings', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 12),
           InfoCard(
-            title: 'Connection',
+            title: 'BLE connection',
             children: <Widget>[
               Text('Active connection: ${activeConnection.name.toUpperCase()}'),
               const SizedBox(height: 8),
@@ -151,8 +151,12 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           InfoCard(
-            title: 'App mesh settings',
+            title: 'User mesh settings',
             children: <Widget>[
+              Text(
+                  'These settings join the phone to the mesh as a normal user.',
+                  style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 8),
               DropdownSetting<String>(
                   label: 'Country',
                   value: meshCountry,
@@ -210,7 +214,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           InfoCard(
-            title: 'Device mode settings',
+            title: 'Device mode',
             children: <Widget>[
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

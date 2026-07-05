@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
 import 'models.dart';
@@ -13,7 +14,7 @@ class DeviceDetailScreen extends StatelessWidget {
     super.key,
   });
 
-  final ExampleNode user;
+  final EdgezMeshNode user;
   final List<ExampleSensorSample> samples;
   final VoidCallback onBack;
 
@@ -31,9 +32,9 @@ class DeviceDetailScreen extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: <Widget>[
-                  Text('Conversation · ${user.deviceType.label}',
+                  Text('Conversation · ${user.exampleDeviceType.label}',
                       style: Theme.of(context).textTheme.titleLarge),
-                  Text(user.displayName),
+                  Text(user.resolvedDisplayName),
                   Text('Node ${user.nodeId}',
                       style: Theme.of(context).textTheme.bodySmall),
                 ],
@@ -43,7 +44,7 @@ class DeviceDetailScreen extends StatelessWidget {
           const SizedBox(height: 12),
           DeviceSummaryCard(user: user),
           const SizedBox(height: 12),
-          GeoFenceCard(geoFence: user.geoFence, geoIndex: user.geoIndex),
+          GeoFenceCard(user: user),
           const SizedBox(height: 12),
           SensorLatestCard(
               data: latest, timestampMs: samples.lastOrNull?.timestampMs),
@@ -58,45 +59,43 @@ class DeviceDetailScreen extends StatelessWidget {
 class DeviceSummaryCard extends StatelessWidget {
   const DeviceSummaryCard({required this.user, super.key});
 
-  final ExampleNode user;
+  final EdgezMeshNode user;
 
   @override
   Widget build(BuildContext context) {
     return InfoCard(
       title: 'Device',
       children: <Widget>[
-        Text('Type ${user.deviceType.label}'),
-        Text('Marker ${user.marker.label}'),
-        Text('User ${user.userId}',
+        Text('Type ${user.exampleDeviceType.label}'),
+        Text('Marker ${user.exampleMarker.label}'),
+        Text('User ${user.exampleUserId}',
             style: Theme.of(context).textTheme.bodySmall),
         if (user.sleeping)
           Text('Sleeping', style: Theme.of(context).textTheme.bodySmall),
         if (user.hasLocation)
           Text(
-              'Location ${formatCoordinate(user.meshNode.latitude)}, ${formatCoordinate(user.meshNode.longitude)}'),
+              'Location ${formatCoordinate(user.latitude)}, ${formatCoordinate(user.longitude)}'),
       ],
     );
   }
 }
 
 class GeoFenceCard extends StatelessWidget {
-  const GeoFenceCard(
-      {required this.geoFence, required this.geoIndex, super.key});
+  const GeoFenceCard({required this.user, super.key});
 
-  final ExampleGeoFence? geoFence;
-  final int geoIndex;
+  final EdgezMeshNode user;
 
   @override
   Widget build(BuildContext context) {
     return InfoCard(
       title: 'Geo fence',
-      children: geoFence == null
+      children: user.geoFenceName.isEmpty
           ? const <Widget>[Text('None')]
           : <Widget>[
-              Text(geoFence!.name),
-              Text('${geoFence!.marker.label} · ${geoFence!.alertCondition}',
+              Text(user.geoFenceName),
+              Text('${user.exampleMarker.label} · Enter',
                   style: Theme.of(context).textTheme.bodySmall),
-              Text('Index $geoIndex',
+              Text('Index ${user.geoIndex}',
                   style: Theme.of(context).textTheme.bodySmall),
             ],
     );

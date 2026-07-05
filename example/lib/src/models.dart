@@ -36,18 +36,6 @@ enum ExampleMarker {
   }
 }
 
-class ExampleGeoFence {
-  const ExampleGeoFence({
-    required this.name,
-    required this.marker,
-    required this.alertCondition,
-  });
-
-  final String name;
-  final ExampleMarker marker;
-  final String alertCondition;
-}
-
 class ExampleSensorData {
   const ExampleSensorData({
     this.latitude,
@@ -88,32 +76,21 @@ class ExampleSensorSample {
   final ExampleSensorData data;
 }
 
-class ExampleNode {
-  const ExampleNode({
-    required this.meshNode,
-    required this.deviceType,
-    required this.hasPublicKey,
-    this.geoFence,
-    this.geoIndex = 0,
-    this.samples = const <ExampleSensorSample>[],
-  });
+ExampleDeviceType deviceTypeFromLabel(String label) {
+  final normalized = label.toLowerCase();
+  return ExampleDeviceType.values.firstWhere(
+    (type) => type.label.toLowerCase() == normalized || type.name == normalized,
+    orElse: () => ExampleDeviceType.unspecified,
+  );
+}
 
-  final EdgezMeshNode meshNode;
-  final ExampleDeviceType deviceType;
-  final bool hasPublicKey;
-  final ExampleGeoFence? geoFence;
-  final int geoIndex;
-  final List<ExampleSensorSample> samples;
+extension ExampleNodePresentation on EdgezMeshNode {
+  ExampleDeviceType get exampleDeviceType => deviceTypeFromLabel(deviceType);
 
-  int get nodeNum => meshNode.nodeNum;
-  String get displayName => meshNode.displayName;
-  String get nodeId => meshNode.nodeId;
-  String get userId =>
-      meshNode.userUuid.isNotEmpty ? meshNode.userUuid : nodeNum.toString();
-  String get route => meshNode.route;
-  bool get sleeping => meshNode.sleeping;
-  ExampleMarker get marker => ExampleMarker.fromId(meshNode.marker);
+  ExampleMarker get exampleMarker => ExampleMarker.fromId(marker);
 
-  bool get hasLocation =>
-      meshNode.latitude != null && meshNode.longitude != null;
+  String get exampleUserId =>
+      userUuid.isNotEmpty ? userUuid : nodeNum.toString();
+
+  String get exampleGeoFenceName => geoFenceName;
 }

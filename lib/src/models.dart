@@ -151,6 +151,42 @@ class EdgezMeshNode {
     return parts.join(':');
   }
 
+  bool get opensConversation {
+    final normalized = deviceType.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == 'unspecified' ||
+        normalized == 'user' ||
+        normalized == 'device_type_user';
+  }
+
+  bool get hasLocation => latitude != null && longitude != null;
+
+  String get resolvedDisplayName =>
+      displayName.isNotEmpty ? displayName : nodeId;
+
+  EdgezMeshNode mergeDiscovery(EdgezMeshNode? previous) {
+    return EdgezMeshNode(
+      nodeNum: nodeNum,
+      userUuid: userUuid.isNotEmpty ? userUuid : previous?.userUuid ?? '',
+      displayName: displayName.isNotEmpty
+          ? displayName
+          : previous?.displayName ?? nodeId,
+      route: route.isNotEmpty ? route : previous?.route ?? 'BLE',
+      lastSeenMs:
+          lastSeenMs > 0 ? lastSeenMs : DateTime.now().millisecondsSinceEpoch,
+      marker: marker.isNotEmpty ? marker : previous?.marker ?? 'blue',
+      latitude: latitude ?? previous?.latitude,
+      longitude: longitude ?? previous?.longitude,
+      deviceType: deviceType.isNotEmpty
+          ? deviceType
+          : previous?.deviceType ?? 'Unspecified',
+      geoFenceName:
+          geoFenceName.isNotEmpty ? geoFenceName : previous?.geoFenceName ?? '',
+      geoIndex: geoIndex != 0 ? geoIndex : previous?.geoIndex ?? 0,
+      sleeping: sleeping,
+    );
+  }
+
   factory EdgezMeshNode.fromMap(Map<Object?, Object?> map) {
     return EdgezMeshNode(
       nodeNum: map['nodeNum'] as int? ?? 0,
@@ -220,9 +256,16 @@ class EdgezMeshEvent {
     return EdgezMeshEvent(
       type: type,
       connection: EdgezConnectionType.fromWire(map['connection'] as String?),
-      status: map['status'] is Map ? EdgezMeshStatus.fromMap(map['status'] as Map<Object?, Object?>) : null,
-      node: map['node'] is Map ? EdgezMeshNode.fromMap(map['node'] as Map<Object?, Object?>) : null,
-      message: map['message'] is Map ? EdgezConversationMessage.fromMap(map['message'] as Map<Object?, Object?>) : null,
+      status: map['status'] is Map
+          ? EdgezMeshStatus.fromMap(map['status'] as Map<Object?, Object?>)
+          : null,
+      node: map['node'] is Map
+          ? EdgezMeshNode.fromMap(map['node'] as Map<Object?, Object?>)
+          : null,
+      message: map['message'] is Map
+          ? EdgezConversationMessage.fromMap(
+              map['message'] as Map<Object?, Object?>)
+          : null,
       log: map['log'] as String? ?? '',
     );
   }

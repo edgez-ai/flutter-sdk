@@ -8,8 +8,10 @@ class EdgezMeshSdk {
   EdgezMeshSdk({
     MethodChannel? methodChannel,
     EventChannel? eventChannel,
-  })  : _methods = methodChannel ?? const MethodChannel('edgez_flutter_sdk/methods'),
-        _events = eventChannel ?? const EventChannel('edgez_flutter_sdk/events');
+  })  : _methods =
+            methodChannel ?? const MethodChannel('edgez_flutter_sdk/methods'),
+        _events =
+            eventChannel ?? const EventChannel('edgez_flutter_sdk/events');
 
   final MethodChannel _methods;
   final EventChannel _events;
@@ -17,8 +19,12 @@ class EdgezMeshSdk {
   Stream<EdgezMeshEvent>? _meshEvents;
 
   Stream<EdgezMeshEvent> get events {
-    return _meshEvents ??= _events.receiveBroadcastStream().where((event) => event is Map).map(
-          (event) => EdgezMeshEvent.fromMap((event as Map).cast<Object?, Object?>()),
+    return _meshEvents ??= _events
+        .receiveBroadcastStream()
+        .where((event) => event is Map)
+        .map(
+          (event) =>
+              EdgezMeshEvent.fromMap((event as Map).cast<Object?, Object?>()),
         );
   }
 

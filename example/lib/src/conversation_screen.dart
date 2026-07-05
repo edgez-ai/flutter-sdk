@@ -15,7 +15,7 @@ class ConversationScreen extends StatefulWidget {
   });
 
   final EdgezConnectionType activeConnection;
-  final ExampleNode user;
+  final EdgezMeshNode user;
   final List<EdgezConversationMessage> messages;
   final VoidCallback onBack;
   final ValueChanged<String> onSendMessage;
@@ -39,7 +39,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   @override
   Widget build(BuildContext context) {
     final canSend = widget.activeConnection != EdgezConnectionType.none &&
-        widget.user.hasPublicKey &&
+        widget.user.opensConversation &&
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
     return SafeArea(
@@ -56,22 +56,23 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     if (widget.user.hasLocation)
-                      Icon(Icons.location_on, color: widget.user.marker.color),
+                      Icon(Icons.location_on,
+                          color: widget.user.exampleMarker.color),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: <Widget>[
-                        Text(widget.user.displayName,
+                        Text(widget.user.resolvedDisplayName,
                             style: Theme.of(context).textTheme.titleLarge),
                         Text('Node ${widget.user.nodeId}',
                             style: Theme.of(context).textTheme.bodySmall),
-                        Text('User ${widget.user.userId}',
+                        Text('User ${widget.user.exampleUserId}',
                             style: Theme.of(context).textTheme.bodySmall),
-                        Text('Marker ${widget.user.marker.label}',
+                        Text('Marker ${widget.user.exampleMarker.label}',
                             style: Theme.of(context).textTheme.bodySmall),
-                        Text('Type ${widget.user.deviceType.label}',
+                        Text('Type ${widget.user.exampleDeviceType.label}',
                             style: Theme.of(context).textTheme.bodySmall),
-                        if (widget.user.geoFence != null)
-                          Text('Geofence ${widget.user.geoFence!.name}',
+                        if (widget.user.exampleGeoFenceName.isNotEmpty)
+                          Text('Geofence ${widget.user.exampleGeoFenceName}',
                               style: Theme.of(context).textTheme.bodySmall),
                         if (widget.user.sleeping)
                           Text('Sleeping',
@@ -86,11 +87,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                widget.user.hasPublicKey
+                widget.user.opensConversation
                     ? 'Encrypted with ECDH + AES-GCM'
                     : "Waiting for this user's public key",
                 style: TextStyle(
-                    color: widget.user.hasPublicKey
+                    color: widget.user.opensConversation
                         ? Theme.of(context).colorScheme.primary
                         : Theme.of(context).colorScheme.error),
               ),

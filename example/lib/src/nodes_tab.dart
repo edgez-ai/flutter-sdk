@@ -16,9 +16,9 @@ class NodesScreen extends StatelessWidget {
 
   final EdgezConnectionType activeConnection;
   final EdgezMeshStatus? status;
-  final List<ExampleNode> users;
-  final ValueChanged<ExampleNode> onRemoveNode;
-  final ValueChanged<ExampleNode> onOpenNode;
+  final List<EdgezMeshNode> users;
+  final ValueChanged<EdgezMeshNode> onRemoveNode;
+  final ValueChanged<EdgezMeshNode> onOpenNode;
 
   @override
   Widget build(BuildContext context) {
@@ -37,9 +37,12 @@ class NodesScreen extends StatelessWidget {
           const SizedBox(height: 6),
           Text('Interface: ${activeConnection.name.toUpperCase()}'),
           const SizedBox(height: 16),
-          Text('Users / Nodes', style: Theme.of(context).textTheme.titleMedium),
+          Text('Discovered users / nodes',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          if (users.isEmpty) const Text('No HaLow users seen yet'),
+          if (users.isEmpty)
+            const Text(
+                'No beacon or discovery packets received yet. Connect BLE and save mesh settings to join the mesh.'),
           for (final user in users) ...<Widget>[
             Dismissible(
               key: ValueKey<int>(user.nodeNum),
@@ -66,12 +69,12 @@ class NodesScreen extends StatelessWidget {
 class NodeCard extends StatelessWidget {
   const NodeCard({required this.user, required this.onTap, super.key});
 
-  final ExampleNode user;
+  final EdgezMeshNode user;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final color = user.marker.color;
+    final color = user.exampleMarker.color;
     return Card(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: InkWell(
@@ -89,18 +92,21 @@ class NodeCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(user.displayName,
+                        Text(user.resolvedDisplayName,
                             style: Theme.of(context)
                                 .textTheme
                                 .titleMedium
                                 ?.copyWith(color: color)),
                         Text('Node ${user.nodeId}'),
-                        Text('User ${user.userId}',
+                        Text('User ${user.exampleUserId}',
                             style: Theme.of(context).textTheme.bodySmall),
-                        Text('Type ${user.deviceType.label}',
+                        Text('Type ${user.exampleDeviceType.label}',
                             style: Theme.of(context).textTheme.bodySmall),
-                        if (user.geoFence != null)
-                          Text('Geofence ${user.geoFence!.name}',
+                        if (user.opensConversation)
+                          Text('Conversation ready',
+                              style: Theme.of(context).textTheme.bodySmall),
+                        if (user.exampleGeoFenceName.isNotEmpty)
+                          Text('Geofence ${user.exampleGeoFenceName}',
                               style: Theme.of(context).textTheme.bodySmall),
                       ],
                     ),
@@ -111,8 +117,7 @@ class NodeCard extends StatelessWidget {
                       if (user.sleeping)
                         Text('Sleeping',
                             style: Theme.of(context).textTheme.labelLarge),
-                      Text(
-                          'Last seen ${formatLastSeenAge(user.meshNode.lastSeenMs)}',
+                      Text('Last seen ${formatLastSeenAge(user.lastSeenMs)}',
                           style: Theme.of(context).textTheme.labelLarge),
                       if (user.hasLocation)
                         Icon(Icons.location_on, color: color),
@@ -124,7 +129,7 @@ class NodeCard extends StatelessWidget {
               Wrap(
                 spacing: 16,
                 children: <Widget>[
-                  Text(user.displayName.split(' ').first),
+                  Text(user.resolvedDisplayName.split(' ').first),
                   Text(user.route),
                 ],
               ),

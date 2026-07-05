@@ -1,6 +1,3 @@
-import 'dart:async';
-import 'dart:math' as math;
-
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
@@ -32,17 +29,9 @@ class EdgezExampleApp extends StatefulWidget {
 }
 
 class _EdgezExampleAppState extends State<EdgezExampleApp> {
-  final EdgezMeshSdk sdk = EdgezMeshSdk();
-  final Map<int, ExampleNode> nodes = <int, ExampleNode>{};
-  final Map<int, List<EdgezConversationMessage>> conversations =
-      <int, List<EdgezConversationMessage>>{};
-
-  StreamSubscription<EdgezMeshEvent>? subscription;
+  late final EdgezMeshSession session;
   AppDestination destination = AppDestination.nodes;
-  EdgezConnectionType connection = EdgezConnectionType.none;
-  EdgezMeshStatus? meshStatus;
-  ExampleNode? selectedNode;
-  String statusLine = 'Connect with BLE, then save mesh settings.';
+  int? selectedNodeNum;
   bool shareLocation = false;
   bool autoReplayReceivedVoice = false;
   bool deviceModeEnabled = false;
@@ -71,75 +60,27 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   @override
   void initState() {
     super.initState();
-    subscription = sdk.events.listen(_handleEvent);
-    _seedExampleNodes();
+    session = EdgezMeshSession();
   }
 
   @override
   void dispose() {
-    subscription?.cancel();
+    session.dispose();
     super.dispose();
   }
 
-  void _handleEvent(EdgezMeshEvent event) {
-    setState(() {
-      switch (event.type) {
-        case EdgezMeshEventType.connection:
-          connection = event.connection;
-        case EdgezMeshEventType.status:
-          meshStatus = event.status;
-        case EdgezMeshEventType.node:
-          final node = event.node;
-          if (node != null) {
-            nodes[node.nodeNum] = ExampleNode(
-              meshNode: node,
-              deviceType: deviceTypeFromLabel(node.deviceType),
-              hasPublicKey: true,
-              geoFence: node.geoFenceName.isEmpty
-                  ? null
-                  : ExampleGeoFence(
-                      name: node.geoFenceName,
-                      marker: ExampleMarker.fromId(node.marker),
-                      alertCondition: 'Enter',
-                    ),
-              geoIndex: node.geoIndex,
-            );
-          }
-        case EdgezMeshEventType.message:
-          final message = event.message;
-          if (message != null) {
-            conversations[message.nodeNum] = <EdgezConversationMessage>[
-              ...(conversations[message.nodeNum] ??
-                  const <EdgezConversationMessage>[]),
-              message,
-            ];
-          }
-        case EdgezMeshEventType.log:
-          statusLine = event.log;
-      }
-    });
-  }
-
   Future<void> _connectBle() async {
-    await sdk.startBleScan();
-    setState(() {
-      connection = EdgezConnectionType.ble;
-      statusLine = 'BLE scan requested';
-    });
+    await session.startBleScan();
   }
 
   Future<void> _disconnect() async {
-    await sdk.disconnect();
-    setState(() {
-      connection = EdgezConnectionType.none;
-      meshStatus = null;
-      statusLine = 'Disconnected';
-    });
+    await session.disconnect();
+    setState(() => selectedNodeNum = null);
   }
 
   Future<void> _saveAppSettings() async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
-    await sdk.initializeMesh(
+    await session.initializeMesh(
       EdgezMeshConfig(
         countryCode: meshCountry,
         meshId: meshId.trim(),
@@ -153,12 +94,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         ),
       ),
     );
-    setState(() => statusLine = 'Settings saved');
   }
 
   Future<void> _saveDeviceSettings() async {
-    setState(() => statusLine = 'Device settings saved');
-    await sdk.sendDeviceSettings(<String, Object?>{
+    await session.sendDeviceSettings(<String, Object?>{
       'deviceModeEnabled': deviceModeEnabled,
       'meshId': deviceMeshId,
       'shareLocation': deviceShareLocation,
@@ -175,280 +114,173 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     });
   }
 
-  void _openNode(ExampleNode node) {
-    setState(() => selectedNode = node);
+  void _openNode(EdgezMeshNode node) {
+    setState(() => selectedNodeNum = node.nodeNum);
   }
 
-  void _removeNode(ExampleNode node) {
-    setState(() {
-      nodes.remove(node.nodeNum);
-      conversations.remove(node.nodeNum);
-      if (selectedNode?.nodeNum == node.nodeNum) selectedNode = null;
-    });
+  void _removeNode(EdgezMeshNode node) {
+    session.removeNode(node.nodeNum);
+    if (selectedNodeNum == node.nodeNum) {
+      setState(() => selectedNodeNum = null);
+    }
   }
 
   void _sendMessage(String text) {
-    final node = selectedNode;
-    if (node == null) return;
-    final message = EdgezConversationMessage(
-      nodeNum: node.nodeNum,
+    final nodeNum = selectedNodeNum;
+    if (nodeNum == null) return;
+    session.sendTextMessage(
+      toNode: nodeNum,
       text: text,
-      mine: true,
-      timestampMs: DateTime.now().millisecondsSinceEpoch,
-      status: 'Sent via ${connection.name.toUpperCase()}',
+      maxHop: int.tryParse(maxHop) ?? 0,
     );
-    setState(() {
-      conversations[node.nodeNum] = <EdgezConversationMessage>[
-        ...(conversations[node.nodeNum] ?? const <EdgezConversationMessage>[]),
-        message,
-      ];
-      statusLine = 'Message queued';
-    });
-    unawaited(sdk.sendTextMessage(
-        toNode: node.nodeNum, text: text, maxHop: int.tryParse(maxHop) ?? 0));
   }
 
   void _sendVoicePlaceholder() {
-    final node = selectedNode;
-    if (node == null) return;
-    final message = EdgezConversationMessage(
-      nodeNum: node.nodeNum,
-      text: 'Voice message',
-      mine: true,
-      timestampMs: DateTime.now().millisecondsSinceEpoch,
-      status: 'Voice sent via ${connection.name.toUpperCase()}',
-    );
-    setState(() {
-      conversations[node.nodeNum] = <EdgezConversationMessage>[
-        ...(conversations[node.nodeNum] ?? const <EdgezConversationMessage>[]),
-        message,
-      ];
-    });
-  }
-
-  void _seedExampleNodes() {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    const fence = ExampleGeoFence(
-      name: 'North ridge',
-      marker: ExampleMarker.green,
-      alertCondition: 'Enter',
-    );
-    nodes[0x84f70311aa01] = ExampleNode(
-      meshNode: EdgezMeshNode(
-        nodeNum: 0x84f70311aa01,
-        userUuid: 'a1010000-0000-0000-0000-000000000001',
-        displayName: 'Jason',
-        route: 'BLE',
-        lastSeenMs: now - 45 * 1000,
-        marker: ExampleMarker.blue.name,
-        latitude: 59.3293,
-        longitude: 18.0686,
-        deviceType: ExampleDeviceType.user.label,
-        geoFenceName: fence.name,
-        geoIndex: 1,
-      ),
-      deviceType: ExampleDeviceType.user,
-      hasPublicKey: true,
-      geoFence: fence,
-      geoIndex: 1,
-    );
-    nodes[0x84f70311aa02] = ExampleNode(
-      meshNode: EdgezMeshNode(
-        nodeNum: 0x84f70311aa02,
-        userUuid: 'a1010000-0000-0000-0000-000000000002',
-        displayName: 'Trail sensor',
-        route: 'BLE',
-        lastSeenMs: now - 9 * 60 * 1000,
-        marker: ExampleMarker.green.name,
-        latitude: 59.3310,
-        longitude: 18.0710,
-        deviceType: ExampleDeviceType.sensor.label,
-        geoFenceName: fence.name,
-        geoIndex: 2,
-        sleeping: true,
-      ),
-      deviceType: ExampleDeviceType.sensor,
-      hasPublicKey: false,
-      geoFence: fence,
-      geoIndex: 2,
-      samples: _demoSensorSamples(now),
-    );
-    conversations[0x84f70311aa01] = <EdgezConversationMessage>[
-      EdgezConversationMessage(
-        nodeNum: 0x84f70311aa01,
-        text: 'Mesh link is up.',
-        mine: false,
-        timestampMs: now - 8 * 60 * 1000,
-      ),
-      EdgezConversationMessage(
-        nodeNum: 0x84f70311aa01,
-        text: 'Copy.',
-        mine: true,
-        timestampMs: now - 7 * 60 * 1000,
-        status: 'Delivered',
-      ),
-    ];
-  }
-
-  List<ExampleSensorSample> _demoSensorSamples(int now) {
-    return List<ExampleSensorSample>.generate(12, (index) {
-      final age = (11 - index) * 5 * 60 * 1000;
-      return ExampleSensorSample(
-        timestampMs: now - age,
-        data: ExampleSensorData(
-          temperature: 18.0 + math.sin(index / 2) * 2.5,
-          humidity: 55 + index * 0.8,
-          pressure: 1005 + math.cos(index / 3) * 5,
-          vibrationAverage: index.isEven ? 0.2 + index / 20 : 0.1,
-          altitude: 42,
-          latitude: 59.3310,
-          longitude: 18.0710,
-        ),
-      );
-    });
+    final nodeNum = selectedNodeNum;
+    if (nodeNum == null) return;
+    session.addVoicePlaceholder(toNode: nodeNum);
   }
 
   @override
   Widget build(BuildContext context) {
-    final sortedNodes = nodes.values.toList()
-      ..sort((a, b) =>
-          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
-    final selected = selectedNode;
-    final body = switch (destination) {
-      AppDestination.nodes => selected == null
-          ? NodesScreen(
-              activeConnection: connection,
-              status: meshStatus,
-              users: sortedNodes,
-              onRemoveNode: _removeNode,
-              onOpenNode: _openNode,
-            )
-          : selected.deviceType.opensConversation
-              ? ConversationScreen(
-                  activeConnection: connection,
-                  user: selected,
-                  messages: conversations[selected.nodeNum] ??
-                      const <EdgezConversationMessage>[],
-                  onBack: () => setState(() => selectedNode = null),
-                  onSendMessage: _sendMessage,
-                  onSendVoiceMessage: _sendVoicePlaceholder,
+    return AnimatedBuilder(
+      animation: session,
+      builder: (context, _) {
+        final meshState = session.state;
+        final selected =
+            selectedNodeNum == null ? null : meshState.nodes[selectedNodeNum!];
+        final body = switch (destination) {
+          AppDestination.nodes => selected == null
+              ? NodesScreen(
+                  activeConnection: meshState.connection,
+                  status: meshState.status,
+                  users: meshState.sortedNodes,
+                  onRemoveNode: _removeNode,
+                  onOpenNode: _openNode,
                 )
-              : DeviceDetailScreen(
-                  user: selected,
-                  samples: selected.samples,
-                  onBack: () => setState(() => selectedNode = null),
-                ),
-      AppDestination.debug => DebugScreen(
-          activeConnection: connection,
-          meshStatus: meshStatus,
-          statusLine: statusLine,
-          nodeCount: nodes.length,
-          conversationCount: conversations.length,
-          shareLocation: shareLocation,
-          deviceModeEnabled: deviceModeEnabled,
-        ),
-      AppDestination.settings => SettingsScreen(
-          activeConnection: connection,
-          shareLocation: shareLocation,
-          autoReplayReceivedVoice: autoReplayReceivedVoice,
-          deviceModeEnabled: deviceModeEnabled,
-          statusLine: statusLine,
-          meshCountry: meshCountry,
-          meshId: meshId,
-          passphrase: passphrase,
-          maxHop: maxHop,
-          beaconIntervalSeconds: beaconIntervalSeconds,
-          userName: userName,
-          userMarker: userMarker,
-          deviceUserName: deviceUserName,
-          deviceMarker: deviceMarker,
-          deviceMeshId: deviceMeshId,
-          deviceMaxHop: deviceMaxHop,
-          deviceBeaconIntervalSeconds: deviceBeaconIntervalSeconds,
-          deviceShareLocation: deviceShareLocation,
-          deviceLatitude: deviceLatitude,
-          deviceLongitude: deviceLongitude,
-          deviceGeoFenceName: deviceGeoFenceName,
-          deviceGeoIndex: deviceGeoIndex,
-          uartI2cSensorType: uartI2cSensorType,
-          rs485SensorType: rs485SensorType,
-          onConnectBle: _connectBle,
-          onDisconnect: _disconnect,
-          onSaveAppSettings: _saveAppSettings,
-          onSaveDeviceSettings: _saveDeviceSettings,
-          onShareLocationChanged: (value) =>
-              setState(() => shareLocation = value),
-          onAutoReplayChanged: (value) =>
-              setState(() => autoReplayReceivedVoice = value),
-          onDeviceModeChanged: (value) =>
-              setState(() => deviceModeEnabled = value),
-          onMeshCountryChanged: (value) => setState(() => meshCountry = value),
-          onMeshIdChanged: (value) => setState(() => meshId = value),
-          onPassphraseChanged: (value) => setState(() => passphrase = value),
-          onMaxHopChanged: (value) => setState(() => maxHop = value),
-          onBeaconIntervalChanged: (value) =>
-              setState(() => beaconIntervalSeconds = value),
-          onUserNameChanged: (value) => setState(() => userName = value),
-          onUserMarkerChanged: (value) => setState(() => userMarker = value),
-          onDeviceUserNameChanged: (value) =>
-              setState(() => deviceUserName = value),
-          onDeviceMarkerChanged: (value) =>
-              setState(() => deviceMarker = value),
-          onDeviceMeshIdChanged: (value) =>
-              setState(() => deviceMeshId = value),
-          onDeviceMaxHopChanged: (value) =>
-              setState(() => deviceMaxHop = value),
-          onDeviceBeaconIntervalChanged: (value) =>
-              setState(() => deviceBeaconIntervalSeconds = value),
-          onDeviceShareLocationChanged: (value) =>
-              setState(() => deviceShareLocation = value),
-          onDeviceLatitudeChanged: (value) =>
-              setState(() => deviceLatitude = value),
-          onDeviceLongitudeChanged: (value) =>
-              setState(() => deviceLongitude = value),
-          onDeviceGeoFenceNameChanged: (value) =>
-              setState(() => deviceGeoFenceName = value),
-          onDeviceGeoIndexChanged: (value) =>
-              setState(() => deviceGeoIndex = value),
-          onUartI2cSensorChanged: (value) =>
-              setState(() => uartI2cSensorType = value),
-          onRs485SensorChanged: (value) =>
-              setState(() => rs485SensorType = value),
-        ),
-    };
+              : selected.opensConversation
+                  ? ConversationScreen(
+                      activeConnection: meshState.connection,
+                      user: selected,
+                      messages: meshState.conversations[selected.nodeNum] ??
+                          const <EdgezConversationMessage>[],
+                      onBack: () => setState(() => selectedNodeNum = null),
+                      onSendMessage: _sendMessage,
+                      onSendVoiceMessage: _sendVoicePlaceholder,
+                    )
+                  : DeviceDetailScreen(
+                      user: selected,
+                      samples: const <ExampleSensorSample>[],
+                      onBack: () => setState(() => selectedNodeNum = null),
+                    ),
+          AppDestination.debug => DebugScreen(
+              activeConnection: meshState.connection,
+              meshStatus: meshState.status,
+              statusLine: meshState.statusLine,
+              nodeCount: meshState.nodes.length,
+              conversationCount: meshState.conversations.length,
+              shareLocation: shareLocation,
+              deviceModeEnabled: deviceModeEnabled,
+            ),
+          AppDestination.settings => SettingsScreen(
+              activeConnection: meshState.connection,
+              shareLocation: shareLocation,
+              autoReplayReceivedVoice: autoReplayReceivedVoice,
+              deviceModeEnabled: deviceModeEnabled,
+              statusLine: meshState.statusLine,
+              meshCountry: meshCountry,
+              meshId: meshId,
+              passphrase: passphrase,
+              maxHop: maxHop,
+              beaconIntervalSeconds: beaconIntervalSeconds,
+              userName: userName,
+              userMarker: userMarker,
+              deviceUserName: deviceUserName,
+              deviceMarker: deviceMarker,
+              deviceMeshId: deviceMeshId,
+              deviceMaxHop: deviceMaxHop,
+              deviceBeaconIntervalSeconds: deviceBeaconIntervalSeconds,
+              deviceShareLocation: deviceShareLocation,
+              deviceLatitude: deviceLatitude,
+              deviceLongitude: deviceLongitude,
+              deviceGeoFenceName: deviceGeoFenceName,
+              deviceGeoIndex: deviceGeoIndex,
+              uartI2cSensorType: uartI2cSensorType,
+              rs485SensorType: rs485SensorType,
+              onConnectBle: _connectBle,
+              onDisconnect: _disconnect,
+              onSaveAppSettings: _saveAppSettings,
+              onSaveDeviceSettings: _saveDeviceSettings,
+              onShareLocationChanged: (value) =>
+                  setState(() => shareLocation = value),
+              onAutoReplayChanged: (value) =>
+                  setState(() => autoReplayReceivedVoice = value),
+              onDeviceModeChanged: (value) =>
+                  setState(() => deviceModeEnabled = value),
+              onMeshCountryChanged: (value) =>
+                  setState(() => meshCountry = value),
+              onMeshIdChanged: (value) => setState(() => meshId = value),
+              onPassphraseChanged: (value) =>
+                  setState(() => passphrase = value),
+              onMaxHopChanged: (value) => setState(() => maxHop = value),
+              onBeaconIntervalChanged: (value) =>
+                  setState(() => beaconIntervalSeconds = value),
+              onUserNameChanged: (value) => setState(() => userName = value),
+              onUserMarkerChanged: (value) =>
+                  setState(() => userMarker = value),
+              onDeviceUserNameChanged: (value) =>
+                  setState(() => deviceUserName = value),
+              onDeviceMarkerChanged: (value) =>
+                  setState(() => deviceMarker = value),
+              onDeviceMeshIdChanged: (value) =>
+                  setState(() => deviceMeshId = value),
+              onDeviceMaxHopChanged: (value) =>
+                  setState(() => deviceMaxHop = value),
+              onDeviceBeaconIntervalChanged: (value) =>
+                  setState(() => deviceBeaconIntervalSeconds = value),
+              onDeviceShareLocationChanged: (value) =>
+                  setState(() => deviceShareLocation = value),
+              onDeviceLatitudeChanged: (value) =>
+                  setState(() => deviceLatitude = value),
+              onDeviceLongitudeChanged: (value) =>
+                  setState(() => deviceLongitude = value),
+              onDeviceGeoFenceNameChanged: (value) =>
+                  setState(() => deviceGeoFenceName = value),
+              onDeviceGeoIndexChanged: (value) =>
+                  setState(() => deviceGeoIndex = value),
+              onUartI2cSensorChanged: (value) =>
+                  setState(() => uartI2cSensorType = value),
+              onRs485SensorChanged: (value) =>
+                  setState(() => rs485SensorType = value),
+            ),
+        };
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: Colors.teal,
-        useMaterial3: true,
-        cardTheme: const CardThemeData(margin: EdgeInsets.zero),
-      ),
-      home: Scaffold(
-        body: body,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: AppDestination.values.indexOf(destination),
-          onDestinationSelected: (index) => setState(() {
-            destination = AppDestination.values[index];
-            if (destination != AppDestination.nodes) selectedNode = null;
-          }),
-          destinations: AppDestination.values.map((item) {
-            return NavigationDestination(
-              icon: Icon(item.icon),
-              selectedIcon: Icon(item.selectedIcon),
-              label: item.label,
-            );
-          }).toList(),
-        ),
-      ),
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            colorSchemeSeed: Colors.teal,
+            useMaterial3: true,
+            cardTheme: const CardThemeData(margin: EdgeInsets.zero),
+          ),
+          home: Scaffold(
+            body: body,
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: AppDestination.values.indexOf(destination),
+              onDestinationSelected: (index) => setState(() {
+                destination = AppDestination.values[index];
+                if (destination != AppDestination.nodes) selectedNodeNum = null;
+              }),
+              destinations: AppDestination.values.map((item) {
+                return NavigationDestination(
+                  icon: Icon(item.icon),
+                  selectedIcon: Icon(item.selectedIcon),
+                  label: item.label,
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
     );
   }
-}
-
-ExampleDeviceType deviceTypeFromLabel(String label) {
-  final normalized = label.toLowerCase();
-  return ExampleDeviceType.values.firstWhere(
-    (type) => type.label.toLowerCase() == normalized || type.name == normalized,
-    orElse: () => ExampleDeviceType.unspecified,
-  );
 }
