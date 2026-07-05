@@ -13,6 +13,7 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -44,6 +45,7 @@ class EdgezFlutterSdkPlugin :
     private var pendingScanResult: MethodChannel.Result? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
+    private var scanGeneration = 0
 
     private val bluetoothAdapter: BluetoothAdapter?
         get() = context.getSystemService(BluetoothManager::class.java)?.adapter
@@ -155,7 +157,11 @@ class EdgezFlutterSdkPlugin :
 
     private fun requiredBlePermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= 31) {
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            )
         } else {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
@@ -180,6 +186,16 @@ class EdgezFlutterSdkPlugin :
         return true
     }
 
+    private fun isLocationEnabled(): Boolean {
+        val manager = context.getSystemService(LocationManager::class.java) ?: return true
+        return if (Build.VERSION.SDK_INT >= 28) {
+            manager.isLocationEnabled
+        } else {
+            manager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private fun startBleScan(result: MethodChannel.Result) {
         if (requestBlePermissions(result)) return
@@ -197,9 +213,13 @@ class EdgezFlutterSdkPlugin :
             result.error("ble_scanner_unavailable", "BLE scanner unavailable", null)
             return
         }
+        if (!isLocationEnabled()) {
+            emit(mapOf("type" to "log", "log" to "Location services are off; Android may hide BLE scan results"))
+        }
 
         stopBleScan()
         devices.clear()
+        val generation = ++scanGeneration
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, scanResult: ScanResult) {
                 publishScanResult(scanResult)
@@ -219,6 +239,16 @@ class EdgezFlutterSdkPlugin :
         scanCallback = callback
         scanner.startScan(null, settings, callback)
         emit(mapOf("type" to "log", "log" to "BLE scan started"))
+        mainHandler.postDelayed({
+            if (scanCallback == callback && scanGeneration == generation && devices.isEmpty()) {
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "BLE scan is running but no advertisements were received. Check Nearby devices permission, Location permission, and Location services.",
+                    ),
+                )
+            }
+        }, 6000)
         result.success(null)
     }
 
@@ -248,6 +278,7 @@ class EdgezFlutterSdkPlugin :
             bluetoothAdapter?.bluetoothLeScanner?.stopScan(callback)
         }
         scanCallback = null
+        scanGeneration += 1
     }
 
     @SuppressLint("MissingPermission")

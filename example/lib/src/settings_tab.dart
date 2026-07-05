@@ -159,7 +159,7 @@ class SettingsScreen extends StatelessWidget {
               ],
               const SizedBox(height: 10),
               if (bleDevices.isEmpty)
-                const Text('No EdgeZ BLE devices found.')
+                const Text('No BLE devices found yet.')
               else
                 for (final device in bleDevices)
                   ListTile(
