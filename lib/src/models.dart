@@ -1,0 +1,229 @@
+enum EdgezConnectionType {
+  none,
+  ble;
+
+  static EdgezConnectionType fromWire(String? value) {
+    return EdgezConnectionType.values.firstWhere(
+      (type) => type.name == value,
+      orElse: () => EdgezConnectionType.none,
+    );
+  }
+}
+
+enum EdgezMeshEventType {
+  connection,
+  status,
+  node,
+  message,
+  log;
+
+  static EdgezMeshEventType fromWire(String? value) {
+    return EdgezMeshEventType.values.firstWhere(
+      (type) => type.name == value,
+      orElse: () => EdgezMeshEventType.log,
+    );
+  }
+}
+
+class EdgezUserIdentity {
+  const EdgezUserIdentity({
+    required this.userIdHigh,
+    required this.userIdLow,
+    required this.name,
+    required this.publicKey,
+  });
+
+  final int userIdHigh;
+  final int userIdLow;
+  final String name;
+  final List<int> publicKey;
+
+  Map<String, Object?> toMap() => {
+        'userIdHigh': userIdHigh,
+        'userIdLow': userIdLow,
+        'name': name,
+        'publicKey': publicKey,
+      };
+}
+
+class EdgezMeshConfig {
+  const EdgezMeshConfig({
+    required this.countryCode,
+    required this.meshId,
+    required this.passphrase,
+    required this.maxHop,
+    required this.identity,
+  });
+
+  final String countryCode;
+  final String meshId;
+  final String passphrase;
+  final int maxHop;
+  final EdgezUserIdentity identity;
+
+  Map<String, Object?> toMap() => {
+        'countryCode': countryCode,
+        'meshId': meshId,
+        'passphrase': passphrase,
+        'maxHop': maxHop,
+        'identity': identity.toMap(),
+      };
+}
+
+class EdgezMeshStatus {
+  const EdgezMeshStatus({
+    required this.supported,
+    required this.stackInitialized,
+    required this.meshMode,
+    required this.linkUp,
+    required this.routeReady,
+    required this.readyForReport,
+    required this.meshId,
+    required this.ipAddress,
+    required this.gateway,
+    required this.macAddress,
+  });
+
+  final bool supported;
+  final bool stackInitialized;
+  final bool meshMode;
+  final bool linkUp;
+  final bool routeReady;
+  final bool readyForReport;
+  final String meshId;
+  final String ipAddress;
+  final String gateway;
+  final int macAddress;
+
+  bool get isUsable => supported && stackInitialized && linkUp && routeReady;
+
+  factory EdgezMeshStatus.fromMap(Map<Object?, Object?> map) {
+    return EdgezMeshStatus(
+      supported: map['supported'] == true,
+      stackInitialized: map['stackInitialized'] == true,
+      meshMode: map['meshMode'] == true,
+      linkUp: map['linkUp'] == true,
+      routeReady: map['routeReady'] == true,
+      readyForReport: map['readyForReport'] == true,
+      meshId: map['meshId'] as String? ?? '',
+      ipAddress: map['ipAddress'] as String? ?? '',
+      gateway: map['gateway'] as String? ?? '',
+      macAddress: map['macAddress'] as int? ?? 0,
+    );
+  }
+}
+
+class EdgezMeshNode {
+  const EdgezMeshNode({
+    required this.nodeNum,
+    required this.userUuid,
+    required this.displayName,
+    required this.route,
+    required this.lastSeenMs,
+    required this.marker,
+    this.latitude,
+    this.longitude,
+    this.deviceType = '',
+    this.geoFenceName = '',
+    this.geoIndex = 0,
+    this.sleeping = false,
+  });
+
+  final int nodeNum;
+  final String userUuid;
+  final String displayName;
+  final String route;
+  final int lastSeenMs;
+  final String marker;
+  final double? latitude;
+  final double? longitude;
+  final String deviceType;
+  final String geoFenceName;
+  final int geoIndex;
+  final bool sleeping;
+
+  String get nodeId {
+    final mac = nodeNum & 0xffffffffffff;
+    final parts = List<String>.generate(6, (index) {
+      final shift = (5 - index) * 8;
+      return ((mac >> shift) & 0xff).toRadixString(16).padLeft(2, '0');
+    });
+    return parts.join(':');
+  }
+
+  factory EdgezMeshNode.fromMap(Map<Object?, Object?> map) {
+    return EdgezMeshNode(
+      nodeNum: map['nodeNum'] as int? ?? 0,
+      userUuid: map['userUuid'] as String? ?? '',
+      displayName: map['displayName'] as String? ?? '',
+      route: map['route'] as String? ?? '',
+      lastSeenMs: map['lastSeenMs'] as int? ?? 0,
+      marker: map['marker'] as String? ?? 'blue',
+      latitude: (map['latitude'] as num?)?.toDouble(),
+      longitude: (map['longitude'] as num?)?.toDouble(),
+      deviceType: map['deviceType'] as String? ?? '',
+      geoFenceName: map['geoFenceName'] as String? ?? '',
+      geoIndex: map['geoIndex'] as int? ?? 0,
+      sleeping: map['sleeping'] == true,
+    );
+  }
+}
+
+class EdgezConversationMessage {
+  const EdgezConversationMessage({
+    required this.nodeNum,
+    required this.text,
+    required this.mine,
+    required this.timestampMs,
+    this.messageUuid = '',
+    this.status = '',
+  });
+
+  final int nodeNum;
+  final String text;
+  final bool mine;
+  final int timestampMs;
+  final String messageUuid;
+  final String status;
+
+  factory EdgezConversationMessage.fromMap(Map<Object?, Object?> map) {
+    return EdgezConversationMessage(
+      nodeNum: map['nodeNum'] as int? ?? 0,
+      text: map['text'] as String? ?? '',
+      mine: map['mine'] == true,
+      timestampMs: map['timestampMs'] as int? ?? 0,
+      messageUuid: map['messageUuid'] as String? ?? '',
+      status: map['status'] as String? ?? '',
+    );
+  }
+}
+
+class EdgezMeshEvent {
+  const EdgezMeshEvent({
+    required this.type,
+    this.connection = EdgezConnectionType.none,
+    this.status,
+    this.node,
+    this.message,
+    this.log = '',
+  });
+
+  final EdgezMeshEventType type;
+  final EdgezConnectionType connection;
+  final EdgezMeshStatus? status;
+  final EdgezMeshNode? node;
+  final EdgezConversationMessage? message;
+  final String log;
+
+  factory EdgezMeshEvent.fromMap(Map<Object?, Object?> map) {
+    final type = EdgezMeshEventType.fromWire(map['type'] as String?);
+    return EdgezMeshEvent(
+      type: type,
+      connection: EdgezConnectionType.fromWire(map['connection'] as String?),
+      status: map['status'] is Map ? EdgezMeshStatus.fromMap(map['status'] as Map<Object?, Object?>) : null,
+      node: map['node'] is Map ? EdgezMeshNode.fromMap(map['node'] as Map<Object?, Object?>) : null,
+      message: map['message'] is Map ? EdgezConversationMessage.fromMap(map['message'] as Map<Object?, Object?>) : null,
+      log: map['log'] as String? ?? '',
+    );
+  }
+}
