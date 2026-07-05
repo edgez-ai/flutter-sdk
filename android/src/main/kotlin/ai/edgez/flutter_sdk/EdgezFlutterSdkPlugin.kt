@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
@@ -17,6 +18,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.ParcelUuid
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -25,8 +27,10 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import java.util.UUID
 
 private const val BLE_PERMISSION_REQUEST = 9007
+private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
 
 class EdgezFlutterSdkPlugin :
     FlutterPlugin,
@@ -236,15 +240,18 @@ class EdgezFlutterSdkPlugin :
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
+        val filter = ScanFilter.Builder()
+            .setServiceUuid(ParcelUuid(EDGEZ_SERVICE_UUID))
+            .build()
         scanCallback = callback
-        scanner.startScan(null, settings, callback)
-        emit(mapOf("type" to "log", "log" to "BLE scan started"))
+        scanner.startScan(listOf(filter), settings, callback)
+        emit(mapOf("type" to "log", "log" to "BLE scan started for EdgeZ service $EDGEZ_SERVICE_UUID"))
         mainHandler.postDelayed({
             if (scanCallback == callback && scanGeneration == generation && devices.isEmpty()) {
                 emit(
                     mapOf(
                         "type" to "log",
-                        "log" to "BLE scan is running but no advertisements were received. Check Nearby devices permission, Location permission, and Location services.",
+                        "log" to "BLE scan is running but no EdgeZ advertisements were received. Check permissions, Location services, and that the device advertises $EDGEZ_SERVICE_UUID.",
                     ),
                 )
             }

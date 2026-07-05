@@ -39,6 +39,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool databaseReady = false;
   bool persistenceEnabled = false;
   bool hydrationComplete = false;
+  Timer? persistDebounce;
+  bool persistInFlight = false;
+  bool persistAgain = false;
+  String lastPersistSignature = '';
   final Map<int, List<ExampleSensorSample>> sensorSamples =
       <int, List<ExampleSensorSample>>{};
   bool shareLocation = false;
@@ -77,6 +81,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   @override
   void dispose() {
+    persistDebounce?.cancel();
+    persistenceEnabled = false;
     session.removeListener(_persistSessionSnapshot);
     session.dispose();
     unawaited(database.close());
@@ -96,6 +102,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         nodes: nodes,
         conversations: conversations,
       );
+      lastPersistSignature = _persistenceSignature(session.state);
       if (!mounted) return;
       setState(() {
         sensorSamples
@@ -117,7 +124,95 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   void _persistSessionSnapshot() {
     if (!hydrationComplete || !persistenceEnabled) return;
-    unawaited(database.persistStateSnapshot(session.state));
+    final signature = _persistenceSignature(session.state);
+    if (signature == lastPersistSignature) return;
+    persistDebounce?.cancel();
+    persistDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () => unawaited(_persistLatestSessionSnapshot()),
+    );
+  }
+
+  Future<void> _persistLatestSessionSnapshot() async {
+    if (!hydrationComplete || !persistenceEnabled) return;
+    if (persistInFlight) {
+      persistAgain = true;
+      return;
+    }
+
+    persistInFlight = true;
+    try {
+      do {
+        persistAgain = false;
+        final state = session.state;
+        final signature = _persistenceSignature(state);
+        if (signature != lastPersistSignature) {
+          await database.persistStateSnapshot(state);
+          lastPersistSignature = signature;
+        }
+      } while (persistAgain && persistenceEnabled);
+    } catch (_) {
+      if (mounted) {
+        setState(() => databaseReady = false);
+      }
+    } finally {
+      persistInFlight = false;
+    }
+  }
+
+  String _persistenceSignature(EdgezMeshState state) {
+    final buffer = StringBuffer();
+    final nodes = state.nodes.values.toList()
+      ..sort((a, b) => a.nodeNum.compareTo(b.nodeNum));
+    for (final node in nodes) {
+      buffer
+        ..write(node.nodeNum)
+        ..write('|')
+        ..write(node.userUuid)
+        ..write('|')
+        ..write(node.displayName)
+        ..write('|')
+        ..write(node.route)
+        ..write('|')
+        ..write(node.lastSeenMs)
+        ..write('|')
+        ..write(node.marker)
+        ..write('|')
+        ..write(node.latitude)
+        ..write('|')
+        ..write(node.longitude)
+        ..write('|')
+        ..write(node.deviceType)
+        ..write('|')
+        ..write(node.geoFenceName)
+        ..write('|')
+        ..write(node.geoIndex)
+        ..write('|')
+        ..write(node.sleeping)
+        ..write(';');
+    }
+    final conversations = state.conversations.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    for (final entry in conversations) {
+      buffer
+        ..write('c')
+        ..write(entry.key)
+        ..write(':');
+      for (final message in entry.value) {
+        buffer
+          ..write(message.timestampMs)
+          ..write('|')
+          ..write(message.mine)
+          ..write('|')
+          ..write(message.text)
+          ..write('|')
+          ..write(message.status)
+          ..write('|')
+          ..write(message.messageUuid)
+          ..write(';');
+      }
+    }
+    return buffer.toString();
   }
 
   Future<void> _connectBle() async {
@@ -180,11 +275,21 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   void _removeNode(EdgezMeshNode node) {
     session.removeNode(node.nodeNum);
     if (persistenceEnabled) {
-      unawaited(database.deleteNode(node.nodeNum));
+      unawaited(_deletePersistedNode(node.nodeNum));
     }
     if (selectedNodeNum == node.nodeNum) {
       setState(() => selectedNodeNum = null);
     }
+  }
+
+  Future<void> _deletePersistedNode(int nodeNum) async {
+    persistDebounce?.cancel();
+    while (persistInFlight) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    if (!persistenceEnabled) return;
+    await database.deleteNode(nodeNum);
+    lastPersistSignature = _persistenceSignature(session.state);
   }
 
   void _sendMessage(String text) {
