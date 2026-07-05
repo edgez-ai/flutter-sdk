@@ -17,8 +17,10 @@ flutter:
 dependencies:
   flutter:
     sdk: flutter
+  protobuf: ^5.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  protoc_plugin: ^23.0.0
