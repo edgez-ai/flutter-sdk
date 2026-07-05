@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
 import 'conversation_screen.dart';
 import 'debug_tab.dart';
 import 'device_detail_screen.dart';
+import 'example_database.dart';
 import 'models.dart';
 import 'nodes_tab.dart';
 import 'settings_tab.dart';
@@ -30,8 +33,14 @@ class EdgezExampleApp extends StatefulWidget {
 
 class _EdgezExampleAppState extends State<EdgezExampleApp> {
   late final EdgezMeshSession session;
+  late final ExampleDatabase database;
   AppDestination destination = AppDestination.nodes;
   int? selectedNodeNum;
+  bool databaseReady = false;
+  bool persistenceEnabled = false;
+  bool hydrationComplete = false;
+  final Map<int, List<ExampleSensorSample>> sensorSamples =
+      <int, List<ExampleSensorSample>>{};
   bool shareLocation = false;
   bool autoReplayReceivedVoice = false;
   bool deviceModeEnabled = false;
@@ -61,16 +70,66 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   void initState() {
     super.initState();
     session = EdgezMeshSession();
+    database = ExampleDatabase();
+    session.addListener(_persistSessionSnapshot);
+    unawaited(_hydrateFromDatabase());
   }
 
   @override
   void dispose() {
+    session.removeListener(_persistSessionSnapshot);
     session.dispose();
+    unawaited(database.close());
     super.dispose();
+  }
+
+  Future<void> _hydrateFromDatabase() async {
+    try {
+      await database.open();
+      final nodes = await database.loadNodes();
+      final conversations = await database.loadConversations();
+      final samples = <int, List<ExampleSensorSample>>{};
+      for (final nodeNum in nodes.keys) {
+        samples[nodeNum] = await database.loadSensorSamples(nodeNum);
+      }
+      session.restoreCachedMeshData(
+        nodes: nodes,
+        conversations: conversations,
+      );
+      if (!mounted) return;
+      setState(() {
+        sensorSamples
+          ..clear()
+          ..addAll(samples);
+        databaseReady = true;
+        persistenceEnabled = true;
+        hydrationComplete = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        databaseReady = false;
+        persistenceEnabled = false;
+        hydrationComplete = true;
+      });
+    }
+  }
+
+  void _persistSessionSnapshot() {
+    if (!hydrationComplete || !persistenceEnabled) return;
+    unawaited(database.persistStateSnapshot(session.state));
   }
 
   Future<void> _connectBle() async {
     await session.startBleScan();
+  }
+
+  Future<void> _stopBleScan() async {
+    await session.stopBleScan();
+  }
+
+  Future<void> _connectBleDevice(String deviceId) async {
+    await session.connectBle(deviceId);
   }
 
   Future<void> _disconnect() async {
@@ -120,6 +179,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   void _removeNode(EdgezMeshNode node) {
     session.removeNode(node.nodeNum);
+    if (persistenceEnabled) {
+      unawaited(database.deleteNode(node.nodeNum));
+    }
     if (selectedNodeNum == node.nodeNum) {
       setState(() => selectedNodeNum = null);
     }
@@ -170,7 +232,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                     )
                   : DeviceDetailScreen(
                       user: selected,
-                      samples: const <ExampleSensorSample>[],
+                      samples: sensorSamples[selected.nodeNum] ??
+                          const <ExampleSensorSample>[],
                       onBack: () => setState(() => selectedNodeNum = null),
                     ),
           AppDestination.debug => DebugScreen(
@@ -181,12 +244,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               conversationCount: meshState.conversations.length,
               shareLocation: shareLocation,
               deviceModeEnabled: deviceModeEnabled,
+              databaseReady: databaseReady,
             ),
           AppDestination.settings => SettingsScreen(
               activeConnection: meshState.connection,
               shareLocation: shareLocation,
               autoReplayReceivedVoice: autoReplayReceivedVoice,
               deviceModeEnabled: deviceModeEnabled,
+              bleDevices: meshState.sortedBleDevices,
               statusLine: meshState.statusLine,
               meshCountry: meshCountry,
               meshId: meshId,
@@ -208,6 +273,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               uartI2cSensorType: uartI2cSensorType,
               rs485SensorType: rs485SensorType,
               onConnectBle: _connectBle,
+              onStopBleScan: _stopBleScan,
+              onConnectBleDevice: _connectBleDevice,
               onDisconnect: _disconnect,
               onSaveAppSettings: _saveAppSettings,
               onSaveDeviceSettings: _saveDeviceSettings,

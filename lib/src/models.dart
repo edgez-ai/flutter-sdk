@@ -12,6 +12,7 @@ enum EdgezConnectionType {
 
 enum EdgezMeshEventType {
   connection,
+  bleDevice,
   status,
   node,
   message,
@@ -21,6 +22,31 @@ enum EdgezMeshEventType {
     return EdgezMeshEventType.values.firstWhere(
       (type) => type.name == value,
       orElse: () => EdgezMeshEventType.log,
+    );
+  }
+}
+
+class EdgezBleDevice {
+  const EdgezBleDevice({
+    required this.id,
+    required this.name,
+    required this.rssi,
+    required this.lastSeenMs,
+  });
+
+  final String id;
+  final String name;
+  final int rssi;
+  final int lastSeenMs;
+
+  String get label => name.isEmpty ? id : '$name $id';
+
+  factory EdgezBleDevice.fromMap(Map<Object?, Object?> map) {
+    return EdgezBleDevice(
+      id: map['id'] as String? ?? '',
+      name: map['name'] as String? ?? '',
+      rssi: map['rssi'] as int? ?? 0,
+      lastSeenMs: map['lastSeenMs'] as int? ?? 0,
     );
   }
 }
@@ -238,6 +264,7 @@ class EdgezMeshEvent {
   const EdgezMeshEvent({
     required this.type,
     this.connection = EdgezConnectionType.none,
+    this.bleDevice,
     this.status,
     this.node,
     this.message,
@@ -246,6 +273,7 @@ class EdgezMeshEvent {
 
   final EdgezMeshEventType type;
   final EdgezConnectionType connection;
+  final EdgezBleDevice? bleDevice;
   final EdgezMeshStatus? status;
   final EdgezMeshNode? node;
   final EdgezConversationMessage? message;
@@ -256,6 +284,11 @@ class EdgezMeshEvent {
     return EdgezMeshEvent(
       type: type,
       connection: EdgezConnectionType.fromWire(map['connection'] as String?),
+      bleDevice: map['bleDevice'] is Map
+          ? EdgezBleDevice.fromMap(
+              map['bleDevice'] as Map<Object?, Object?>,
+            )
+          : null,
       status: map['status'] is Map
           ? EdgezMeshStatus.fromMap(map['status'] as Map<Object?, Object?>)
           : null,

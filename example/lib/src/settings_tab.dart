@@ -12,6 +12,7 @@ class SettingsScreen extends StatelessWidget {
     required this.shareLocation,
     required this.autoReplayReceivedVoice,
     required this.deviceModeEnabled,
+    required this.bleDevices,
     required this.statusLine,
     required this.meshCountry,
     required this.meshId,
@@ -33,6 +34,8 @@ class SettingsScreen extends StatelessWidget {
     required this.uartI2cSensorType,
     required this.rs485SensorType,
     required this.onConnectBle,
+    required this.onStopBleScan,
+    required this.onConnectBleDevice,
     required this.onDisconnect,
     required this.onSaveAppSettings,
     required this.onSaveDeviceSettings,
@@ -65,6 +68,7 @@ class SettingsScreen extends StatelessWidget {
   final bool shareLocation;
   final bool autoReplayReceivedVoice;
   final bool deviceModeEnabled;
+  final List<EdgezBleDevice> bleDevices;
   final String statusLine;
   final String meshCountry;
   final String meshId;
@@ -86,6 +90,8 @@ class SettingsScreen extends StatelessWidget {
   final String uartI2cSensorType;
   final String rs485SensorType;
   final VoidCallback onConnectBle;
+  final VoidCallback onStopBleScan;
+  final ValueChanged<String> onConnectBleDevice;
   final VoidCallback onDisconnect;
   final FutureOr<void> Function() onSaveAppSettings;
   final FutureOr<void> Function() onSaveDeviceSettings;
@@ -134,6 +140,10 @@ class SettingsScreen extends StatelessWidget {
                       icon: const Icon(Icons.bluetooth_searching),
                       label: const Text('Scan BLE')),
                   OutlinedButton.icon(
+                      onPressed: onStopBleScan,
+                      icon: const Icon(Icons.stop_circle_outlined),
+                      label: const Text('Stop')),
+                  OutlinedButton.icon(
                       onPressed: onDisconnect,
                       icon: const Icon(Icons.link_off),
                       label: const Text('Disconnect')),
@@ -147,6 +157,22 @@ class SettingsScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(statusLine, style: Theme.of(context).textTheme.bodySmall)
               ],
+              const SizedBox(height: 10),
+              if (bleDevices.isEmpty)
+                const Text('No EdgeZ BLE devices found.')
+              else
+                for (final device in bleDevices)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.bluetooth),
+                    title:
+                        Text(device.name.isEmpty ? 'BLE device' : device.name),
+                    subtitle: Text('${device.id} · RSSI ${device.rssi}'),
+                    trailing: FilledButton(
+                      onPressed: () => onConnectBleDevice(device.id),
+                      child: const Text('Connect'),
+                    ),
+                  ),
             ],
           ),
           const SizedBox(height: 12),

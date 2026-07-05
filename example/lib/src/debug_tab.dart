@@ -12,6 +12,7 @@ class DebugScreen extends StatelessWidget {
     required this.conversationCount,
     required this.shareLocation,
     required this.deviceModeEnabled,
+    required this.databaseReady,
     super.key,
   });
 
@@ -22,6 +23,7 @@ class DebugScreen extends StatelessWidget {
   final int conversationCount;
   final bool shareLocation;
   final bool deviceModeEnabled;
+  final bool databaseReady;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +60,9 @@ class DebugScreen extends StatelessWidget {
               DebugValue(
                   label: 'Device mode',
                   value: deviceModeEnabled ? 'Enabled' : 'Disabled'),
+              DebugValue(
+                  label: 'SQLite',
+                  value: databaseReady ? 'Enabled' : 'Memory only'),
             ],
           ),
           const SizedBox(height: 12),

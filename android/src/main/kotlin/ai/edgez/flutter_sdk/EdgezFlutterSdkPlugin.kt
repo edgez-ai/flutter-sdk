@@ -1,16 +1,53 @@
 package ai.edgez.flutter_sdk
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.ParcelUuid
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry
+import java.util.UUID
 
-class EdgezFlutterSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
+private const val BLE_PERMISSION_REQUEST = 9007
+private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
+
+class EdgezFlutterSdkPlugin :
+    FlutterPlugin,
+    MethodChannel.MethodCallHandler,
+    EventChannel.StreamHandler,
+    ActivityAware,
+    PluginRegistry.RequestPermissionsResultListener {
     private lateinit var context: Context
     private lateinit var methods: MethodChannel
     private lateinit var events: EventChannel
+    private var activity: Activity? = null
+    private var activityBinding: ActivityPluginBinding? = null
     private var eventSink: EventChannel.EventSink? = null
+    private var scanCallback: ScanCallback? = null
+    private var gatt: BluetoothGatt? = null
+    private var pendingScanResult: MethodChannel.Result? = null
+    private val devices = mutableMapOf<String, BluetoothDevice>()
+
+    private val bluetoothAdapter: BluetoothAdapter?
+        get() = context.getSystemService(BluetoothManager::class.java)?.adapter
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
@@ -21,9 +58,35 @@ class EdgezFlutterSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        stopBleScan()
+        closeGatt()
         methods.setMethodCallHandler(null)
         events.setStreamHandler(null)
         eventSink = null
+    }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activity = binding.activity
+        activityBinding = binding
+        binding.addRequestPermissionsResultListener(this)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        detachActivity()
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        onAttachedToActivity(binding)
+    }
+
+    override fun onDetachedFromActivity() {
+        detachActivity()
+    }
+
+    private fun detachActivity() {
+        activityBinding?.removeRequestPermissionsResultListener(this)
+        activityBinding = null
+        activity = null
     }
 
     override fun onListen(arguments: Any?, sink: EventChannel.EventSink) {
@@ -37,22 +100,19 @@ class EdgezFlutterSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "startBleScan" -> {
-                // Native reference: EdgezBleClient.startScan { candidate -> ... }.
-                emit(mapOf("type" to "log", "log" to "BLE scan requested"))
-                result.success(null)
-            }
+            "startBleScan" -> startBleScan(result)
             "stopBleScan" -> {
-                // Native reference: EdgezBleClient.stopScan().
+                stopBleScan()
+                emit(mapOf("type" to "log", "log" to "BLE scan stopped"))
                 result.success(null)
             }
             "connectBle" -> {
-                // Native reference: EdgezBleClient.connect(candidate).
-                emit(mapOf("type" to "connection", "connection" to "ble"))
-                result.success(null)
+                val deviceId = call.argument<String>("deviceId").orEmpty()
+                connectBle(deviceId, result)
             }
             "disconnect" -> {
-                // Native reference: close the active EdgezBleClient.
+                stopBleScan()
+                closeGatt()
                 emit(mapOf("type" to "connection", "connection" to "none"))
                 result.success(null)
             }
@@ -75,6 +135,143 @@ class EdgezFlutterSdkPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Ev
             }
             else -> result.notImplemented()
         }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ): Boolean {
+        if (requestCode != BLE_PERMISSION_REQUEST) return false
+        val result = pendingScanResult ?: return true
+        pendingScanResult = null
+        if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            startBleScan(result)
+        } else {
+            result.error("ble_permission_denied", "BLE permission denied", null)
+            emit(mapOf("type" to "log", "log" to "BLE permission denied"))
+        }
+        return true
+    }
+
+    private fun requiredBlePermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= 31) {
+            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private fun hasBlePermissions(): Boolean {
+        return requiredBlePermissions().all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun requestBlePermissions(result: MethodChannel.Result): Boolean {
+        if (hasBlePermissions()) return false
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error("ble_permission_required", "BLE permission required", null)
+            return true
+        }
+        pendingScanResult = result
+        currentActivity.requestPermissions(requiredBlePermissions(), BLE_PERMISSION_REQUEST)
+        emit(mapOf("type" to "log", "log" to "Requesting BLE permission"))
+        return true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startBleScan(result: MethodChannel.Result) {
+        if (requestBlePermissions(result)) return
+        val scanner = bluetoothAdapter?.bluetoothLeScanner
+        if (scanner == null) {
+            result.error("ble_scanner_unavailable", "BLE scanner unavailable", null)
+            return
+        }
+
+        stopBleScan()
+        devices.clear()
+        val callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, scanResult: ScanResult) {
+                publishScanResult(scanResult)
+            }
+
+            override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                results.forEach(::publishScanResult)
+            }
+
+            override fun onScanFailed(errorCode: Int) {
+                emit(mapOf("type" to "log", "log" to "BLE scan failed=$errorCode"))
+            }
+        }
+        val filter = ScanFilter.Builder()
+            .setServiceUuid(ParcelUuid(EDGEZ_SERVICE_UUID))
+            .build()
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+        scanCallback = callback
+        scanner.startScan(listOf(filter), settings, callback)
+        emit(mapOf("type" to "log", "log" to "BLE scan started"))
+        result.success(null)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun publishScanResult(result: ScanResult) {
+        val device = result.device ?: return
+        val id = device.address ?: return
+        val name = result.scanRecord?.deviceName ?: device.name ?: ""
+        devices[id] = device
+        emit(
+            mapOf(
+                "type" to "bleDevice",
+                "bleDevice" to mapOf(
+                    "id" to id,
+                    "name" to name,
+                    "rssi" to result.rssi,
+                    "lastSeenMs" to System.currentTimeMillis(),
+                ),
+            ),
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopBleScan() {
+        val callback = scanCallback ?: return
+        if (hasBlePermissions()) {
+            bluetoothAdapter?.bluetoothLeScanner?.stopScan(callback)
+        }
+        scanCallback = null
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun connectBle(deviceId: String, result: MethodChannel.Result) {
+        if (!hasBlePermissions()) {
+            result.error("ble_permission_required", "BLE permission required", null)
+            return
+        }
+        val device = devices[deviceId] ?: bluetoothAdapter?.getRemoteDevice(deviceId)
+        if (device == null) {
+            result.error("ble_device_missing", "BLE device not found", null)
+            return
+        }
+        stopBleScan()
+        closeGatt()
+        gatt = if (Build.VERSION.SDK_INT >= 23) {
+            device.connectGatt(context, false, object : BluetoothGattCallback() {}, BluetoothDevice.TRANSPORT_LE)
+        } else {
+            device.connectGatt(context, false, object : BluetoothGattCallback() {})
+        }
+        emit(mapOf("type" to "connection", "connection" to "ble"))
+        emit(mapOf("type" to "log", "log" to "Connecting BLE ${device.address}"))
+        result.success(null)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun closeGatt() {
+        gatt?.close()
+        gatt = null
     }
 
     private fun emit(event: Map<String, Any?>) {

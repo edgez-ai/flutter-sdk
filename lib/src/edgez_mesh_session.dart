@@ -9,16 +9,19 @@ class EdgezMeshState {
   EdgezMeshState({
     required this.connection,
     required this.status,
+    required Map<String, EdgezBleDevice> bleDevices,
     required Map<int, EdgezMeshNode> nodes,
     required Map<int, List<EdgezConversationMessage>> conversations,
     required this.statusLine,
-  })  : nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
+  })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
+        nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         conversations = _freezeConversations(conversations);
 
   factory EdgezMeshState.initial() {
     return EdgezMeshState(
       connection: EdgezConnectionType.none,
       status: null,
+      bleDevices: const <String, EdgezBleDevice>{},
       nodes: const <int, EdgezMeshNode>{},
       conversations: const <int, List<EdgezConversationMessage>>{},
       statusLine: 'Connect with BLE, then save mesh settings.',
@@ -27,6 +30,7 @@ class EdgezMeshState {
 
   final EdgezConnectionType connection;
   final EdgezMeshStatus? status;
+  final Map<String, EdgezBleDevice> bleDevices;
   final Map<int, EdgezMeshNode> nodes;
   final Map<int, List<EdgezConversationMessage>> conversations;
   final String statusLine;
@@ -39,10 +43,17 @@ class EdgezMeshState {
     return List<EdgezMeshNode>.unmodifiable(sorted);
   }
 
+  List<EdgezBleDevice> get sortedBleDevices {
+    final sorted = bleDevices.values.toList()
+      ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+    return List<EdgezBleDevice>.unmodifiable(sorted);
+  }
+
   EdgezMeshState copyWith({
     EdgezConnectionType? connection,
     EdgezMeshStatus? status,
     bool clearStatus = false,
+    Map<String, EdgezBleDevice>? bleDevices,
     Map<int, EdgezMeshNode>? nodes,
     Map<int, List<EdgezConversationMessage>>? conversations,
     String? statusLine,
@@ -50,6 +61,7 @@ class EdgezMeshState {
     return EdgezMeshState(
       connection: connection ?? this.connection,
       status: clearStatus ? null : status ?? this.status,
+      bleDevices: bleDevices ?? this.bleDevices,
       nodes: nodes ?? this.nodes,
       conversations: conversations ?? this.conversations,
       statusLine: statusLine ?? this.statusLine,
@@ -81,12 +93,43 @@ class EdgezMeshSession extends ChangeNotifier {
 
   EdgezMeshState get state => _state;
 
+  void restoreCachedMeshData({
+    required Map<int, EdgezMeshNode> nodes,
+    required Map<int, List<EdgezConversationMessage>> conversations,
+  }) {
+    _setState(
+      _state.copyWith(
+        nodes: nodes,
+        conversations: conversations,
+        statusLine: nodes.isEmpty
+            ? _state.statusLine
+            : 'Loaded ${nodes.length} saved node(s)',
+      ),
+    );
+  }
+
   Future<void> startBleScan() async {
     await sdk.startBleScan();
     _setState(
       _state.copyWith(
-        connection: EdgezConnectionType.ble,
+        bleDevices: const <String, EdgezBleDevice>{},
         statusLine: 'BLE scan requested',
+      ),
+    );
+  }
+
+  Future<void> stopBleScan() async {
+    await sdk.stopBleScan();
+    _setState(_state.copyWith(statusLine: 'BLE scan stopped'));
+  }
+
+  Future<void> connectBle(String deviceId) async {
+    await sdk.connectBle(deviceId);
+    _setState(
+      _state.copyWith(
+        connection: EdgezConnectionType.ble,
+        statusLine:
+            'Connecting BLE ${_state.bleDevices[deviceId]?.label ?? deviceId}',
       ),
     );
   }
@@ -166,6 +209,17 @@ class EdgezMeshSession extends ChangeNotifier {
     switch (event.type) {
       case EdgezMeshEventType.connection:
         _setState(_state.copyWith(connection: event.connection));
+      case EdgezMeshEventType.bleDevice:
+        final device = event.bleDevice;
+        if (device == null || device.id.isEmpty) return;
+        final devices = Map<String, EdgezBleDevice>.of(_state.bleDevices);
+        devices[device.id] = device;
+        _setState(
+          _state.copyWith(
+            bleDevices: devices,
+            statusLine: 'Found ${device.label}',
+          ),
+        );
       case EdgezMeshEventType.status:
         _setState(_state.copyWith(status: event.status));
       case EdgezMeshEventType.node:
