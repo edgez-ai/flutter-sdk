@@ -6,8 +6,12 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothGattService
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -27,10 +31,21 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.ArrayDeque
 import java.util.UUID
 
 private const val BLE_PERMISSION_REQUEST = 9007
+private const val EDGEZ_HEADER_LEN = 4
+private const val EDGEZ_MAX_PAYLOAD = 512
+private const val EDGEZ_BLE_REQUESTED_MTU = 517
+private val EDGEZ_MAGIC_0 = 'E'.code.toByte()
+private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_RX_UUID: UUID = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_TX_UUID: UUID = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
+private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
 class EdgezFlutterSdkPlugin :
     FlutterPlugin,
@@ -46,9 +61,12 @@ class EdgezFlutterSdkPlugin :
     private var eventSink: EventChannel.EventSink? = null
     private var scanCallback: ScanCallback? = null
     private var gatt: BluetoothGatt? = null
+    private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var pendingScanResult: MethodChannel.Result? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
+    private val txQueue = ArrayDeque<ByteArray>()
+    private var txWriteInFlight = false
     private var scanGeneration = 0
 
     private val bluetoothAdapter: BluetoothAdapter?
@@ -122,9 +140,20 @@ class EdgezFlutterSdkPlugin :
                 result.success(null)
             }
             "initializeMesh" -> {
-                // Native reference: sendHaLowInit(country, meshId, passphrase, identity, maxHop).
-                emit(mapOf("type" to "log", "log" to "HaLow mesh init requested"))
-                result.success(null)
+                val packet = call.argument<ByteArray>("packet")
+                if (packet == null) {
+                    result.error("missing_packet", "Missing HaLow init packet", null)
+                    return
+                }
+                sendFrame(packet).fold(
+                    onSuccess = {
+                        emit(mapOf("type" to "log", "log" to "HaLow mesh init queued"))
+                        result.success(null)
+                    },
+                    onFailure = {
+                        result.error("ble_write_failed", it.message ?: "BLE write failed", null)
+                    },
+                )
             }
             "sendTextMessage" -> {
                 // Native reference: encryptConversationText + sendConversationMessage.
@@ -304,19 +333,148 @@ class EdgezFlutterSdkPlugin :
         stopBleScan()
         closeGatt()
         gatt = if (Build.VERSION.SDK_INT >= 23) {
-            device.connectGatt(context, false, object : BluetoothGattCallback() {}, BluetoothDevice.TRANSPORT_LE)
+            device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         } else {
-            device.connectGatt(context, false, object : BluetoothGattCallback() {})
+            device.connectGatt(context, false, gattCallback)
         }
-        emit(mapOf("type" to "connection", "connection" to "ble"))
         emit(mapOf("type" to "log", "log" to "Connecting BLE ${device.address}"))
         result.success(null)
     }
 
     @SuppressLint("MissingPermission")
     private fun closeGatt() {
+        rxCharacteristic = null
+        clearTxQueue()
         gatt?.close()
         gatt = null
+    }
+
+    private fun sendFrame(payload: ByteArray): Result<String> {
+        val activeGatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
+        val rx = rxCharacteristic ?: return Result.failure(IllegalStateException("BLE control service is not ready"))
+        if (payload.size > EDGEZ_MAX_PAYLOAD) {
+            return Result.failure(IllegalArgumentException("Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD"))
+        }
+
+        val tx = ByteBuffer.allocate(EDGEZ_HEADER_LEN + payload.size).order(ByteOrder.LITTLE_ENDIAN)
+        tx.put(EDGEZ_MAGIC_0)
+        tx.put(EDGEZ_MAGIC_1)
+        tx.putShort(payload.size.toShort())
+        tx.put(payload)
+
+        val frame = tx.array()
+        synchronized(this) {
+            txQueue.add(frame)
+        }
+        return if (writeNextFrame(activeGatt, rx)) {
+            Result.success("BLE queued protobuf")
+        } else {
+            synchronized(this) {
+                txQueue.remove(frame)
+            }
+            Result.failure(IllegalStateException("BLE write failed"))
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeNextFrame(
+        activeGatt: BluetoothGatt? = gatt,
+        writeCharacteristic: BluetoothGattCharacteristic? = rxCharacteristic,
+    ): Boolean {
+        val currentGatt = activeGatt ?: return false
+        val rx = writeCharacteristic ?: return false
+        val frame = synchronized(this) {
+            if (txWriteInFlight) return true
+            val nextFrame = txQueue.peekFirst() ?: return true
+            txWriteInFlight = true
+            nextFrame
+        }
+
+        val ok = if (Build.VERSION.SDK_INT >= 33) {
+            currentGatt.writeCharacteristic(rx, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
+        } else {
+            rx.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            rx.value = frame
+            currentGatt.writeCharacteristic(rx)
+        }
+        if (!ok) {
+            synchronized(this) {
+                txWriteInFlight = false
+            }
+        }
+        return ok
+    }
+
+    @Synchronized
+    private fun clearTxQueue() {
+        txQueue.clear()
+        txWriteInFlight = false
+    }
+
+    private val gattCallback = object : BluetoothGattCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            emit(mapOf("type" to "log", "log" to "BLE connection status=$status state=$newState"))
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                emit(mapOf("type" to "connection", "connection" to "ble"))
+                gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                rxCharacteristic = null
+                clearTxQueue()
+                emit(mapOf("type" to "connection", "connection" to "none"))
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            emit(mapOf("type" to "log", "log" to "BLE MTU mtu=$mtu status=$status"))
+            gatt.discoverServices()
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            emit(mapOf("type" to "log", "log" to "BLE services status=$status"))
+            val service: BluetoothGattService? = gatt.getService(EDGEZ_SERVICE_UUID)
+            val rx = service?.getCharacteristic(EDGEZ_RX_UUID)
+            val tx = service?.getCharacteristic(EDGEZ_TX_UUID)
+            if (rx == null || tx == null) {
+                emit(mapOf("type" to "log", "log" to "BLE service missing rx=${rx != null} tx=${tx != null}"))
+                return
+            }
+
+            rxCharacteristic = rx
+            gatt.setCharacteristicNotification(tx, true)
+            val descriptor = tx.getDescriptor(CCCD_UUID)
+            if (descriptor != null) {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                } else {
+                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    gatt.writeDescriptor(descriptor)
+                }
+            }
+            emit(mapOf("type" to "log", "log" to "BLE control service ready"))
+            writeNextFrame(gatt, rx)
+        }
+
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int,
+        ) {
+            synchronized(this@EdgezFlutterSdkPlugin) {
+                txWriteInFlight = false
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    txQueue.pollFirst()
+                } else {
+                    txQueue.clear()
+                }
+            }
+            emit(mapOf("type" to "log", "log" to "BLE TX complete status=$status queued=${synchronized(this@EdgezFlutterSdkPlugin) { txQueue.size }}"))
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                writeNextFrame(gatt, characteristic)
+            }
+        }
     }
 
     private fun emit(event: Map<String, Any?>) {

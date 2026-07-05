@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:fixnum/fixnum.dart';
 import 'package:flutter/services.dart';
 
 import 'models.dart';
+import 'proto/edgez_mesh.pb.dart' as proto;
 
 class EdgezMeshSdk {
   EdgezMeshSdk({
@@ -45,7 +47,30 @@ class EdgezMeshSdk {
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) {
-    return _methods.invokeMethod<void>('initializeMesh', config.toMap());
+    final packet = proto.NetworkPacket(
+      operation: proto.Operation.REQUEST,
+      interface: proto.Interface.HALOW,
+      userHigh: Int64(config.identity.userIdHigh),
+      userLow: Int64(config.identity.userIdLow),
+      init: proto.HaLowInitConfig(
+        countryCode: _take(config.countryCode.toUpperCase(), 2),
+        meshId: _take(config.meshId, 32),
+        passphrase: _take(config.passphrase, 64),
+        maxHop: config.maxHop.clamp(0, 255),
+        userIdHigh: Int64(config.identity.userIdHigh),
+        userIdLow: Int64(config.identity.userIdLow),
+        userName: _take(config.identity.name, 64),
+        userPublicKey: config.identity.publicKey.take(32).toList(),
+      ),
+    );
+    return _methods.invokeMethod<void>('initializeMesh', {
+      ...config.toMap(),
+      'packet': Uint8List.fromList(packet.writeToBuffer()),
+    });
+  }
+
+  String _take(String value, int maxLength) {
+    return value.length > maxLength ? value.substring(0, maxLength) : value;
   }
 
   Future<String> sendTextMessage({

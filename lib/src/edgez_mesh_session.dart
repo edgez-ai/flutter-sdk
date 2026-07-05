@@ -154,8 +154,12 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) async {
-    await sdk.initializeMesh(config);
-    _setState(_state.copyWith(statusLine: 'User mesh settings saved'));
+    try {
+      await sdk.initializeMesh(config);
+      _setState(_state.copyWith(statusLine: 'User mesh settings sent'));
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Save settings failed: $error'));
+    }
   }
 
   Future<void> sendDeviceSettings(Map<String, Object?> settings) async {
