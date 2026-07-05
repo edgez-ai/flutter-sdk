@@ -17,8 +17,8 @@ class EdgezMeshSdk {
   Stream<EdgezMeshEvent>? _meshEvents;
 
   Stream<EdgezMeshEvent> get events {
-    return _meshEvents ??= _events.receiveBroadcastStream().whereType<Map>().map(
-          (event) => EdgezMeshEvent.fromMap(event.cast<Object?, Object?>()),
+    return _meshEvents ??= _events.receiveBroadcastStream().where((event) => event is Map).map(
+          (event) => EdgezMeshEvent.fromMap((event as Map).cast<Object?, Object?>()),
         );
   }
 

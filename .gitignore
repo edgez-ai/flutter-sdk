@@ -3,3 +3,4 @@ example/.idea/
 example/android/.gradle/
 example/.flutter-plugins-dependencies
 example/build
+example/android/build/
