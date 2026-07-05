@@ -45,3 +45,14 @@ cd example
 flutter pub get
 flutter run
 ```
+
+## Protobuf Stubs
+
+The SDK keeps the mesh control protobuf schema in `protos/edgez_mesh.proto` and commits the generated Dart stubs under `lib/src/proto/`.
+
+Regenerate the stubs after changing the schema:
+
+```sh
+dart pub get
+tool/generate_protos.sh
+```

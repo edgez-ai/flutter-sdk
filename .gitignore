@@ -1,3 +1,5 @@
+/.dart_tool/
+/pubspec.lock
 example/.dart_tool/
 example/.idea/
 example/android/.gradle/
