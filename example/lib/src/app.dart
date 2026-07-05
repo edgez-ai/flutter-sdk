@@ -49,7 +49,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool autoReplayReceivedVoice = false;
   bool deviceModeEnabled = false;
 
-  String meshCountry = 'EU';
+  String meshCountry = 'US';
   String meshId = 'edgez';
   String passphrase = '';
   String maxHop = '4';
