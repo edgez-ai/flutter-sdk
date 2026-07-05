@@ -109,29 +109,41 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> startBleScan() async {
-    await sdk.startBleScan();
-    _setState(
-      _state.copyWith(
-        bleDevices: const <String, EdgezBleDevice>{},
-        statusLine: 'BLE scan requested',
-      ),
-    );
+    try {
+      await sdk.startBleScan();
+      _setState(
+        _state.copyWith(
+          bleDevices: const <String, EdgezBleDevice>{},
+          statusLine: 'BLE scan requested',
+        ),
+      );
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'BLE scan failed: $error'));
+    }
   }
 
   Future<void> stopBleScan() async {
-    await sdk.stopBleScan();
-    _setState(_state.copyWith(statusLine: 'BLE scan stopped'));
+    try {
+      await sdk.stopBleScan();
+      _setState(_state.copyWith(statusLine: 'BLE scan stopped'));
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'BLE stop scan failed: $error'));
+    }
   }
 
   Future<void> connectBle(String deviceId) async {
-    await sdk.connectBle(deviceId);
-    _setState(
-      _state.copyWith(
-        connection: EdgezConnectionType.ble,
-        statusLine:
-            'Connecting BLE ${_state.bleDevices[deviceId]?.label ?? deviceId}',
-      ),
-    );
+    try {
+      await sdk.connectBle(deviceId);
+      _setState(
+        _state.copyWith(
+          connection: EdgezConnectionType.ble,
+          statusLine:
+              'Connecting BLE ${_state.bleDevices[deviceId]?.label ?? deviceId}',
+        ),
+      );
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'BLE connect failed: $error'));
+    }
   }
 
   Future<void> disconnect() async {

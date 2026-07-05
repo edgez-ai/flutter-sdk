@@ -9,13 +9,13 @@ import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.ParcelUuid
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -24,10 +24,8 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
-import java.util.UUID
 
 private const val BLE_PERMISSION_REQUEST = 9007
-private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
 
 class EdgezFlutterSdkPlugin :
     FlutterPlugin,
@@ -44,6 +42,7 @@ class EdgezFlutterSdkPlugin :
     private var scanCallback: ScanCallback? = null
     private var gatt: BluetoothGatt? = null
     private var pendingScanResult: MethodChannel.Result? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
 
     private val bluetoothAdapter: BluetoothAdapter?
@@ -145,7 +144,7 @@ class EdgezFlutterSdkPlugin :
         if (requestCode != BLE_PERMISSION_REQUEST) return false
         val result = pendingScanResult ?: return true
         pendingScanResult = null
-        if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
             startBleScan(result)
         } else {
             result.error("ble_permission_denied", "BLE permission denied", null)
@@ -177,14 +176,23 @@ class EdgezFlutterSdkPlugin :
         }
         pendingScanResult = result
         currentActivity.requestPermissions(requiredBlePermissions(), BLE_PERMISSION_REQUEST)
-        emit(mapOf("type" to "log", "log" to "Requesting BLE permission"))
+        emit(mapOf("type" to "log", "log" to "Requesting BLE permission: ${requiredBlePermissions().joinToString()}"))
         return true
     }
 
     @SuppressLint("MissingPermission")
     private fun startBleScan(result: MethodChannel.Result) {
         if (requestBlePermissions(result)) return
-        val scanner = bluetoothAdapter?.bluetoothLeScanner
+        val adapter = bluetoothAdapter
+        if (adapter == null) {
+            result.error("ble_unavailable", "Bluetooth unavailable", null)
+            return
+        }
+        if (!adapter.isEnabled) {
+            result.error("ble_disabled", "Bluetooth is disabled", null)
+            return
+        }
+        val scanner = adapter.bluetoothLeScanner
         if (scanner == null) {
             result.error("ble_scanner_unavailable", "BLE scanner unavailable", null)
             return
@@ -205,14 +213,11 @@ class EdgezFlutterSdkPlugin :
                 emit(mapOf("type" to "log", "log" to "BLE scan failed=$errorCode"))
             }
         }
-        val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(EDGEZ_SERVICE_UUID))
-            .build()
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
         scanCallback = callback
-        scanner.startScan(listOf(filter), settings, callback)
+        scanner.startScan(null, settings, callback)
         emit(mapOf("type" to "log", "log" to "BLE scan started"))
         result.success(null)
     }
@@ -275,6 +280,8 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun emit(event: Map<String, Any?>) {
-        eventSink?.success(event)
+        mainHandler.post {
+            eventSink?.success(event)
+        }
     }
 }
