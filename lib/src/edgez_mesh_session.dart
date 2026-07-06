@@ -117,6 +117,8 @@ class EdgezMeshSession extends ChangeNotifier {
   var _beaconSendInFlight = false;
   String? _lastInitKey;
   Timer? _beaconTimer;
+  final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
+      <String, _PendingVoiceMessage>{};
 
   EdgezMeshState get state => _state;
 
@@ -258,8 +260,15 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  void addVoicePlaceholder({required int toNode}) {
-    if (!(_state.nodes[toNode]?.opensConversation ?? false)) {
+  Future<void> sendVoiceMessage({
+    required int toNode,
+    required List<int> bytes,
+    required int durationMs,
+    required int codec,
+    int maxHop = 0,
+  }) async {
+    final node = _state.nodes[toNode];
+    if (!(node?.opensConversation ?? false)) {
       _setState(
         _state.copyWith(
           statusLine: 'Only user nodes can receive voice messages',
@@ -267,13 +276,68 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       return;
     }
+    final permitted = await sdk.requestMicrophonePermission();
+    if (!permitted) {
+      _setState(_state.copyWith(statusLine: 'Microphone permission denied'));
+      return;
+    }
+    final pendingUuid =
+        'pending-voice-${DateTime.now().microsecondsSinceEpoch}-$toNode';
     _appendMessage(
       EdgezConversationMessage(
         nodeNum: toNode,
         text: 'Voice message',
         mine: true,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
+        messageUuid: pendingUuid,
+        status: 'Queued',
+      ),
+      statusLine: 'Voice message queued',
+    );
+    final config = _lastMeshConfig;
+    final fromNode = _state.status?.macAddress ?? 0;
+    if (config == null || fromNode == 0) {
+      _replaceMessage(
+        pendingUuid,
+        status: 'Failed: save settings and wait for mesh status',
+        statusLine: 'Save settings and wait for mesh status',
+      );
+      return;
+    }
+    try {
+      final messageUuid = await sdk.sendVoiceMessage(
+        config: config,
+        toNode: node!,
+        fromNode: fromNode,
+        bytes: bytes,
+        durationMs: durationMs,
+        codec: codec,
+        maxHop: maxHop,
+      );
+      _replaceMessage(
+        pendingUuid,
+        messageUuid: messageUuid,
         status: 'Voice sent via ${_state.connection.name.toUpperCase()}',
+        statusLine: 'Voice message sent',
+      );
+    } catch (error) {
+      _replaceMessage(
+        pendingUuid,
+        status: 'Failed: $error',
+        statusLine: 'Voice send failed: $error',
+      );
+    }
+  }
+
+  Future<void> addVoicePlaceholder({required int toNode}) async {
+    final permitted = await sdk.requestMicrophonePermission();
+    if (!permitted) {
+      _setState(_state.copyWith(statusLine: 'Microphone permission denied'));
+      return;
+    }
+    _setState(
+      _state.copyWith(
+        statusLine: 'Microphone ready; example recorder is not implemented',
       ),
     );
   }
@@ -448,7 +512,11 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       return;
     }
-    if (!packet.hasPayload() || packet.mime != proto.Mime.MIME_TEXT) return;
+    if (!packet.hasPayload()) return;
+    if (packet.mime != proto.Mime.MIME_TEXT &&
+        packet.mime != proto.Mime.MIME_VOICE) {
+      return;
+    }
     final config = _lastMeshConfig;
     final fromNode = packet.from.toInt();
     final toNode = packet.to.toInt();
@@ -458,17 +526,44 @@ class EdgezMeshSession extends ChangeNotifier {
     final now = DateTime.now().millisecondsSinceEpoch;
     final messageUuid =
         _formatUuid(packet.messageIdHigh.toInt(), packet.messageIdLow.toInt());
-    final text = sender == null
-        ? 'Unable to decrypt message'
-        : await sdk
-            .decryptTextMessage(
-              config: config,
-              sender: sender,
-              fromNode: fromNode,
-              toNode: toNode,
-              payload: packet.payload,
-            )
-            .catchError((Object error) => 'Unable to decrypt message');
+    String? text;
+    String status = '';
+    if (sender == null) {
+      text = 'Unable to decrypt message';
+      status = 'Sender public key is missing';
+    } else if (packet.mime == proto.Mime.MIME_TEXT) {
+      try {
+        text = await sdk.decryptTextMessage(
+          config: config,
+          sender: sender,
+          fromNode: fromNode,
+          toNode: toNode,
+          payload: packet.payload,
+        );
+      } catch (error) {
+        status = error.toString();
+        text = 'Unable to decrypt message';
+      }
+    } else {
+      EdgezVoiceChunk? chunk;
+      try {
+        chunk = await sdk.decryptVoiceChunk(
+          config: config,
+          sender: sender,
+          fromNode: fromNode,
+          toNode: toNode,
+          payload: packet.payload,
+        );
+      } catch (error) {
+        status = error.toString();
+      }
+      if (chunk == null) {
+        text = 'Unable to decrypt voice message';
+      } else {
+        text = _storeVoiceChunk(fromNode, chunk);
+        if (text == null) return;
+      }
+    }
 
     final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
     nodes.putIfAbsent(
@@ -486,14 +581,11 @@ class EdgezMeshSession extends ChangeNotifier {
     _appendMessage(
       EdgezConversationMessage(
         nodeNum: fromNode,
-        text: text,
+        text: text ?? 'Voice message',
         mine: false,
         timestampMs: now,
         messageUuid: messageUuid,
-        status: text == 'Unable to decrypt message' &&
-                sender?.publicKey.isEmpty != false
-            ? 'Sender public key is missing'
-            : '',
+        status: status,
       ),
       nodes: nodes,
       statusLine: 'Conversation message received',
@@ -514,6 +606,18 @@ class EdgezMeshSession extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  String? _storeVoiceChunk(int nodeNum, EdgezVoiceChunk chunk) {
+    final key = '$nodeNum:${chunk.groupId}';
+    final pending = _pendingVoiceMessages.putIfAbsent(
+      key,
+      () => _PendingVoiceMessage(totalChunks: chunk.totalChunks),
+    );
+    pending.put(chunk.index, chunk.audio);
+    if (!pending.complete) return null;
+    _pendingVoiceMessages.remove(key);
+    return 'Voice message';
   }
 
   void _markMessageDelivered(String messageUuid) {
@@ -773,7 +877,24 @@ class EdgezMeshSession extends ChangeNotifier {
   @override
   void dispose() {
     _stopBeaconLoop();
+    _pendingVoiceMessages.clear();
     _subscription.cancel();
     super.dispose();
   }
+}
+
+class _PendingVoiceMessage {
+  _PendingVoiceMessage({
+    required int totalChunks,
+  }) : chunks = List<List<int>?>.filled(totalChunks, null);
+
+  final List<List<int>?> chunks;
+
+  void put(int index, List<int> audio) {
+    if (index >= 0 && index < chunks.length) {
+      chunks[index] = List<int>.from(audio);
+    }
+  }
+
+  bool get complete => chunks.every((chunk) => chunk != null);
 }

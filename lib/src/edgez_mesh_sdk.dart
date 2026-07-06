@@ -21,6 +21,7 @@ class EdgezMeshSdk {
 
   final MethodChannel _methods;
   final EventChannel _events;
+  static const _voiceChunkAudioBytes = 290;
 
   Stream<EdgezMeshEvent>? _meshEvents;
 
@@ -48,6 +49,11 @@ class EdgezMeshSdk {
 
   Future<void> disconnect() {
     return _methods.invokeMethod<void>('disconnect');
+  }
+
+  Future<bool> requestMicrophonePermission() async {
+    return await _methods.invokeMethod<bool>('requestMicrophonePermission') ??
+        false;
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) {
@@ -210,11 +216,11 @@ class EdgezMeshSdk {
     int maxHop = 0,
   }) async {
     final messageId = _newMessageId();
-    final encrypted = await _encryptConversationText(
+    final encrypted = await _encryptConversationPayload(
       identity: config.identity,
       recipient: toNode,
       fromNode: fromNode,
-      text: text,
+      plaintext: utf8.encode(text),
     );
     final packet = proto.NetworkPacket(
       messageIdHigh: Int64(messageId.$1),
@@ -259,6 +265,86 @@ class EdgezMeshSdk {
     return utf8.decode(plaintext);
   }
 
+  Future<String> sendVoiceMessage({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode toNode,
+    required int fromNode,
+    required List<int> bytes,
+    required int durationMs,
+    required int codec,
+    int maxHop = 0,
+  }) async {
+    if (bytes.isEmpty) {
+      throw StateError('Voice payload is empty');
+    }
+    final messageId = _newMessageId();
+    final groupId = _newSignedInt64();
+    final totalChunks = (bytes.length / _voiceChunkAudioBytes).ceil();
+    for (var index = 0; index < totalChunks; index++) {
+      final start = index * _voiceChunkAudioBytes;
+      final end = min(start + _voiceChunkAudioBytes, bytes.length);
+      final voiceChunk = _encodeVoiceChunk(
+        groupId: groupId,
+        durationMs: durationMs,
+        totalChunks: totalChunks,
+        index: index,
+        codec: codec,
+        audio: bytes.sublist(start, end),
+      );
+      final encrypted = await _encryptConversationPayload(
+        identity: config.identity,
+        recipient: toNode,
+        fromNode: fromNode,
+        plaintext: voiceChunk,
+      );
+      final packet = proto.NetworkPacket(
+        messageIdHigh: Int64(messageId.$1),
+        messageIdLow: Int64(messageId.$2),
+        from: Int64(fromNode),
+        to: Int64(toNode.nodeNum),
+        operation: proto.Operation.REQUEST,
+        interface: proto.Interface.HALOW,
+        sequence: index + 1,
+        userHigh: Int64(config.identity.userIdHigh),
+        userLow: Int64(config.identity.userIdLow),
+        mime: proto.Mime.MIME_VOICE,
+        maxHop: maxHop.clamp(0, 255),
+        payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
+      );
+      await _methods.invokeMethod<void>('sendPacket', {
+        'label': 'Voice chunk ${index + 1}/$totalChunks',
+        'packet': Uint8List.fromList(packet.writeToBuffer()),
+      });
+    }
+    return _formatUuid(messageId.$1, messageId.$2);
+  }
+
+  Future<EdgezVoiceChunk> decryptVoiceChunk({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode sender,
+    required int fromNode,
+    required int toNode,
+    required List<int> payload,
+  }) async {
+    final parsed = _parseConversationPayload(payload);
+    if (parsed == null) {
+      throw StateError('Conversation voice payload is missing');
+    }
+    final plaintext = await _decryptConversationPayload(
+      identity: config.identity,
+      sender: sender,
+      fromNode: fromNode,
+      toNode: toNode,
+      nonce: parsed.nonce,
+      ciphertext: parsed.ciphertext,
+    );
+    final chunk = _decodeVoiceChunk(plaintext);
+    if (chunk == null) {
+      throw StateError('Voice chunk is malformed');
+    }
+    return chunk;
+  }
+
   Future<void> sendConversationAck({
     required EdgezMeshConfig config,
     required int fromNode,
@@ -285,11 +371,11 @@ class EdgezMeshSdk {
     });
   }
 
-  Future<_ConversationPayload> _encryptConversationText({
+  Future<_ConversationPayload> _encryptConversationPayload({
     required EdgezUserIdentity identity,
     required EdgezMeshNode recipient,
     required int fromNode,
-    required String text,
+    required List<int> plaintext,
   }) async {
     if (identity.privateKey.length != 32 || identity.publicKey.length != 32) {
       throw StateError('Local user key pair is missing');
@@ -306,7 +392,7 @@ class EdgezMeshSdk {
       peerPublicKey: recipient.publicKey,
     );
     final secretBox = await AesGcm.with256bits().encrypt(
-      utf8.encode(text),
+      plaintext,
       secretKey: key,
       nonce: nonce,
       aad: _conversationAad(fromNode, recipient.nodeNum, nonce),
@@ -317,6 +403,54 @@ class EdgezMeshSdk {
         ...secretBox.cipherText,
         ...secretBox.mac.bytes,
       ],
+    );
+  }
+
+  List<int> _encodeVoiceChunk({
+    required int groupId,
+    required int durationMs,
+    required int totalChunks,
+    required int index,
+    required int codec,
+    required List<int> audio,
+  }) {
+    final data = ByteData(3 + 8 + 4 + 2 + 2 + 1 + audio.length);
+    final out = data.buffer.asUint8List();
+    out[0] = 0x45;
+    out[1] = 0x56;
+    out[2] = 0x32;
+    data.setInt64(3, groupId, Endian.little);
+    data.setInt32(11, durationMs.clamp(0, 0x7fffffff).toInt(), Endian.little);
+    data.setUint16(15, totalChunks.clamp(0, 0xffff).toInt(), Endian.little);
+    data.setUint16(17, index.clamp(0, 0xffff).toInt(), Endian.little);
+    data.setUint8(19, codec.clamp(0, 0xff).toInt());
+    out.setRange(20, 20 + audio.length, audio);
+    return out;
+  }
+
+  EdgezVoiceChunk? _decodeVoiceChunk(List<int> payload) {
+    if (payload.length < 20) return null;
+    if (payload[0] != 0x45 || payload[1] != 0x56 || payload[2] != 0x32) {
+      return null;
+    }
+    final data = ByteData.sublistView(Uint8List.fromList(payload));
+    final groupId = data.getInt64(3, Endian.little);
+    final durationMs =
+        data.getInt32(11, Endian.little).clamp(0, 0x7fffffff).toInt();
+    final totalChunks = data.getUint16(15, Endian.little);
+    final index = data.getUint16(17, Endian.little);
+    final codec = data.getUint8(19);
+    final audio = payload.sublist(20);
+    if (totalChunks <= 0 || index >= totalChunks || audio.isEmpty) {
+      return null;
+    }
+    return EdgezVoiceChunk(
+      groupId: groupId,
+      durationMs: durationMs,
+      totalChunks: totalChunks,
+      index: index,
+      codec: codec,
+      audio: audio,
     );
   }
 
@@ -419,12 +553,23 @@ class EdgezMeshSdk {
   }
 
   (int, int) _newMessageId() {
+    final value = _newUuidBytes();
+    final data = ByteData.sublistView(Uint8List.fromList(value));
+    return (data.getInt64(0), data.getInt64(8));
+  }
+
+  int _newSignedInt64() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(8, (_) => random.nextInt(256));
+    return ByteData.sublistView(Uint8List.fromList(bytes)).getInt64(0);
+  }
+
+  List<int> _newUuidBytes() {
     final random = Random.secure();
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final data = ByteData.sublistView(Uint8List.fromList(bytes));
-    return (data.getInt64(0), data.getInt64(8));
+    return bytes;
   }
 
   String _formatUuid(int high, int low) {
@@ -506,23 +651,6 @@ class EdgezMeshSdk {
       shift += 7;
     }
     return null;
-  }
-
-  Future<String> sendVoiceMessage({
-    required int toNode,
-    required List<int> bytes,
-    required int durationMs,
-    required int codec,
-    int maxHop = 0,
-  }) async {
-    final result = await _methods.invokeMethod<String>('sendVoiceMessage', {
-      'toNode': toNode,
-      'bytes': Uint8List.fromList(bytes),
-      'durationMs': durationMs,
-      'codec': codec,
-      'maxHop': maxHop,
-    });
-    return result ?? '';
   }
 
   Future<void> sendDeviceSettings(Map<String, Object?> settings) {

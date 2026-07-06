@@ -37,6 +37,7 @@ import java.util.ArrayDeque
 import java.util.UUID
 
 private const val BLE_PERMISSION_REQUEST = 9007
+private const val MICROPHONE_PERMISSION_REQUEST = 9008
 private const val EDGEZ_HEADER_LEN = 4
 private const val EDGEZ_MAX_PAYLOAD = 512
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
@@ -64,6 +65,7 @@ class EdgezFlutterSdkPlugin :
     private var gatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var pendingScanResult: MethodChannel.Result? = null
+    private var pendingMicrophoneResult: MethodChannel.Result? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
@@ -136,6 +138,7 @@ class EdgezFlutterSdkPlugin :
                 val deviceId = call.argument<String>("deviceId").orEmpty()
                 connectBle(deviceId, result)
             }
+            "requestMicrophonePermission" -> requestMicrophonePermission(result)
             "disconnect" -> {
                 stopBleScan()
                 closeGatt()
@@ -196,16 +199,48 @@ class EdgezFlutterSdkPlugin :
         permissions: Array<out String>,
         grantResults: IntArray,
     ): Boolean {
-        if (requestCode != BLE_PERMISSION_REQUEST) return false
-        val result = pendingScanResult ?: return true
-        pendingScanResult = null
-        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-            startBleScan(result)
-        } else {
-            result.error("ble_permission_denied", "BLE permission denied", null)
-            emit(mapOf("type" to "log", "log" to "BLE permission denied"))
+        when (requestCode) {
+            BLE_PERMISSION_REQUEST -> {
+                val result = pendingScanResult ?: return true
+                pendingScanResult = null
+                if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                    startBleScan(result)
+                } else {
+                    result.error("ble_permission_denied", "BLE permission denied", null)
+                    emit(mapOf("type" to "log", "log" to "BLE permission denied"))
+                }
+                return true
+            }
+            MICROPHONE_PERMISSION_REQUEST -> {
+                val result = pendingMicrophoneResult ?: return true
+                pendingMicrophoneResult = null
+                val granted = grantResults.isNotEmpty() &&
+                    grantResults[0] == PackageManager.PERMISSION_GRANTED
+                emit(mapOf("type" to "log", "log" to if (granted) "Microphone permission granted" else "Microphone permission denied"))
+                result.success(granted)
+                return true
+            }
+            else -> return false
         }
-        return true
+    }
+
+    private fun requestMicrophonePermission(result: MethodChannel.Result) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            result.success(true)
+            return
+        }
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.success(false)
+            emit(mapOf("type" to "log", "log" to "Microphone permission requires an activity"))
+            return
+        }
+        pendingMicrophoneResult = result
+        currentActivity.requestPermissions(
+            arrayOf(Manifest.permission.RECORD_AUDIO),
+            MICROPHONE_PERMISSION_REQUEST,
+        )
+        emit(mapOf("type" to "log", "log" to "Requesting microphone permission"))
     }
 
     private fun requiredBlePermissions(): Array<String> {

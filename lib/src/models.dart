@@ -365,6 +365,24 @@ class EdgezConversationMessage {
   }
 }
 
+class EdgezVoiceChunk {
+  const EdgezVoiceChunk({
+    required this.groupId,
+    required this.durationMs,
+    required this.totalChunks,
+    required this.index,
+    required this.codec,
+    required this.audio,
+  });
+
+  final int groupId;
+  final int durationMs;
+  final int totalChunks;
+  final int index;
+  final int codec;
+  final List<int> audio;
+}
+
 class EdgezMeshEvent {
   const EdgezMeshEvent({
     required this.type,
