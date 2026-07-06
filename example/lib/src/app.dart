@@ -331,10 +331,20 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     );
   }
 
-  void _sendVoicePlaceholder() {
+  Future<bool> _startVoiceMessage() {
+    return session.startVoiceRecording();
+  }
+
+  Future<void> _stopVoiceMessage(bool send) async {
     final nodeNum = selectedNodeNum;
-    if (nodeNum == null) return;
-    session.addVoicePlaceholder(toNode: nodeNum);
+    if (!send || nodeNum == null) {
+      await session.cancelVoiceRecording();
+      return;
+    }
+    await session.stopAndSendVoiceMessage(
+      toNode: nodeNum,
+      maxHop: int.tryParse(maxHop) ?? 0,
+    );
   }
 
   @override
@@ -363,7 +373,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                           const <EdgezConversationMessage>[],
                       onBack: () => setState(() => selectedNodeNum = null),
                       onSendMessage: _sendMessage,
-                      onSendVoiceMessage: _sendVoicePlaceholder,
+                      onStartVoiceMessage: _startVoiceMessage,
+                      onStopVoiceMessage: _stopVoiceMessage,
                       onReplayVoiceMessage: session.playVoiceMessage,
                     )
                   : DeviceDetailScreen(

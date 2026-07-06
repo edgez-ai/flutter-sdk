@@ -359,7 +359,8 @@ class EdgezConversationMessage {
   final int voiceCodec;
   final int durationMs;
 
-  bool get isVoice => voiceBytes.isNotEmpty || voiceCodec != 0 || durationMs > 0;
+  bool get isVoice =>
+      voiceBytes.isNotEmpty || voiceCodec != 0 || durationMs > 0;
 
   factory EdgezConversationMessage.fromMap(Map<Object?, Object?> map) {
     return EdgezConversationMessage(
@@ -394,6 +395,18 @@ class EdgezVoiceChunk {
   final int index;
   final int codec;
   final List<int> audio;
+}
+
+class EdgezVoiceRecording {
+  const EdgezVoiceRecording({
+    required this.bytes,
+    required this.durationMs,
+    required this.codec,
+  });
+
+  final List<int> bytes;
+  final int durationMs;
+  final int codec;
 }
 
 class EdgezMeshEvent {

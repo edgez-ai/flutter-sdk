@@ -276,11 +276,6 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       return;
     }
-    final permitted = await sdk.requestMicrophonePermission();
-    if (!permitted) {
-      _setState(_state.copyWith(statusLine: 'Microphone permission denied'));
-      return;
-    }
     final pendingUuid =
         'pending-voice-${DateTime.now().microsecondsSinceEpoch}-$toNode';
     _appendMessage(
@@ -291,6 +286,9 @@ class EdgezMeshSession extends ChangeNotifier {
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         messageUuid: pendingUuid,
         status: 'Queued',
+        voiceBytes: bytes,
+        voiceCodec: codec,
+        durationMs: durationMs,
       ),
       statusLine: 'Voice message queued',
     );
@@ -329,17 +327,52 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<bool> startVoiceRecording() async {
+    try {
+      await sdk.startVoiceRecording();
+      _setState(_state.copyWith(statusLine: 'Recording voice message'));
+      return true;
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Voice recording failed: $error'));
+      return false;
+    }
+  }
+
+  Future<void> cancelVoiceRecording() async {
+    try {
+      await sdk.stopVoiceRecording(send: false);
+      _setState(_state.copyWith(statusLine: 'Voice recording cancelled'));
+    } catch (error) {
+      _setState(
+          _state.copyWith(statusLine: 'Voice recording cancel failed: $error'));
+    }
+  }
+
+  Future<void> stopAndSendVoiceMessage({
+    required int toNode,
+    int maxHop = 0,
+  }) async {
+    final recording = await sdk.stopVoiceRecording();
+    if (recording == null || recording.bytes.isEmpty) {
+      _setState(_state.copyWith(statusLine: 'Voice recording was too short'));
+      return;
+    }
+    await sendVoiceMessage(
+      toNode: toNode,
+      bytes: recording.bytes,
+      durationMs: recording.durationMs,
+      codec: recording.codec,
+      maxHop: maxHop,
+    );
+  }
+
   Future<void> addVoicePlaceholder({required int toNode}) async {
-    final permitted = await sdk.requestMicrophonePermission();
-    if (!permitted) {
+    final started = await startVoiceRecording();
+    if (!started) {
       _setState(_state.copyWith(statusLine: 'Microphone permission denied'));
       return;
     }
-    _setState(
-      _state.copyWith(
-        statusLine: 'Microphone ready; example recorder is not implemented',
-      ),
-    );
+    await cancelVoiceRecording();
   }
 
   Future<void> playVoiceMessage(EdgezConversationMessage message) async {
@@ -926,8 +959,7 @@ class _PendingVoiceMessage {
   _CompletedVoiceMessage completed() {
     return _CompletedVoiceMessage(
       bytes: <int>[
-        for (final chunk in chunks)
-          ...?chunk,
+        for (final chunk in chunks) ...?chunk,
       ],
       codec: codec,
       durationMs: durationMs,

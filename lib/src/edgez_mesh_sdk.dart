@@ -56,6 +56,29 @@ class EdgezMeshSdk {
         false;
   }
 
+  Future<void> startVoiceRecording() async {
+    final permitted = await requestMicrophonePermission();
+    if (!permitted) {
+      throw StateError('Microphone permission denied');
+    }
+    await _methods.invokeMethod<void>('startVoiceRecording');
+  }
+
+  Future<EdgezVoiceRecording?> stopVoiceRecording({bool send = true}) async {
+    final result = await _methods.invokeMethod<Object?>(
+      'stopVoiceRecording',
+      {'send': send},
+    );
+    if (result is! Map) return null;
+    final map = result.cast<Object?, Object?>();
+    final bytes = map['bytes'];
+    return EdgezVoiceRecording(
+      bytes: bytes is List ? List<int>.from(bytes) : const <int>[],
+      durationMs: map['durationMs'] as int? ?? 0,
+      codec: map['codec'] as int? ?? 0,
+    );
+  }
+
   Future<void> playVoiceMessage(EdgezConversationMessage message) {
     if (message.voiceBytes.isEmpty) {
       throw StateError('Voice message has no audio bytes');

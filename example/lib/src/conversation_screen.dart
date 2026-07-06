@@ -10,7 +10,8 @@ class ConversationScreen extends StatefulWidget {
     required this.messages,
     required this.onBack,
     required this.onSendMessage,
-    required this.onSendVoiceMessage,
+    required this.onStartVoiceMessage,
+    required this.onStopVoiceMessage,
     required this.onReplayVoiceMessage,
     super.key,
   });
@@ -20,7 +21,8 @@ class ConversationScreen extends StatefulWidget {
   final List<EdgezConversationMessage> messages;
   final VoidCallback onBack;
   final ValueChanged<String> onSendMessage;
-  final VoidCallback onSendVoiceMessage;
+  final Future<bool> Function() onStartVoiceMessage;
+  final Future<void> Function(bool send) onStopVoiceMessage;
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
 
   @override
@@ -31,11 +33,48 @@ class _ConversationScreenState extends State<ConversationScreen> {
   final TextEditingController controller = TextEditingController();
   String status = '';
   bool recording = false;
+  bool voicePressed = false;
+  bool voiceStarting = false;
 
   @override
   void dispose() {
     controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _startVoicePress() async {
+    if (voiceStarting || recording) return;
+    voicePressed = true;
+    voiceStarting = true;
+    setState(() => status = 'Requesting microphone');
+    final started = await widget.onStartVoiceMessage();
+    if (!mounted) return;
+    voiceStarting = false;
+    if (!voicePressed) {
+      if (started) await widget.onStopVoiceMessage(false);
+      if (mounted) setState(() => recording = false);
+      return;
+    }
+    setState(() {
+      recording = started;
+      status = started ? 'Recording' : 'Microphone permission denied';
+    });
+  }
+
+  Future<void> _finishVoicePress({required bool send}) async {
+    voicePressed = false;
+    final shouldSend = send && recording;
+    if (voiceStarting) {
+      setState(() => status = send ? 'Starting voice' : 'Voice cancelled');
+      return;
+    }
+    setState(() {
+      recording = false;
+      status = shouldSend ? 'Sending voice' : 'Voice cancelled';
+    });
+    await widget.onStopVoiceMessage(shouldSend);
+    if (!mounted) return;
+    if (shouldSend) setState(() => status = 'Voice sent');
   }
 
   @override
@@ -158,17 +197,12 @@ class _ConversationScreenState extends State<ConversationScreen> {
             ),
             const SizedBox(height: 12),
             GestureDetector(
-              onLongPressStart:
-                  canSendVoice ? (_) => setState(() => recording = true) : null,
-              onLongPressEnd: canSendVoice
-                  ? (_) {
-                      setState(() {
-                        recording = false;
-                        status = 'Voice sent';
-                      });
-                      widget.onSendVoiceMessage();
-                    }
-                  : null,
+              behavior: HitTestBehavior.opaque,
+              onTapDown: canSendVoice ? (_) => _startVoicePress() : null,
+              onTapUp:
+                  canSendVoice ? (_) => _finishVoicePress(send: true) : null,
+              onTapCancel:
+                  canSendVoice ? () => _finishVoicePress(send: false) : null,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),

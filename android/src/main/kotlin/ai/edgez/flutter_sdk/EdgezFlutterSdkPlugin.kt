@@ -20,6 +20,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -32,14 +33,15 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.ArrayDeque
 import java.util.UUID
-import java.io.File
 
 private const val BLE_PERMISSION_REQUEST = 9007
 private const val MICROPHONE_PERMISSION_REQUEST = 9008
+private const val VOICE_CODEC_AMR_NB = 1
 private const val VOICE_CODEC_OPUS = 2
 private const val EDGEZ_HEADER_LEN = 4
 private const val EDGEZ_MAX_PAYLOAD = 512
@@ -70,6 +72,10 @@ class EdgezFlutterSdkPlugin :
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingMicrophoneResult: MethodChannel.Result? = null
     private var voicePlayer: MediaPlayer? = null
+    private var voiceRecorder: MediaRecorder? = null
+    private var voiceRecordingFile: File? = null
+    private var voiceRecordingCodec: Int = VOICE_CODEC_AMR_NB
+    private var voiceRecordingStartedAtMs: Long = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
@@ -92,6 +98,9 @@ class EdgezFlutterSdkPlugin :
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         stopBleScan()
         closeGatt()
+        discardVoiceRecording()
+        voicePlayer?.release()
+        voicePlayer = null
         methods.setMethodCallHandler(null)
         events.setStreamHandler(null)
         eventSink = null
@@ -143,6 +152,11 @@ class EdgezFlutterSdkPlugin :
                 connectBle(deviceId, result)
             }
             "requestMicrophonePermission" -> requestMicrophonePermission(result)
+            "startVoiceRecording" -> startVoiceRecording(result)
+            "stopVoiceRecording" -> {
+                val send = call.argument<Boolean>("send") ?: true
+                stopVoiceRecording(send, result)
+            }
             "playVoiceMessage" -> playVoiceMessage(call, result)
             "disconnect" -> {
                 stopBleScan()
@@ -246,6 +260,112 @@ class EdgezFlutterSdkPlugin :
             MICROPHONE_PERMISSION_REQUEST,
         )
         emit(mapOf("type" to "log", "log" to "Requesting microphone permission"))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun newMediaRecorder(): MediaRecorder {
+        return if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
+    }
+
+    private fun startVoiceRecording(result: MethodChannel.Result) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            result.error("microphone_permission_denied", "Microphone permission denied", null)
+            return
+        }
+        runCatching {
+            discardVoiceRecording()
+            val dir = File(context.cacheDir, "edgez_voice")
+            if (!dir.exists()) dir.mkdirs()
+            val supportsOpus = Build.VERSION.SDK_INT >= 29
+            val codec = if (supportsOpus) VOICE_CODEC_OPUS else VOICE_CODEC_AMR_NB
+            val extension = if (supportsOpus) "ogg" else "3gp"
+            val file = File(dir, "recording_${System.currentTimeMillis()}.$extension")
+            val recorder = newMediaRecorder()
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            if (supportsOpus) {
+                recorder.setOutputFormat(MediaRecorder.OutputFormat.OGG)
+                recorder.setAudioEncoder(MediaRecorder.AudioEncoder.OPUS)
+                recorder.setAudioSamplingRate(16000)
+                recorder.setAudioEncodingBitRate(12000)
+            } else {
+                recorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                recorder.setAudioSamplingRate(8000)
+                recorder.setAudioEncodingBitRate(4750)
+            }
+            recorder.setOutputFile(file.absolutePath)
+            recorder.prepare()
+            recorder.start()
+            voiceRecorder = recorder
+            voiceRecordingFile = file
+            voiceRecordingCodec = codec
+            voiceRecordingStartedAtMs = System.currentTimeMillis()
+        }.fold(
+            onSuccess = {
+                emit(mapOf("type" to "log", "log" to "Voice recording started"))
+                result.success(null)
+            },
+            onFailure = {
+                discardVoiceRecording()
+                result.error("voice_record_failed", it.message ?: "Voice recording failed", null)
+            },
+        )
+    }
+
+    private fun stopVoiceRecording(send: Boolean, result: MethodChannel.Result) {
+        val recorder = voiceRecorder
+        val file = voiceRecordingFile
+        val codec = voiceRecordingCodec
+        val durationMs = (System.currentTimeMillis() - voiceRecordingStartedAtMs).coerceAtLeast(0)
+        if (recorder == null || file == null) {
+            result.success(null)
+            return
+        }
+
+        voiceRecorder = null
+        voiceRecordingFile = null
+        voiceRecordingStartedAtMs = 0
+
+        runCatching {
+            try {
+                recorder.stop()
+            } finally {
+                recorder.release()
+            }
+            if (!send || durationMs < 250 || !file.exists() || file.length() <= 0) {
+                file.delete()
+                null
+            } else {
+                val bytes = file.readBytes()
+                file.delete()
+                mapOf(
+                    "bytes" to bytes,
+                    "durationMs" to durationMs.toInt(),
+                    "codec" to codec,
+                )
+            }
+        }.fold(
+            onSuccess = {
+                emit(mapOf("type" to "log", "log" to if (it == null) "Voice recording cancelled" else "Voice recording stopped"))
+                result.success(it)
+            },
+            onFailure = {
+                file.delete()
+                result.error("voice_record_failed", it.message ?: "Voice recording failed", null)
+            },
+        )
+    }
+
+    private fun discardVoiceRecording() {
+        val recorder = voiceRecorder
+        voiceRecorder = null
+        runCatching {
+            recorder?.stop()
+        }
+        recorder?.release()
+        voiceRecordingFile?.delete()
+        voiceRecordingFile = null
+        voiceRecordingStartedAtMs = 0
     }
 
     private fun playVoiceMessage(call: MethodCall, result: MethodChannel.Result) {
