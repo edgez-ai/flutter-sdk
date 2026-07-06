@@ -202,7 +202,8 @@ class EdgezMeshSession extends ChangeNotifier {
     required String text,
     int maxHop = 0,
   }) async {
-    if (!(_state.nodes[toNode]?.opensConversation ?? false)) {
+    final node = _state.nodes[toNode];
+    if (!(node?.opensConversation ?? false)) {
       _setState(
         _state.copyWith(
           statusLine: 'Only user nodes can receive conversation messages',
@@ -210,17 +211,36 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       return;
     }
-    _appendMessage(
-      EdgezConversationMessage(
-        nodeNum: toNode,
+    final config = _lastMeshConfig;
+    final fromNode = _state.status?.macAddress ?? 0;
+    if (config == null || fromNode == 0) {
+      _setState(
+        _state.copyWith(statusLine: 'Save settings and wait for mesh status'),
+      );
+      return;
+    }
+    try {
+      final messageUuid = await sdk.sendTextMessage(
+        config: config,
+        toNode: node!,
+        fromNode: fromNode,
         text: text,
-        mine: true,
-        timestampMs: DateTime.now().millisecondsSinceEpoch,
-        status: 'Sent via ${_state.connection.name.toUpperCase()}',
-      ),
-      statusLine: 'Message queued',
-    );
-    await sdk.sendTextMessage(toNode: toNode, text: text, maxHop: maxHop);
+        maxHop: maxHop,
+      );
+      _appendMessage(
+        EdgezConversationMessage(
+          nodeNum: toNode,
+          text: text,
+          mine: true,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          messageUuid: messageUuid,
+          status: 'Sent via ${_state.connection.name.toUpperCase()}',
+        ),
+        statusLine: 'Message queued',
+      );
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Message send failed: $error'));
+    }
   }
 
   void addVoicePlaceholder({required int toNode}) {
@@ -353,6 +373,11 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'Device settings received'));
     }
 
+    if (packet.hasPayload() ||
+        packet.operation == proto.Operation.ACKNOWLEDGE) {
+      unawaited(_handleConversationPacket(packet));
+    }
+
     if (!packet.hasBeacon()) return;
     final beacon = _parseBeacon(packet.beacon);
     if (beacon == null) return;
@@ -369,6 +394,7 @@ class EdgezMeshSession extends ChangeNotifier {
       route: _state.connection.name.toUpperCase(),
       lastSeenMs: now,
       marker: _markerId(beacon.marker),
+      publicKey: beacon.userPublicKey,
       latitude:
           beacon.hasAttitude() && beacon.attitude != 0 ? beacon.attitude : null,
       longitude: beacon.hasLongitude() && beacon.longitude != 0
@@ -398,6 +424,113 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Beacon received from ${node.resolvedDisplayName}',
       ),
     );
+  }
+
+  Future<void> _handleConversationPacket(proto.NetworkPacket packet) async {
+    if (packet.operation == proto.Operation.ACKNOWLEDGE) {
+      _markMessageDelivered(
+        _formatUuid(packet.messageIdHigh.toInt(), packet.messageIdLow.toInt()),
+      );
+      return;
+    }
+    if (!packet.hasPayload() || packet.mime != proto.Mime.MIME_TEXT) return;
+    final config = _lastMeshConfig;
+    final fromNode = packet.from.toInt();
+    final toNode = packet.to.toInt();
+    if (config == null || fromNode == 0) return;
+
+    final sender = _state.nodes[fromNode];
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final messageUuid =
+        _formatUuid(packet.messageIdHigh.toInt(), packet.messageIdLow.toInt());
+    final text = sender == null
+        ? 'Unable to decrypt message'
+        : await sdk
+            .decryptTextMessage(
+              config: config,
+              sender: sender,
+              fromNode: fromNode,
+              toNode: toNode,
+              payload: packet.payload,
+            )
+            .catchError((Object error) => 'Unable to decrypt message');
+
+    final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
+    nodes.putIfAbsent(
+      fromNode,
+      () => EdgezMeshNode(
+        nodeNum: fromNode,
+        userUuid: _formatUuid(packet.userHigh.toInt(), packet.userLow.toInt()),
+        displayName: 'Node ${fromNode.toRadixString(16)}',
+        route: _state.connection.name.toUpperCase(),
+        lastSeenMs: now,
+        marker: 'blue',
+        deviceType: 'User',
+      ),
+    );
+    _appendMessage(
+      EdgezConversationMessage(
+        nodeNum: fromNode,
+        text: text,
+        mine: false,
+        timestampMs: now,
+        messageUuid: messageUuid,
+        status: text == 'Unable to decrypt message' &&
+                sender?.publicKey.isEmpty != false
+            ? 'Sender public key is missing'
+            : '',
+      ),
+      nodes: nodes,
+      statusLine: 'Conversation message received',
+    );
+
+    final localNode = _state.status?.macAddress ?? 0;
+    if (localNode != 0 &&
+        (packet.messageIdHigh.toInt() != 0 ||
+            packet.messageIdLow.toInt() != 0)) {
+      unawaited(
+        sdk.sendConversationAck(
+          config: config,
+          fromNode: localNode,
+          toNode: fromNode,
+          messageIdHigh: packet.messageIdHigh.toInt(),
+          messageIdLow: packet.messageIdLow.toInt(),
+          maxHop: config.maxHop,
+        ),
+      );
+    }
+  }
+
+  void _markMessageDelivered(String messageUuid) {
+    if (messageUuid.isEmpty) return;
+    final conversations =
+        Map<int, List<EdgezConversationMessage>>.of(_state.conversations);
+    var changed = false;
+    for (final entry in conversations.entries) {
+      final updated = entry.value.map((message) {
+        if (!message.mine || message.messageUuid != messageUuid) {
+          return message;
+        }
+        changed = true;
+        return EdgezConversationMessage(
+          nodeNum: message.nodeNum,
+          text: message.text,
+          mine: message.mine,
+          timestampMs: message.timestampMs,
+          messageUuid: message.messageUuid,
+          status: 'Delivered',
+        );
+      }).toList(growable: false);
+      conversations[entry.key] = updated;
+    }
+    if (changed) {
+      _setState(
+        _state.copyWith(
+          conversations: conversations,
+          statusLine: 'Message delivered',
+        ),
+      );
+    }
   }
 
   Future<void> _sendInitIfReady({bool force = false}) async {
@@ -533,10 +666,17 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   String _formatUuid(int high, int low) {
-    final highText = high.toRadixString(16).padLeft(16, '0');
-    final lowText = low.toRadixString(16).padLeft(16, '0');
+    final highText = _hex64(high);
+    final lowText = _hex64(low);
     return '${highText.substring(0, 8)}-${highText.substring(8, 12)}-${highText.substring(12, 16)}-'
         '${lowText.substring(0, 4)}-${lowText.substring(4, 16)}';
+  }
+
+  String _hex64(int value) {
+    final unsigned = value < 0
+        ? BigInt.from(value) + (BigInt.one << 64)
+        : BigInt.from(value);
+    return unsigned.toRadixString(16).padLeft(16, '0');
   }
 
   String _decodeBeaconUserName(String userName) {

@@ -244,6 +244,7 @@ class EdgezMeshNode {
     required this.route,
     required this.lastSeenMs,
     required this.marker,
+    this.publicKey = const <int>[],
     this.latitude,
     this.longitude,
     this.deviceType = '',
@@ -258,6 +259,7 @@ class EdgezMeshNode {
   final String route;
   final int lastSeenMs;
   final String marker;
+  final List<int> publicKey;
   final double? latitude;
   final double? longitude;
   final String deviceType;
@@ -298,6 +300,9 @@ class EdgezMeshNode {
       lastSeenMs:
           lastSeenMs > 0 ? lastSeenMs : DateTime.now().millisecondsSinceEpoch,
       marker: marker.isNotEmpty ? marker : previous?.marker ?? 'blue',
+      publicKey: publicKey.isNotEmpty
+          ? publicKey
+          : previous?.publicKey ?? const <int>[],
       latitude: latitude ?? previous?.latitude,
       longitude: longitude ?? previous?.longitude,
       deviceType: deviceType.isNotEmpty
@@ -318,6 +323,9 @@ class EdgezMeshNode {
       route: map['route'] as String? ?? '',
       lastSeenMs: map['lastSeenMs'] as int? ?? 0,
       marker: map['marker'] as String? ?? 'blue',
+      publicKey: map['publicKey'] is List
+          ? List<int>.from(map['publicKey'] as List)
+          : const <int>[],
       latitude: (map['latitude'] as num?)?.toDouble(),
       longitude: (map['longitude'] as num?)?.toDouble(),
       deviceType: map['deviceType'] as String? ?? '',

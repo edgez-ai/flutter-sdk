@@ -18,6 +18,7 @@ class ExampleDatabase {
             route TEXT NOT NULL,
             last_seen_ms INTEGER NOT NULL,
             marker TEXT NOT NULL,
+            public_key BLOB NOT NULL DEFAULT X'',
             latitude REAL,
             longitude REAL,
             device_type TEXT NOT NULL,
@@ -69,7 +70,17 @@ class ExampleDatabase {
           ON sensor_data(node_num, timestamp_ms)
         ''');
       },
+      onOpen: _ensureSchema,
     );
+  }
+
+  Future<void> _ensureSchema(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(nodes)');
+    final columnNames = columns.map((row) => row['name'] as String).toSet();
+    if (!columnNames.contains('public_key')) {
+      await db.execute(
+          "ALTER TABLE nodes ADD COLUMN public_key BLOB NOT NULL DEFAULT X''");
+    }
   }
 
   Future<void> close() async {
@@ -90,6 +101,7 @@ class ExampleDatabase {
           route: row['route'] as String,
           lastSeenMs: row['last_seen_ms'] as int,
           marker: row['marker'] as String,
+          publicKey: row['public_key'] as List<int>? ?? const <int>[],
           latitude: (row['latitude'] as num?)?.toDouble(),
           longitude: (row['longitude'] as num?)?.toDouble(),
           deviceType: row['device_type'] as String,
@@ -222,6 +234,7 @@ class ExampleDatabase {
         'route': node.route,
         'last_seen_ms': node.lastSeenMs,
         'marker': node.marker,
+        'public_key': node.publicKey,
         'latitude': node.latitude,
         'longitude': node.longitude,
         'device_type': node.deviceType,
