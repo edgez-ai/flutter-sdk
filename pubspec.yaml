@@ -15,6 +15,7 @@ flutter:
         pluginClass: EdgezFlutterSdkPlugin
 
 dependencies:
+  cryptography: ^2.7.0
   fixnum: ^1.1.1
   flutter:
     sdk: flutter

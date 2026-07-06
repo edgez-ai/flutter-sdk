@@ -256,6 +256,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         meshId: meshId.trim(),
         passphrase: passphrase,
         maxHop: parsedMaxHop,
+        beacon: EdgezBeaconConfig(
+          intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 30,
+          marker: userMarker.name,
+          shareLocation: shareLocation,
+        ),
         identity: EdgezUserIdentity(
           userUuid: identity.userUuid,
           userIdHigh: identity.userIdHigh,

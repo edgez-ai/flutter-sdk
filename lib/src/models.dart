@@ -144,6 +144,7 @@ class EdgezMeshConfig {
     required this.passphrase,
     required this.maxHop,
     required this.identity,
+    this.beacon = const EdgezBeaconConfig(),
   });
 
   final String countryCode;
@@ -151,6 +152,7 @@ class EdgezMeshConfig {
   final String passphrase;
   final int maxHop;
   final EdgezUserIdentity identity;
+  final EdgezBeaconConfig beacon;
 
   Map<String, Object?> toMap() => {
         'countryCode': countryCode,
@@ -158,6 +160,36 @@ class EdgezMeshConfig {
         'passphrase': passphrase,
         'maxHop': maxHop,
         'identity': identity.toMap(),
+        'beacon': beacon.toMap(),
+      };
+}
+
+class EdgezBeaconConfig {
+  const EdgezBeaconConfig({
+    this.intervalSeconds = 30,
+    this.marker = 'blue',
+    this.shareLocation = false,
+    this.latitude,
+    this.longitude,
+    this.locationTimestampMs = 0,
+  });
+
+  final int intervalSeconds;
+  final String marker;
+  final bool shareLocation;
+  final double? latitude;
+  final double? longitude;
+  final int locationTimestampMs;
+
+  int get normalizedIntervalSeconds => intervalSeconds.clamp(5, 3600);
+
+  Map<String, Object?> toMap() => {
+        'intervalSeconds': intervalSeconds,
+        'marker': marker,
+        'shareLocation': shareLocation,
+        'latitude': latitude,
+        'longitude': longitude,
+        'locationTimestampMs': locationTimestampMs,
       };
 }
 
