@@ -211,11 +211,27 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       return;
     }
+    final pendingUuid =
+        'pending-${DateTime.now().microsecondsSinceEpoch}-$toNode';
+    _appendMessage(
+      EdgezConversationMessage(
+        nodeNum: toNode,
+        text: text,
+        mine: true,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        messageUuid: pendingUuid,
+        status: 'Queued',
+      ),
+      statusLine: 'Message queued',
+    );
+
     final config = _lastMeshConfig;
     final fromNode = _state.status?.macAddress ?? 0;
     if (config == null || fromNode == 0) {
-      _setState(
-        _state.copyWith(statusLine: 'Save settings and wait for mesh status'),
+      _replaceMessage(
+        pendingUuid,
+        status: 'Failed: save settings and wait for mesh status',
+        statusLine: 'Save settings and wait for mesh status',
       );
       return;
     }
@@ -227,19 +243,18 @@ class EdgezMeshSession extends ChangeNotifier {
         text: text,
         maxHop: maxHop,
       );
-      _appendMessage(
-        EdgezConversationMessage(
-          nodeNum: toNode,
-          text: text,
-          mine: true,
-          timestampMs: DateTime.now().millisecondsSinceEpoch,
-          messageUuid: messageUuid,
-          status: 'Sent via ${_state.connection.name.toUpperCase()}',
-        ),
-        statusLine: 'Message queued',
+      _replaceMessage(
+        pendingUuid,
+        messageUuid: messageUuid,
+        status: 'Sent via ${_state.connection.name.toUpperCase()}',
+        statusLine: 'Message sent',
       );
     } catch (error) {
-      _setState(_state.copyWith(statusLine: 'Message send failed: $error'));
+      _replaceMessage(
+        pendingUuid,
+        status: 'Failed: $error',
+        statusLine: 'Message send failed: $error',
+      );
     }
   }
 
@@ -503,12 +518,29 @@ class EdgezMeshSession extends ChangeNotifier {
 
   void _markMessageDelivered(String messageUuid) {
     if (messageUuid.isEmpty) return;
+    _replaceMessage(
+      messageUuid,
+      status: 'Delivered',
+      statusLine: 'Message delivered',
+      onlyMine: true,
+    );
+  }
+
+  void _replaceMessage(
+    String currentMessageUuid, {
+    String? messageUuid,
+    String? status,
+    String? statusLine,
+    bool onlyMine = false,
+  }) {
+    if (currentMessageUuid.isEmpty) return;
     final conversations =
         Map<int, List<EdgezConversationMessage>>.of(_state.conversations);
     var changed = false;
     for (final entry in conversations.entries) {
       final updated = entry.value.map((message) {
-        if (!message.mine || message.messageUuid != messageUuid) {
+        if ((onlyMine && !message.mine) ||
+            message.messageUuid != currentMessageUuid) {
           return message;
         }
         changed = true;
@@ -517,8 +549,8 @@ class EdgezMeshSession extends ChangeNotifier {
           text: message.text,
           mine: message.mine,
           timestampMs: message.timestampMs,
-          messageUuid: message.messageUuid,
-          status: 'Delivered',
+          messageUuid: messageUuid ?? message.messageUuid,
+          status: status ?? message.status,
         );
       }).toList(growable: false);
       conversations[entry.key] = updated;
@@ -527,7 +559,7 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(
         _state.copyWith(
           conversations: conversations,
-          statusLine: 'Message delivered',
+          statusLine: statusLine,
         ),
       );
     }
