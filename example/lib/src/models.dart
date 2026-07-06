@@ -36,46 +36,6 @@ enum ExampleMarker {
   }
 }
 
-class ExampleSensorData {
-  const ExampleSensorData({
-    this.latitude,
-    this.longitude,
-    this.altitude,
-    this.temperature,
-    this.humidity,
-    this.pressure,
-    this.vibrationAverage,
-  });
-
-  final double? latitude;
-  final double? longitude;
-  final double? altitude;
-  final double? temperature;
-  final double? humidity;
-  final double? pressure;
-  final double? vibrationAverage;
-
-  bool get hasAnyValue {
-    return latitude != null ||
-        longitude != null ||
-        altitude != null ||
-        temperature != null ||
-        humidity != null ||
-        pressure != null ||
-        vibrationAverage != null;
-  }
-}
-
-class ExampleSensorSample {
-  const ExampleSensorSample({
-    required this.timestampMs,
-    required this.data,
-  });
-
-  final int timestampMs;
-  final ExampleSensorData data;
-}
-
 ExampleDeviceType deviceTypeFromLabel(String label) {
   final normalized = label.toLowerCase();
   return ExampleDeviceType.values.firstWhere(

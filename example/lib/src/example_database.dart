@@ -1,8 +1,6 @@
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:sqflite/sqflite.dart';
 
-import 'models.dart';
-
 class ExampleDatabase {
   Database? _database;
 
@@ -126,7 +124,7 @@ class ExampleDatabase {
     return conversations;
   }
 
-  Future<List<ExampleSensorSample>> loadSensorSamples(
+  Future<List<EdgezSensorSample>> loadSensorSamples(
     int nodeNum, {
     int limit = 120,
   }) async {
@@ -139,9 +137,10 @@ class ExampleDatabase {
       limit: limit,
     );
     return rows.reversed.map((row) {
-      return ExampleSensorSample(
+      return EdgezSensorSample(
+        nodeNum: nodeNum,
         timestampMs: row['timestamp_ms'] as int,
-        data: ExampleSensorData(
+        data: EdgezSensorData(
           latitude: (row['latitude'] as num?)?.toDouble(),
           longitude: (row['longitude'] as num?)?.toDouble(),
           altitude: (row['altitude'] as num?)?.toDouble(),
@@ -163,6 +162,12 @@ class ExampleDatabase {
       for (final messages in state.conversations.values) {
         for (final message in messages) {
           await _insertMessage(txn, message);
+        }
+      }
+      await txn.delete('sensor_data');
+      for (final samples in state.sensorSamples.values) {
+        for (final sample in samples) {
+          await _insertSensorSample(txn, sample);
         }
       }
     });
@@ -191,7 +196,7 @@ class ExampleDatabase {
 
   Future<void> insertSensorSample(
     int nodeNum,
-    ExampleSensorSample sample,
+    EdgezSensorSample sample,
   ) async {
     final db = _requireDatabase();
     await db.insert('sensor_data', <String, Object?>{
@@ -253,6 +258,27 @@ class ExampleDatabase {
         'timestamp_ms': message.timestampMs,
         'status': message.status,
         'message_uuid': message.messageUuid,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  Future<void> _insertSensorSample(
+    Transaction txn,
+    EdgezSensorSample sample,
+  ) async {
+    await txn.insert(
+      'sensor_data',
+      <String, Object?>{
+        'node_num': sample.nodeNum,
+        'timestamp_ms': sample.timestampMs,
+        'latitude': sample.data.latitude,
+        'longitude': sample.data.longitude,
+        'altitude': sample.data.altitude,
+        'temperature': sample.data.temperature,
+        'humidity': sample.data.humidity,
+        'pressure': sample.data.pressure,
+        'vibration_average': sample.data.vibrationAverage,
       },
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );

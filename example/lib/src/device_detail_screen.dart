@@ -15,7 +15,7 @@ class DeviceDetailScreen extends StatelessWidget {
   });
 
   final EdgezMeshNode user;
-  final List<ExampleSensorSample> samples;
+  final List<EdgezSensorSample> samples;
   final VoidCallback onBack;
 
   @override
@@ -106,7 +106,7 @@ class SensorLatestCard extends StatelessWidget {
   const SensorLatestCard(
       {required this.data, required this.timestampMs, super.key});
 
-  final ExampleSensorData? data;
+  final EdgezSensorData? data;
   final int? timestampMs;
 
   @override
@@ -169,7 +169,7 @@ class SensorValueRow extends StatelessWidget {
 class SensorChartCard extends StatelessWidget {
   const SensorChartCard({required this.samples, super.key});
 
-  final List<ExampleSensorSample> samples;
+  final List<EdgezSensorSample> samples;
 
   @override
   Widget build(BuildContext context) {
@@ -210,7 +210,7 @@ class SensorChartCard extends StatelessWidget {
 class SensorChartPainter extends CustomPainter {
   SensorChartPainter(this.samples, this.colors);
 
-  final List<ExampleSensorSample> samples;
+  final List<EdgezSensorSample> samples;
   final ColorScheme colors;
 
   @override
@@ -236,7 +236,7 @@ class SensorChartPainter extends CustomPainter {
     final minValue = values.reduce(math.min);
     final maxValue = values.reduce(math.max);
     void drawSeries(
-        Color color, double? Function(ExampleSensorSample sample) read) {
+        Color color, double? Function(EdgezSensorSample sample) read) {
       final points = samples
           .map((sample) {
             final raw = read(sample);

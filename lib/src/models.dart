@@ -13,6 +13,7 @@ enum EdgezConnectionType {
 enum EdgezMeshEventType {
   connection,
   bleDevice,
+  packet,
   status,
   node,
   message,
@@ -24,6 +25,48 @@ enum EdgezMeshEventType {
       orElse: () => EdgezMeshEventType.log,
     );
   }
+}
+
+class EdgezSensorData {
+  const EdgezSensorData({
+    this.latitude,
+    this.longitude,
+    this.altitude,
+    this.temperature,
+    this.humidity,
+    this.pressure,
+    this.vibrationAverage,
+  });
+
+  final double? latitude;
+  final double? longitude;
+  final double? altitude;
+  final double? temperature;
+  final double? humidity;
+  final double? pressure;
+  final double? vibrationAverage;
+
+  bool get hasAnyValue {
+    return latitude != null ||
+        longitude != null ||
+        altitude != null ||
+        temperature != null ||
+        humidity != null ||
+        pressure != null ||
+        vibrationAverage != null;
+  }
+}
+
+class EdgezSensorSample {
+  const EdgezSensorSample({
+    required this.nodeNum,
+    required this.timestampMs,
+    required this.data,
+  });
+
+  final int nodeNum;
+  final int timestampMs;
+  final EdgezSensorData data;
 }
 
 class EdgezBleDevice {
@@ -53,21 +96,42 @@ class EdgezBleDevice {
 
 class EdgezUserIdentity {
   const EdgezUserIdentity({
+    this.userUuid = '',
     required this.userIdHigh,
     required this.userIdLow,
     required this.name,
+    this.privateKey = const <int>[],
     required this.publicKey,
   });
 
+  final String userUuid;
   final int userIdHigh;
   final int userIdLow;
   final String name;
+  final List<int> privateKey;
   final List<int> publicKey;
 
+  EdgezUserIdentity copyWith({
+    String? name,
+    List<int>? privateKey,
+    List<int>? publicKey,
+  }) {
+    return EdgezUserIdentity(
+      userUuid: userUuid,
+      userIdHigh: userIdHigh,
+      userIdLow: userIdLow,
+      name: name ?? this.name,
+      privateKey: privateKey ?? this.privateKey,
+      publicKey: publicKey ?? this.publicKey,
+    );
+  }
+
   Map<String, Object?> toMap() => {
+        'userUuid': userUuid,
         'userIdHigh': userIdHigh,
         'userIdLow': userIdLow,
         'name': name,
+        'privateKey': privateKey,
         'publicKey': publicKey,
       };
 }
@@ -265,6 +329,7 @@ class EdgezMeshEvent {
     required this.type,
     this.connection = EdgezConnectionType.none,
     this.bleDevice,
+    this.packet = const <int>[],
     this.status,
     this.node,
     this.message,
@@ -274,6 +339,7 @@ class EdgezMeshEvent {
   final EdgezMeshEventType type;
   final EdgezConnectionType connection;
   final EdgezBleDevice? bleDevice;
+  final List<int> packet;
   final EdgezMeshStatus? status;
   final EdgezMeshNode? node;
   final EdgezConversationMessage? message;
@@ -289,6 +355,9 @@ class EdgezMeshEvent {
               map['bleDevice'] as Map<Object?, Object?>,
             )
           : null,
+      packet: map['packet'] is List
+          ? List<int>.from(map['packet'] as List)
+          : const <int>[],
       status: map['status'] is Map
           ? EdgezMeshStatus.fromMap(map['status'] as Map<Object?, Object?>)
           : null,

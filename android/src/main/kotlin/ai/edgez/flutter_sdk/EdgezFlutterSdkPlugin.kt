@@ -39,6 +39,7 @@ import java.util.UUID
 private const val BLE_PERMISSION_REQUEST = 9007
 private const val EDGEZ_HEADER_LEN = 4
 private const val EDGEZ_MAX_PAYLOAD = 512
+private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val EDGEZ_BLE_REQUESTED_MTU = 517
 private val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
@@ -65,6 +66,8 @@ class EdgezFlutterSdkPlugin :
     private var pendingScanResult: MethodChannel.Result? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
+    private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
+    private var rxLen = 0
     private val txQueue = ArrayDeque<ByteArray>()
     private var txWriteInFlight = false
     private var scanGeneration = 0
@@ -344,6 +347,7 @@ class EdgezFlutterSdkPlugin :
     @SuppressLint("MissingPermission")
     private fun closeGatt() {
         rxCharacteristic = null
+        rxLen = 0
         clearTxQueue()
         gatt?.close()
         gatt = null
@@ -420,6 +424,7 @@ class EdgezFlutterSdkPlugin :
                 gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
+                rxLen = 0
                 clearTxQueue()
                 emit(mapOf("type" to "connection", "connection" to "none"))
             }
@@ -475,6 +480,66 @@ class EdgezFlutterSdkPlugin :
                 writeNextFrame(gatt, characteristic)
             }
         }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray,
+        ) {
+            handleBytes(value)
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+        ) {
+            handleBytes(characteristic.value ?: return)
+        }
+    }
+
+    private fun handleBytes(bytes: ByteArray) {
+        if (rxLen + bytes.size > rxBuffer.size) {
+            rxLen = 0
+        }
+        System.arraycopy(bytes, 0, rxBuffer, rxLen, bytes.size)
+        rxLen += bytes.size
+
+        while (rxLen >= EDGEZ_HEADER_LEN) {
+            val magicOffset = findMagicOffset(rxBuffer, rxLen)
+            if (magicOffset < 0) {
+                rxLen = 0
+                return
+            }
+            if (magicOffset > 0) {
+                System.arraycopy(rxBuffer, magicOffset, rxBuffer, 0, rxLen - magicOffset)
+                rxLen -= magicOffset
+            }
+            if (rxLen < EDGEZ_HEADER_LEN) return
+            val payloadLen = (rxBuffer[2].toInt() and 0xff) or ((rxBuffer[3].toInt() and 0xff) shl 8)
+            if (payloadLen <= 0 || payloadLen > EDGEZ_MAX_PAYLOAD) {
+                rxLen = 0
+                return
+            }
+            val frameLen = EDGEZ_HEADER_LEN + payloadLen
+            if (rxLen < frameLen) return
+            val payload = rxBuffer.copyOfRange(EDGEZ_HEADER_LEN, frameLen)
+            emit(mapOf("type" to "packet", "packet" to payload))
+            val remaining = rxLen - frameLen
+            if (remaining > 0) {
+                System.arraycopy(rxBuffer, frameLen, rxBuffer, 0, remaining)
+            }
+            rxLen = remaining
+        }
+    }
+
+    private fun findMagicOffset(buffer: ByteArray, length: Int): Int {
+        for (index in 0 until length - 1) {
+            if (buffer[index] == EDGEZ_MAGIC_0 && buffer[index + 1] == EDGEZ_MAGIC_1) {
+                return index
+            }
+        }
+        return -1
     }
 
     private fun emit(event: Map<String, Any?>) {

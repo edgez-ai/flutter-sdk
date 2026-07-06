@@ -9,6 +9,7 @@ class NodesScreen extends StatelessWidget {
     required this.activeConnection,
     required this.status,
     required this.users,
+    required this.sensorSamples,
     required this.onRemoveNode,
     required this.onOpenNode,
     super.key,
@@ -17,6 +18,7 @@ class NodesScreen extends StatelessWidget {
   final EdgezConnectionType activeConnection;
   final EdgezMeshStatus? status;
   final List<EdgezMeshNode> users;
+  final Map<int, List<EdgezSensorSample>> sensorSamples;
   final ValueChanged<EdgezMeshNode> onRemoveNode;
   final ValueChanged<EdgezMeshNode> onOpenNode;
 
@@ -56,7 +58,11 @@ class NodesScreen extends StatelessWidget {
                         color: Theme.of(context).colorScheme.onErrorContainer)),
               ),
               onDismissed: (_) => onRemoveNode(user),
-              child: NodeCard(user: user, onTap: () => onOpenNode(user)),
+              child: NodeCard(
+                user: user,
+                latestSensor: sensorSamples[user.nodeNum]?.lastOrNull?.data,
+                onTap: () => onOpenNode(user),
+              ),
             ),
             const SizedBox(height: 12),
           ],
@@ -67,9 +73,15 @@ class NodesScreen extends StatelessWidget {
 }
 
 class NodeCard extends StatelessWidget {
-  const NodeCard({required this.user, required this.onTap, super.key});
+  const NodeCard({
+    required this.user,
+    required this.latestSensor,
+    required this.onTap,
+    super.key,
+  });
 
   final EdgezMeshNode user;
+  final EdgezSensorData? latestSensor;
   final VoidCallback onTap;
 
   @override
@@ -108,6 +120,9 @@ class NodeCard extends StatelessWidget {
                         if (user.exampleGeoFenceName.isNotEmpty)
                           Text('Geofence ${user.exampleGeoFenceName}',
                               style: Theme.of(context).textTheme.bodySmall),
+                        if (latestSensor != null)
+                          Text(_sensorSummary(latestSensor!),
+                              style: Theme.of(context).textTheme.bodySmall),
                       ],
                     ),
                   ),
@@ -138,5 +153,24 @@ class NodeCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _sensorSummary(EdgezSensorData data) {
+    final parts = <String>[];
+    if (data.temperature != null) {
+      parts.add('${formatSensorValue(data.temperature!)} C');
+    }
+    if (data.humidity != null) {
+      parts.add('${formatSensorValue(data.humidity!)}%');
+    }
+    if (data.pressure != null) {
+      parts.add('${formatSensorValue(data.pressure!)} hPa');
+    }
+    if (data.vibrationAverage != null) {
+      parts.add('score ${formatSensorValue(data.vibrationAverage!)}');
+    }
+    return parts.isEmpty
+        ? 'Sensor data received'
+        : 'Sensor ${parts.join(' · ')}';
   }
 }

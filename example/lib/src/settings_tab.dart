@@ -20,6 +20,7 @@ class SettingsScreen extends StatelessWidget {
     required this.maxHop,
     required this.beaconIntervalSeconds,
     required this.userName,
+    required this.userIdentity,
     required this.userMarker,
     required this.deviceUserName,
     required this.deviceMarker,
@@ -38,6 +39,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onConnectBleDevice,
     required this.onDisconnect,
     required this.onSaveAppSettings,
+    required this.onRegenerateUserKeyPair,
     required this.onSaveDeviceSettings,
     required this.onShareLocationChanged,
     required this.onAutoReplayChanged,
@@ -76,6 +78,7 @@ class SettingsScreen extends StatelessWidget {
   final String maxHop;
   final String beaconIntervalSeconds;
   final String userName;
+  final EdgezUserIdentity? userIdentity;
   final ExampleMarker userMarker;
   final String deviceUserName;
   final ExampleMarker deviceMarker;
@@ -94,6 +97,7 @@ class SettingsScreen extends StatelessWidget {
   final ValueChanged<String> onConnectBleDevice;
   final VoidCallback onDisconnect;
   final FutureOr<void> Function() onSaveAppSettings;
+  final FutureOr<void> Function() onRegenerateUserKeyPair;
   final FutureOr<void> Function() onSaveDeviceSettings;
   final ValueChanged<bool> onShareLocationChanged;
   final ValueChanged<bool> onAutoReplayChanged;
@@ -210,6 +214,11 @@ class SettingsScreen extends StatelessWidget {
                   label: 'User name',
                   value: userName,
                   onChanged: onUserNameChanged),
+              const SizedBox(height: 8),
+              IdentitySummary(
+                identity: userIdentity,
+                onRegenerateUserKeyPair: onRegenerateUserKeyPair,
+              ),
               DropdownSetting<ExampleMarker>(
                 label: 'Marker',
                 value: userMarker,
@@ -344,6 +353,54 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 12),
         ],
       ),
+    );
+  }
+}
+
+class IdentitySummary extends StatelessWidget {
+  const IdentitySummary({
+    required this.identity,
+    required this.onRegenerateUserKeyPair,
+    super.key,
+  });
+
+  final EdgezUserIdentity? identity;
+  final FutureOr<void> Function() onRegenerateUserKeyPair;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = identity;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: current == null
+          ? const <Widget>[
+              Text('User identity'),
+              Text('Loading identity'),
+            ]
+          : <Widget>[
+              Text('User identity',
+                  style: Theme.of(context).textTheme.titleMedium),
+              Text('UUID ${current.userUuid}',
+                  style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 6),
+              Text('X25519 public key',
+                  style: Theme.of(context).textTheme.titleSmall),
+              SelectableText(edgezFormatHex(current.publicKey),
+                  style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 6),
+              Text('X25519 private key',
+                  style: Theme.of(context).textTheme.titleSmall),
+              SelectableText(edgezFormatHex(current.privateKey),
+                  style: Theme.of(context).textTheme.bodySmall),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton(
+                  onPressed: () =>
+                      unawaited(Future<void>.value(onRegenerateUserKeyPair())),
+                  child: const Text('Regenerate key pair'),
+                ),
+              ),
+            ],
     );
   }
 }

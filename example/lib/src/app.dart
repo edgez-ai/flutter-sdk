@@ -34,8 +34,10 @@ class EdgezExampleApp extends StatefulWidget {
 class _EdgezExampleAppState extends State<EdgezExampleApp> {
   late final EdgezMeshSession session;
   late final ExampleDatabase database;
+  late final EdgezIdentityStore identityStore;
   AppDestination destination = AppDestination.nodes;
   int? selectedNodeNum;
+  EdgezUserIdentity? userIdentity;
   bool databaseReady = false;
   bool persistenceEnabled = false;
   bool hydrationComplete = false;
@@ -43,8 +45,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool persistInFlight = false;
   bool persistAgain = false;
   String lastPersistSignature = '';
-  final Map<int, List<ExampleSensorSample>> sensorSamples =
-      <int, List<ExampleSensorSample>>{};
   bool shareLocation = false;
   bool autoReplayReceivedVoice = false;
   bool deviceModeEnabled = false;
@@ -75,8 +75,19 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     super.initState();
     session = EdgezMeshSession();
     database = ExampleDatabase();
+    identityStore = EdgezIdentityStore();
     session.addListener(_persistSessionSnapshot);
+    unawaited(_loadIdentity());
     unawaited(_hydrateFromDatabase());
+  }
+
+  Future<void> _loadIdentity() async {
+    final identity = await identityStore.getOrCreate();
+    if (!mounted) return;
+    setState(() {
+      userIdentity = identity;
+      userName = identity.name;
+    });
   }
 
   @override
@@ -94,20 +105,18 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       await database.open();
       final nodes = await database.loadNodes();
       final conversations = await database.loadConversations();
-      final samples = <int, List<ExampleSensorSample>>{};
+      final samples = <int, List<EdgezSensorSample>>{};
       for (final nodeNum in nodes.keys) {
         samples[nodeNum] = await database.loadSensorSamples(nodeNum);
       }
       session.restoreCachedMeshData(
         nodes: nodes,
         conversations: conversations,
+        sensorSamples: samples,
       );
       lastPersistSignature = _persistenceSignature(session.state);
       if (!mounted) return;
       setState(() {
-        sensorSamples
-          ..clear()
-          ..addAll(samples);
         databaseReady = true;
         persistenceEnabled = true;
         hydrationComplete = true;
@@ -234,6 +243,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   Future<void> _saveAppSettings() async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
+    final identity = await identityStore.updateName(userName);
+    if (mounted) {
+      setState(() {
+        userIdentity = identity;
+        userName = identity.name;
+      });
+    }
     await session.initializeMesh(
       EdgezMeshConfig(
         countryCode: meshCountry,
@@ -241,13 +257,21 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         passphrase: passphrase,
         maxHop: parsedMaxHop,
         identity: EdgezUserIdentity(
-          userIdHigh: 0,
-          userIdLow: 1,
-          name: userName.trim().isEmpty ? 'Flutter Demo' : userName.trim(),
-          publicKey: const <int>[],
+          userUuid: identity.userUuid,
+          userIdHigh: identity.userIdHigh,
+          userIdLow: identity.userIdLow,
+          name: identity.name,
+          privateKey: identity.privateKey,
+          publicKey: identity.publicKey,
         ),
       ),
     );
+  }
+
+  Future<void> _regenerateUserKeyPair() async {
+    final identity = await identityStore.regenerateKeyPair();
+    if (!mounted) return;
+    setState(() => userIdentity = identity);
   }
 
   Future<void> _saveDeviceSettings() async {
@@ -322,6 +346,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                   activeConnection: meshState.connection,
                   status: meshState.status,
                   users: meshState.sortedNodes,
+                  sensorSamples: meshState.sensorSamples,
                   onRemoveNode: _removeNode,
                   onOpenNode: _openNode,
                 )
@@ -337,8 +362,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                     )
                   : DeviceDetailScreen(
                       user: selected,
-                      samples: sensorSamples[selected.nodeNum] ??
-                          const <ExampleSensorSample>[],
+                      samples: meshState.sensorSamples[selected.nodeNum] ??
+                          const <EdgezSensorSample>[],
                       onBack: () => setState(() => selectedNodeNum = null),
                     ),
           AppDestination.debug => DebugScreen(
@@ -364,6 +389,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               maxHop: maxHop,
               beaconIntervalSeconds: beaconIntervalSeconds,
               userName: userName,
+              userIdentity: userIdentity,
               userMarker: userMarker,
               deviceUserName: deviceUserName,
               deviceMarker: deviceMarker,
@@ -382,6 +408,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               onConnectBleDevice: _connectBleDevice,
               onDisconnect: _disconnect,
               onSaveAppSettings: _saveAppSettings,
+              onRegenerateUserKeyPair: _regenerateUserKeyPair,
               onSaveDeviceSettings: _saveDeviceSettings,
               onShareLocationChanged: (value) =>
                   setState(() => shareLocation = value),
