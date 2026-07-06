@@ -686,8 +686,52 @@ class EdgezMeshSdk {
     return null;
   }
 
-  Future<void> sendDeviceSettings(Map<String, Object?> settings) {
-    return _methods.invokeMethod<void>('sendDeviceSettings', settings);
+  Future<void> sendDeviceSettings({
+    required EdgezDeviceSettings settings,
+    EdgezUserIdentity? identity,
+  }) {
+    final deviceSettings = proto.DeviceSettings(
+      action: proto.DeviceSettingsAction.DEVICE_SETTINGS_SET,
+      deviceModeEnabled: settings.deviceModeEnabled,
+      meshId: _take(settings.meshId, 32),
+      shareLocation: settings.shareLocation,
+      userName: _take(settings.userName, 64),
+      marker: _markerColor(settings.marker),
+      beaconIntervalSeconds: settings.beaconIntervalSeconds.clamp(5, 3600),
+      maxHop: settings.maxHop.clamp(0, 255),
+      latitude: settings.latitude,
+      longitude: settings.longitude,
+      geoIndex: settings.geoIndex,
+      uartI2cSensorType: _take(settings.uartI2cSensorType, 64),
+      rs485SensorType: _take(settings.rs485SensorType, 64),
+    );
+    if (identity != null) {
+      deviceSettings
+        ..userIdHigh = Int64(identity.userIdHigh)
+        ..userIdLow = Int64(identity.userIdLow)
+        ..userPublicKey = identity.publicKey.take(32).toList()
+        ..userPrivateKey = identity.privateKey.take(32).toList();
+    }
+    if (settings.geoFenceName.trim().isNotEmpty) {
+      deviceSettings.geoFence = proto.GeoFence(
+        name: _take(settings.geoFenceName.trim(), 64),
+        marker: _markerColor(settings.marker),
+        geoIndex: settings.geoIndex,
+      );
+    }
+
+    final packet = proto.NetworkPacket(
+      operation: proto.Operation.REQUEST,
+      interface: proto.Interface.HALOW,
+      userHigh: identity == null ? null : Int64(identity.userIdHigh),
+      userLow: identity == null ? null : Int64(identity.userIdLow),
+      maxHop: settings.maxHop.clamp(0, 255),
+      deviceSettings: deviceSettings,
+    );
+    return _methods.invokeMethod<void>('sendPacket', {
+      'label': 'Device settings',
+      'packet': Uint8List.fromList(packet.writeToBuffer()),
+    });
   }
 }
 

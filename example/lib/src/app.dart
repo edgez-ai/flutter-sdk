@@ -280,21 +280,23 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   }
 
   Future<void> _saveDeviceSettings() async {
-    await session.sendDeviceSettings(<String, Object?>{
-      'deviceModeEnabled': deviceModeEnabled,
-      'meshId': deviceMeshId,
-      'shareLocation': deviceShareLocation,
-      'userName': deviceUserName,
-      'marker': deviceMarker.name,
-      'beaconIntervalSeconds': int.tryParse(deviceBeaconIntervalSeconds) ?? 0,
-      'maxHop': int.tryParse(deviceMaxHop) ?? 0,
-      'latitude': double.tryParse(deviceLatitude),
-      'longitude': double.tryParse(deviceLongitude),
-      'geoFenceName': deviceGeoFenceName,
-      'geoIndex': deviceGeoIndex,
-      'uartI2cSensorType': uartI2cSensorType,
-      'rs485SensorType': rs485SensorType,
-    });
+    await session.sendDeviceSettings(
+      EdgezDeviceSettings(
+        deviceModeEnabled: deviceModeEnabled,
+        meshId: deviceMeshId.trim(),
+        shareLocation: deviceShareLocation,
+        userName: deviceUserName.trim(),
+        marker: deviceMarker.name,
+        beaconIntervalSeconds: int.tryParse(deviceBeaconIntervalSeconds) ?? 30,
+        maxHop: int.tryParse(deviceMaxHop) ?? 0,
+        latitude: double.tryParse(deviceLatitude),
+        longitude: double.tryParse(deviceLongitude),
+        geoFenceName: deviceGeoFenceName.trim(),
+        geoIndex: deviceGeoIndex,
+        uartI2cSensorType: uartI2cSensorType,
+        rs485SensorType: rs485SensorType,
+      ),
+    );
   }
 
   void _openNode(EdgezMeshNode node) {
@@ -332,17 +334,18 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   }
 
   Future<bool> _startVoiceMessage() {
-    return session.startVoiceRecording();
+    return session.startVoiceMessage();
   }
 
   Future<void> _stopVoiceMessage(bool send) async {
     final nodeNum = selectedNodeNum;
     if (!send || nodeNum == null) {
-      await session.cancelVoiceRecording();
+      await session.cancelVoiceMessage();
       return;
     }
-    await session.stopAndSendVoiceMessage(
+    await session.finishVoiceMessage(
       toNode: nodeNum,
+      send: send,
       maxHop: int.tryParse(maxHop) ?? 0,
     );
   }

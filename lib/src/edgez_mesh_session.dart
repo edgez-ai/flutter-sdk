@@ -194,9 +194,14 @@ class EdgezMeshSession extends ChangeNotifier {
     await _sendInitIfReady(force: true);
   }
 
-  Future<void> sendDeviceSettings(Map<String, Object?> settings) async {
-    _setState(_state.copyWith(statusLine: 'Device settings saved'));
-    await sdk.sendDeviceSettings(settings);
+  Future<void> sendDeviceSettings(EdgezDeviceSettings settings) async {
+    final identity = _lastMeshConfig?.identity;
+    try {
+      await sdk.sendDeviceSettings(settings: settings, identity: identity);
+      _setState(_state.copyWith(statusLine: 'Device settings sent'));
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Device settings failed: $error'));
+    }
   }
 
   Future<void> sendTextMessage({
@@ -327,7 +332,12 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  @Deprecated('Use startVoiceMessage instead.')
   Future<bool> startVoiceRecording() async {
+    return startVoiceMessage();
+  }
+
+  Future<bool> startVoiceMessage() async {
     try {
       await sdk.startVoiceRecording();
       _setState(_state.copyWith(statusLine: 'Recording voice message'));
@@ -338,7 +348,12 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  @Deprecated('Use cancelVoiceMessage instead.')
   Future<void> cancelVoiceRecording() async {
+    return cancelVoiceMessage();
+  }
+
+  Future<void> cancelVoiceMessage() async {
     try {
       await sdk.stopVoiceRecording(send: false);
       _setState(_state.copyWith(statusLine: 'Voice recording cancelled'));
@@ -348,10 +363,23 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  @Deprecated('Use finishVoiceMessage instead.')
   Future<void> stopAndSendVoiceMessage({
     required int toNode,
     int maxHop = 0,
   }) async {
+    return finishVoiceMessage(toNode: toNode, send: true, maxHop: maxHop);
+  }
+
+  Future<void> finishVoiceMessage({
+    required int toNode,
+    bool send = true,
+    int maxHop = 0,
+  }) async {
+    if (!send) {
+      await cancelVoiceMessage();
+      return;
+    }
     final recording = await sdk.stopVoiceRecording();
     if (recording == null || recording.bytes.isEmpty) {
       _setState(_state.copyWith(statusLine: 'Voice recording was too short'));
@@ -364,15 +392,6 @@ class EdgezMeshSession extends ChangeNotifier {
       codec: recording.codec,
       maxHop: maxHop,
     );
-  }
-
-  Future<void> addVoicePlaceholder({required int toNode}) async {
-    final started = await startVoiceRecording();
-    if (!started) {
-      _setState(_state.copyWith(statusLine: 'Microphone permission denied'));
-      return;
-    }
-    await cancelVoiceRecording();
   }
 
   Future<void> playVoiceMessage(EdgezConversationMessage message) async {

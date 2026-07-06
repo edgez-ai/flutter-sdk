@@ -139,11 +139,11 @@ class EdgezUserIdentity {
 
 class EdgezMeshConfig {
   const EdgezMeshConfig({
-    required this.countryCode,
-    required this.meshId,
-    required this.passphrase,
-    required this.maxHop,
     required this.identity,
+    this.countryCode = 'US',
+    this.meshId = 'edgez',
+    this.passphrase = '',
+    this.maxHop = 4,
     this.beacon = const EdgezBeaconConfig(),
   });
 
@@ -190,6 +190,54 @@ class EdgezBeaconConfig {
         'latitude': latitude,
         'longitude': longitude,
         'locationTimestampMs': locationTimestampMs,
+      };
+}
+
+class EdgezDeviceSettings {
+  const EdgezDeviceSettings({
+    this.deviceModeEnabled = false,
+    this.meshId = '',
+    this.shareLocation = false,
+    this.userName = '',
+    this.marker = 'green',
+    this.beaconIntervalSeconds = 30,
+    this.maxHop = 0,
+    this.latitude,
+    this.longitude,
+    this.geoFenceName = '',
+    this.geoIndex = 0,
+    this.uartI2cSensorType = '',
+    this.rs485SensorType = '',
+  });
+
+  final bool deviceModeEnabled;
+  final String meshId;
+  final bool shareLocation;
+  final String userName;
+  final String marker;
+  final int beaconIntervalSeconds;
+  final int maxHop;
+  final double? latitude;
+  final double? longitude;
+  final String geoFenceName;
+  final int geoIndex;
+  final String uartI2cSensorType;
+  final String rs485SensorType;
+
+  Map<String, Object?> toMap() => {
+        'deviceModeEnabled': deviceModeEnabled,
+        'meshId': meshId,
+        'shareLocation': shareLocation,
+        'userName': userName,
+        'marker': marker,
+        'beaconIntervalSeconds': beaconIntervalSeconds,
+        'maxHop': maxHop,
+        'latitude': latitude,
+        'longitude': longitude,
+        'geoFenceName': geoFenceName,
+        'geoIndex': geoIndex,
+        'uartI2cSensorType': uartI2cSensorType,
+        'rs485SensorType': rs485SensorType,
       };
 }
 
