@@ -19,6 +19,7 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -35,9 +36,11 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.ArrayDeque
 import java.util.UUID
+import java.io.File
 
 private const val BLE_PERMISSION_REQUEST = 9007
 private const val MICROPHONE_PERMISSION_REQUEST = 9008
+private const val VOICE_CODEC_OPUS = 2
 private const val EDGEZ_HEADER_LEN = 4
 private const val EDGEZ_MAX_PAYLOAD = 512
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
@@ -66,6 +69,7 @@ class EdgezFlutterSdkPlugin :
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingMicrophoneResult: MethodChannel.Result? = null
+    private var voicePlayer: MediaPlayer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
@@ -139,6 +143,7 @@ class EdgezFlutterSdkPlugin :
                 connectBle(deviceId, result)
             }
             "requestMicrophonePermission" -> requestMicrophonePermission(result)
+            "playVoiceMessage" -> playVoiceMessage(call, result)
             "disconnect" -> {
                 stopBleScan()
                 closeGatt()
@@ -241,6 +246,44 @@ class EdgezFlutterSdkPlugin :
             MICROPHONE_PERMISSION_REQUEST,
         )
         emit(mapOf("type" to "log", "log" to "Requesting microphone permission"))
+    }
+
+    private fun playVoiceMessage(call: MethodCall, result: MethodChannel.Result) {
+        val bytes = call.argument<ByteArray>("bytes")
+        val codec = call.argument<Int>("codec") ?: 0
+        if (bytes == null || bytes.isEmpty()) {
+            result.error("voice_missing", "Voice message has no audio bytes", null)
+            return
+        }
+        runCatching {
+            voicePlayer?.release()
+            voicePlayer = null
+            val dir = File(context.cacheDir, "edgez_voice")
+            if (!dir.exists()) dir.mkdirs()
+            val extension = if (codec == VOICE_CODEC_OPUS) "ogg" else "3gp"
+            val file = File(dir, "voice_${System.currentTimeMillis()}.$extension")
+            file.writeBytes(bytes)
+            val player = MediaPlayer()
+            player.setDataSource(file.absolutePath)
+            player.setOnCompletionListener {
+                it.release()
+                if (voicePlayer === it) {
+                    voicePlayer = null
+                }
+                file.delete()
+            }
+            player.prepare()
+            player.start()
+            voicePlayer = player
+        }.fold(
+            onSuccess = {
+                emit(mapOf("type" to "log", "log" to "Voice replay started"))
+                result.success(null)
+            },
+            onFailure = {
+                result.error("voice_play_failed", it.message ?: "Voice replay failed", null)
+            },
+        )
     }
 
     private fun requiredBlePermissions(): Array<String> {

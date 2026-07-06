@@ -11,6 +11,7 @@ class ConversationScreen extends StatefulWidget {
     required this.onBack,
     required this.onSendMessage,
     required this.onSendVoiceMessage,
+    required this.onReplayVoiceMessage,
     super.key,
   });
 
@@ -20,6 +21,7 @@ class ConversationScreen extends StatefulWidget {
   final VoidCallback onBack;
   final ValueChanged<String> onSendMessage;
   final VoidCallback onSendVoiceMessage;
+  final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
@@ -103,7 +105,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   if (widget.messages.isEmpty)
                     const Center(child: Text('No messages yet')),
                   for (final message in widget.messages)
-                    ConversationBubble(message: message),
+                    ConversationBubble(
+                      message: message,
+                      onReplayVoiceMessage: widget.onReplayVoiceMessage,
+                    ),
                 ],
               ),
             ),
@@ -201,36 +206,63 @@ class _ConversationScreenState extends State<ConversationScreen> {
 }
 
 class ConversationBubble extends StatelessWidget {
-  const ConversationBubble({required this.message, super.key});
+  const ConversationBubble({
+    required this.message,
+    required this.onReplayVoiceMessage,
+    super.key,
+  });
 
   final EdgezConversationMessage message;
+  final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
 
   @override
   Widget build(BuildContext context) {
     final mine = message.mine;
     final isDelivered = message.status == 'Delivered';
+    final isVoice = message.isVoice;
+    final canReplay = isVoice;
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Card(
-        color: mine
-            ? Theme.of(context).colorScheme.primaryContainer
-            : Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(message.text),
-              if (message.status.isNotEmpty)
-                Text(
-                  isDelivered ? 'Delivered' : message.status,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: isDelivered ? const Color(0xFF16803C) : null),
-                ),
-            ],
+      child: InkWell(
+        onTap: canReplay ? () => onReplayVoiceMessage(message) : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Card(
+          color: mine
+              ? Theme.of(context).colorScheme.primaryContainer
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(isVoice
+                    ? 'Voice message ${_formatDuration(message.durationMs)}'
+                    : message.text),
+                if (isVoice)
+                  Text(
+                      message.voiceBytes.isEmpty
+                          ? 'No replay data'
+                          : 'Tap to replay',
+                      style: Theme.of(context).textTheme.labelSmall),
+                if (message.status.isNotEmpty)
+                  Text(
+                    isDelivered ? 'Delivered' : message.status,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: isDelivered ? const Color(0xFF16803C) : null),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  String _formatDuration(int durationMs) {
+    if (durationMs <= 0) return '';
+    final seconds = (durationMs / 1000).ceil();
+    final minutes = seconds ~/ 60;
+    final remaining = seconds % 60;
+    return '$minutes:${remaining.toString().padLeft(2, '0')}';
   }
 }

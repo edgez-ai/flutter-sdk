@@ -364,6 +364,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                       onBack: () => setState(() => selectedNodeNum = null),
                       onSendMessage: _sendMessage,
                       onSendVoiceMessage: _sendVoicePlaceholder,
+                      onReplayVoiceMessage: session.playVoiceMessage,
                     )
                   : DeviceDetailScreen(
                       user: selected,

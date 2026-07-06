@@ -344,6 +344,9 @@ class EdgezConversationMessage {
     required this.timestampMs,
     this.messageUuid = '',
     this.status = '',
+    this.voiceBytes = const <int>[],
+    this.voiceCodec = 0,
+    this.durationMs = 0,
   });
 
   final int nodeNum;
@@ -352,6 +355,11 @@ class EdgezConversationMessage {
   final int timestampMs;
   final String messageUuid;
   final String status;
+  final List<int> voiceBytes;
+  final int voiceCodec;
+  final int durationMs;
+
+  bool get isVoice => voiceBytes.isNotEmpty || voiceCodec != 0 || durationMs > 0;
 
   factory EdgezConversationMessage.fromMap(Map<Object?, Object?> map) {
     return EdgezConversationMessage(
@@ -361,6 +369,11 @@ class EdgezConversationMessage {
       timestampMs: map['timestampMs'] as int? ?? 0,
       messageUuid: map['messageUuid'] as String? ?? '',
       status: map['status'] as String? ?? '',
+      voiceBytes: map['voiceBytes'] is List
+          ? List<int>.from(map['voiceBytes'] as List)
+          : const <int>[],
+      voiceCodec: map['voiceCodec'] as int? ?? 0,
+      durationMs: map['durationMs'] as int? ?? 0,
     );
   }
 }

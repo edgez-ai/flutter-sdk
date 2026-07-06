@@ -342,6 +342,15 @@ class EdgezMeshSession extends ChangeNotifier {
     );
   }
 
+  Future<void> playVoiceMessage(EdgezConversationMessage message) async {
+    try {
+      await sdk.playVoiceMessage(message);
+      _setState(_state.copyWith(statusLine: 'Playing voice message'));
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Voice replay failed: $error'));
+    }
+  }
+
   void removeNode(int nodeNum) {
     final nodes = Map<int, EdgezMeshNode>.of(_state.nodes)..remove(nodeNum);
     final sensorSamples =
@@ -528,6 +537,7 @@ class EdgezMeshSession extends ChangeNotifier {
         _formatUuid(packet.messageIdHigh.toInt(), packet.messageIdLow.toInt());
     String? text;
     String status = '';
+    _CompletedVoiceMessage? completedVoice;
     if (sender == null) {
       text = 'Unable to decrypt message';
       status = 'Sender public key is missing';
@@ -560,8 +570,9 @@ class EdgezMeshSession extends ChangeNotifier {
       if (chunk == null) {
         text = 'Unable to decrypt voice message';
       } else {
-        text = _storeVoiceChunk(fromNode, chunk);
-        if (text == null) return;
+        completedVoice = _storeVoiceChunk(fromNode, chunk);
+        if (completedVoice == null) return;
+        text = 'Voice message';
       }
     }
 
@@ -586,6 +597,9 @@ class EdgezMeshSession extends ChangeNotifier {
         timestampMs: now,
         messageUuid: messageUuid,
         status: status,
+        voiceBytes: completedVoice?.bytes ?? const <int>[],
+        voiceCodec: completedVoice?.codec ?? 0,
+        durationMs: completedVoice?.durationMs ?? 0,
       ),
       nodes: nodes,
       statusLine: 'Conversation message received',
@@ -608,16 +622,20 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  String? _storeVoiceChunk(int nodeNum, EdgezVoiceChunk chunk) {
+  _CompletedVoiceMessage? _storeVoiceChunk(int nodeNum, EdgezVoiceChunk chunk) {
     final key = '$nodeNum:${chunk.groupId}';
     final pending = _pendingVoiceMessages.putIfAbsent(
       key,
-      () => _PendingVoiceMessage(totalChunks: chunk.totalChunks),
+      () => _PendingVoiceMessage(
+        totalChunks: chunk.totalChunks,
+        durationMs: chunk.durationMs,
+        codec: chunk.codec,
+      ),
     );
     pending.put(chunk.index, chunk.audio);
     if (!pending.complete) return null;
     _pendingVoiceMessages.remove(key);
-    return 'Voice message';
+    return pending.completed();
   }
 
   void _markMessageDelivered(String messageUuid) {
@@ -642,7 +660,7 @@ class EdgezMeshSession extends ChangeNotifier {
         Map<int, List<EdgezConversationMessage>>.of(_state.conversations);
     var changed = false;
     for (final entry in conversations.entries) {
-      final updated = entry.value.map((message) {
+      final updated = entry.value.map<EdgezConversationMessage>((message) {
         if ((onlyMine && !message.mine) ||
             message.messageUuid != currentMessageUuid) {
           return message;
@@ -655,6 +673,9 @@ class EdgezMeshSession extends ChangeNotifier {
           timestampMs: message.timestampMs,
           messageUuid: messageUuid ?? message.messageUuid,
           status: status ?? message.status,
+          voiceBytes: message.voiceBytes,
+          voiceCodec: message.voiceCodec,
+          durationMs: message.durationMs,
         );
       }).toList(growable: false);
       conversations[entry.key] = updated;
@@ -886,8 +907,12 @@ class EdgezMeshSession extends ChangeNotifier {
 class _PendingVoiceMessage {
   _PendingVoiceMessage({
     required int totalChunks,
+    required this.durationMs,
+    required this.codec,
   }) : chunks = List<List<int>?>.filled(totalChunks, null);
 
+  final int durationMs;
+  final int codec;
   final List<List<int>?> chunks;
 
   void put(int index, List<int> audio) {
@@ -897,4 +922,27 @@ class _PendingVoiceMessage {
   }
 
   bool get complete => chunks.every((chunk) => chunk != null);
+
+  _CompletedVoiceMessage completed() {
+    return _CompletedVoiceMessage(
+      bytes: <int>[
+        for (final chunk in chunks)
+          ...?chunk,
+      ],
+      codec: codec,
+      durationMs: durationMs,
+    );
+  }
+}
+
+class _CompletedVoiceMessage {
+  const _CompletedVoiceMessage({
+    required this.bytes,
+    required this.codec,
+    required this.durationMs,
+  });
+
+  final List<int> bytes;
+  final int codec;
+  final int durationMs;
 }

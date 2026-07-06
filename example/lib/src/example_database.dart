@@ -36,6 +36,9 @@ class ExampleDatabase {
             timestamp_ms INTEGER NOT NULL,
             status TEXT NOT NULL,
             message_uuid TEXT NOT NULL,
+            voice_bytes BLOB NOT NULL DEFAULT X'',
+            voice_codec INTEGER NOT NULL DEFAULT 0,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
             UNIQUE(node_num, timestamp_ms, mine, text, message_uuid)
           )
         ''');
@@ -80,6 +83,22 @@ class ExampleDatabase {
     if (!columnNames.contains('public_key')) {
       await db.execute(
           "ALTER TABLE nodes ADD COLUMN public_key BLOB NOT NULL DEFAULT X''");
+    }
+    final messageColumns =
+        await db.rawQuery('PRAGMA table_info(conversation_messages)');
+    final messageColumnNames =
+        messageColumns.map((row) => row['name'] as String).toSet();
+    if (!messageColumnNames.contains('voice_bytes')) {
+      await db.execute(
+          "ALTER TABLE conversation_messages ADD COLUMN voice_bytes BLOB NOT NULL DEFAULT X''");
+    }
+    if (!messageColumnNames.contains('voice_codec')) {
+      await db.execute(
+          'ALTER TABLE conversation_messages ADD COLUMN voice_codec INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!messageColumnNames.contains('duration_ms')) {
+      await db.execute(
+          'ALTER TABLE conversation_messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');
     }
   }
 
@@ -130,6 +149,9 @@ class ExampleDatabase {
           timestampMs: row['timestamp_ms'] as int,
           status: row['status'] as String,
           messageUuid: row['message_uuid'] as String,
+          voiceBytes: row['voice_bytes'] as List<int>? ?? const <int>[],
+          voiceCodec: row['voice_codec'] as int? ?? 0,
+          durationMs: row['duration_ms'] as int? ?? 0,
         ),
       );
     }
@@ -271,6 +293,9 @@ class ExampleDatabase {
         'timestamp_ms': message.timestampMs,
         'status': message.status,
         'message_uuid': message.messageUuid,
+        'voice_bytes': message.voiceBytes,
+        'voice_codec': message.voiceCodec,
+        'duration_ms': message.durationMs,
       },
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );

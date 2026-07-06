@@ -56,6 +56,16 @@ class EdgezMeshSdk {
         false;
   }
 
+  Future<void> playVoiceMessage(EdgezConversationMessage message) {
+    if (message.voiceBytes.isEmpty) {
+      throw StateError('Voice message has no audio bytes');
+    }
+    return _methods.invokeMethod<void>('playVoiceMessage', {
+      'bytes': Uint8List.fromList(message.voiceBytes),
+      'codec': message.voiceCodec,
+    });
+  }
+
   Future<void> initializeMesh(EdgezMeshConfig config) {
     final packet = proto.NetworkPacket(
       operation: proto.Operation.REQUEST,
