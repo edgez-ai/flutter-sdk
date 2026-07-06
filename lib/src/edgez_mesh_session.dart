@@ -111,6 +111,10 @@ class EdgezMeshSession extends ChangeNotifier {
   final EdgezMeshSdk sdk;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
+  EdgezMeshConfig? _lastMeshConfig;
+  var _bleReady = false;
+  var _initInFlight = false;
+  String? _lastInitKey;
 
   EdgezMeshState get state => _state;
 
@@ -158,6 +162,7 @@ class EdgezMeshSession extends ChangeNotifier {
   Future<void> connectBle(String deviceId) async {
     try {
       await sdk.connectBle(deviceId);
+      _bleReady = false;
       _setState(
         _state.copyWith(
           connection: EdgezConnectionType.ble,
@@ -172,18 +177,16 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> disconnect() async {
     await sdk.disconnect();
+    _bleReady = false;
+    _lastInitKey = null;
     _setState(
       EdgezMeshState.initial().copyWith(statusLine: 'Disconnected'),
     );
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) async {
-    try {
-      await sdk.initializeMesh(config);
-      _setState(_state.copyWith(statusLine: 'User mesh settings sent'));
-    } catch (error) {
-      _setState(_state.copyWith(statusLine: 'Save settings failed: $error'));
-    }
+    _lastMeshConfig = config;
+    await _sendInitIfReady(force: true);
   }
 
   Future<void> sendDeviceSettings(Map<String, Object?> settings) async {
@@ -257,6 +260,10 @@ class EdgezMeshSession extends ChangeNotifier {
   void _handleEvent(EdgezMeshEvent event) {
     switch (event.type) {
       case EdgezMeshEventType.connection:
+        if (event.connection == EdgezConnectionType.none) {
+          _bleReady = false;
+          _lastInitKey = null;
+        }
         _setState(_state.copyWith(connection: event.connection));
       case EdgezMeshEventType.bleDevice:
         final device = event.bleDevice;
@@ -271,6 +278,10 @@ class EdgezMeshSession extends ChangeNotifier {
         );
       case EdgezMeshEventType.packet:
         _handlePacket(event.packet);
+      case EdgezMeshEventType.ready:
+        _bleReady = true;
+        _setState(_state.copyWith(statusLine: 'BLE control service ready'));
+        unawaited(_sendInitIfReady());
       case EdgezMeshEventType.status:
         _setState(_state.copyWith(status: event.status));
       case EdgezMeshEventType.node:
@@ -335,6 +346,10 @@ class EdgezMeshSession extends ChangeNotifier {
       );
     }
 
+    if (packet.hasDeviceSettings()) {
+      _setState(_state.copyWith(statusLine: 'Device settings received'));
+    }
+
     if (!packet.hasBeacon()) return;
     final beacon = _parseBeacon(packet.beacon);
     if (beacon == null) return;
@@ -380,6 +395,55 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Beacon received from ${node.resolvedDisplayName}',
       ),
     );
+  }
+
+  Future<void> _sendInitIfReady({bool force = false}) async {
+    final config = _lastMeshConfig;
+    if (config == null) {
+      _setState(
+          _state.copyWith(statusLine: 'Save settings before device init'));
+      return;
+    }
+    if (!_bleReady) {
+      _setState(
+        _state.copyWith(
+          statusLine: _state.connection == EdgezConnectionType.ble
+              ? 'Settings saved; waiting for BLE control service'
+              : 'Settings saved; connect BLE to initialize device',
+        ),
+      );
+      return;
+    }
+    final initKey = _initKey(config);
+    if (!force && _lastInitKey == initKey) return;
+    if (_initInFlight) return;
+
+    _initInFlight = true;
+    try {
+      await sdk.initializeMesh(config);
+      _lastInitKey = initKey;
+      _setState(_state.copyWith(statusLine: 'User mesh settings sent'));
+      await sdk.requestDeviceSettings(identity: config.identity);
+      _setState(_state.copyWith(statusLine: 'Device settings requested'));
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
+    } finally {
+      _initInFlight = false;
+    }
+  }
+
+  String _initKey(EdgezMeshConfig config) {
+    return [
+      config.countryCode.toUpperCase(),
+      config.meshId,
+      config.passphrase,
+      config.maxHop,
+      config.identity.userUuid,
+      config.identity.userIdHigh,
+      config.identity.userIdLow,
+      config.identity.name,
+      config.identity.publicKey.join(','),
+    ].join('|');
   }
 
   proto.NetworkPacket? _parseNetworkPacket(List<int> bytes) {

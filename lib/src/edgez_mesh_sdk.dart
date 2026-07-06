@@ -69,6 +69,22 @@ class EdgezMeshSdk {
     });
   }
 
+  Future<void> requestDeviceSettings({EdgezUserIdentity? identity}) {
+    final packet = proto.NetworkPacket(
+      operation: proto.Operation.REQUEST,
+      interface: proto.Interface.HALOW,
+      userHigh: identity == null ? null : Int64(identity.userIdHigh),
+      userLow: identity == null ? null : Int64(identity.userIdLow),
+      deviceSettings: proto.DeviceSettings(
+        action: proto.DeviceSettingsAction.DEVICE_SETTINGS_GET,
+      ),
+    );
+    return _methods.invokeMethod<void>('sendPacket', {
+      'label': 'Device settings request',
+      'packet': Uint8List.fromList(packet.writeToBuffer()),
+    });
+  }
+
   String _take(String value, int maxLength) {
     return value.length > maxLength ? value.substring(0, maxLength) : value;
   }

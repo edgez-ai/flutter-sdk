@@ -158,6 +158,23 @@ class EdgezFlutterSdkPlugin :
                     },
                 )
             }
+            "sendPacket" -> {
+                val packet = call.argument<ByteArray>("packet")
+                val label = call.argument<String>("label") ?: "Packet"
+                if (packet == null) {
+                    result.error("missing_packet", "Missing packet", null)
+                    return
+                }
+                sendFrame(packet).fold(
+                    onSuccess = {
+                        emit(mapOf("type" to "log", "log" to "$label queued"))
+                        result.success(null)
+                    },
+                    onFailure = {
+                        result.error("ble_write_failed", it.message ?: "BLE write failed", null)
+                    },
+                )
+            }
             "sendTextMessage" -> {
                 // Native reference: encryptConversationText + sendConversationMessage.
                 result.success("")
@@ -459,6 +476,7 @@ class EdgezFlutterSdkPlugin :
                 }
             }
             emit(mapOf("type" to "log", "log" to "BLE control service ready"))
+            emit(mapOf("type" to "ready"))
             writeNextFrame(gatt, rx)
         }
 

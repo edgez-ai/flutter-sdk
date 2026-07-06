@@ -13,6 +13,7 @@ enum EdgezConnectionType {
 enum EdgezMeshEventType {
   connection,
   bleDevice,
+  ready,
   packet,
   status,
   node,
