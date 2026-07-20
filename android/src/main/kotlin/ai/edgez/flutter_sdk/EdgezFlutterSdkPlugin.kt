@@ -17,6 +17,9 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.media.MediaPlayer
@@ -68,6 +71,8 @@ class EdgezFlutterSdkPlugin :
     private var eventSink: EventChannel.EventSink? = null
     private var scanCallback: ScanCallback? = null
     private var gatt: BluetoothGatt? = null
+    private var pendingBondDevice: BluetoothDevice? = null
+    private var bondReceiverRegistered = false
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingMicrophoneResult: MethodChannel.Result? = null
@@ -87,12 +92,47 @@ class EdgezFlutterSdkPlugin :
     private val bluetoothAdapter: BluetoothAdapter?
         get() = context.getSystemService(BluetoothManager::class.java)?.adapter
 
+    private val bondStateReceiver = object : BroadcastReceiver() {
+        @SuppressLint("MissingPermission")
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+            @Suppress("DEPRECATION")
+            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                ?: return
+            val pending = pendingBondDevice ?: return
+            if (device.address != pending.address) return
+
+            when (intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)) {
+                BluetoothDevice.BOND_BONDED -> {
+                    pendingBondDevice = null
+                    emit(mapOf("type" to "log", "log" to "BLE pairing complete ${device.address}"))
+                    connectGatt(device)
+                }
+                BluetoothDevice.BOND_BONDING -> emit(
+                    mapOf("type" to "log", "log" to "BLE awaiting pairing PIN ${device.address}"),
+                )
+                BluetoothDevice.BOND_NONE -> {
+                    pendingBondDevice = null
+                    emit(mapOf("type" to "log", "log" to "BLE pairing failed or canceled ${device.address}"))
+                    emit(mapOf("type" to "connection", "connection" to "none"))
+                }
+            }
+        }
+    }
+
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
         methods = MethodChannel(binding.binaryMessenger, "edgez_flutter_sdk/methods")
         events = EventChannel(binding.binaryMessenger, "edgez_flutter_sdk/events")
         methods.setMethodCallHandler(this)
         events.setStreamHandler(this)
+        val bondFilter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.registerReceiver(bondStateReceiver, bondFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(bondStateReceiver, bondFilter)
+        }
+        bondReceiverRegistered = true
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -104,6 +144,10 @@ class EdgezFlutterSdkPlugin :
         methods.setMethodCallHandler(null)
         events.setStreamHandler(null)
         eventSink = null
+        if (bondReceiverRegistered) {
+            context.unregisterReceiver(bondStateReceiver)
+            bondReceiverRegistered = false
+        }
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -550,17 +594,34 @@ class EdgezFlutterSdkPlugin :
         }
         stopBleScan()
         closeGatt()
+        if (device.bondState != BluetoothDevice.BOND_BONDED) {
+            pendingBondDevice = device
+            emit(mapOf("type" to "log", "log" to "Starting BLE pairing ${device.address}"))
+            if (!device.createBond()) {
+                pendingBondDevice = null
+                result.error("ble_pairing_failed", "BLE pairing could not start", null)
+                return
+            }
+            result.success(null)
+            return
+        }
+        connectGatt(device)
+        result.success(null)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun connectGatt(device: BluetoothDevice) {
         gatt = if (Build.VERSION.SDK_INT >= 23) {
             device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         } else {
             device.connectGatt(context, false, gattCallback)
         }
         emit(mapOf("type" to "log", "log" to "Connecting BLE ${device.address}"))
-        result.success(null)
     }
 
     @SuppressLint("MissingPermission")
     private fun closeGatt() {
+        pendingBondDevice = null
         rxCharacteristic = null
         rxLen = 0
         clearTxQueue()
