@@ -64,34 +64,6 @@ void main() {
     expect(packet.init.meshFrequencyKhz, 915000);
   });
 
-  test('beacon uses broadcast payload and remains decryptable', () async {
-    const config = EdgezMeshConfig(
-      identity: identity,
-      passphrase: 'mesh secret',
-      beacon: EdgezBeaconConfig(
-        marker: 'orange',
-        shareLocation: true,
-        latitude: 1.25,
-        longitude: 2.5,
-      ),
-    );
-
-    await sdk.sendBeacon(config);
-
-    final packet = _packetFrom(calls.single);
-    expect(packet.operation, Operation.BROADCAST);
-    expect(packet.hasPayload(), isTrue);
-    expect(packet.hasBeacon(), isFalse);
-    final beacon = await sdk.decodeBeaconPayload(
-      packet.payload,
-      passphrase: config.passphrase,
-    );
-    expect(beacon, isNotNull);
-    expect(beacon!.userName, 'Protocol User|m=orange');
-    expect(beacon.latitude, closeTo(1.25, 0.001));
-    expect(beacon.longitude, closeTo(2.5, 0.001));
-  });
-
   test('device settings carry the added provisioning fields', () async {
     const settings = EdgezDeviceSettings(
       meshId: 'edgez-test',

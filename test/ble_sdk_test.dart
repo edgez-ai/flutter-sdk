@@ -100,6 +100,7 @@ void main() {
         ble.callsFor('sendPacket').first.packet.deviceSettings.action,
         DeviceSettingsAction.DEVICE_SETTINGS_GET,
       );
+      expect(ble.callsFor('sendPacket'), hasLength(1));
 
       session.dispose();
     });

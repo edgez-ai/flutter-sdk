@@ -157,46 +157,8 @@ class EdgezMeshSdk {
     });
   }
 
-  Future<void> sendBeacon(EdgezMeshConfig config) async {
-    final beacon = proto.Beacon(
-      userIdHigh: Int64(config.identity.userIdHigh),
-      userIdLow: Int64(config.identity.userIdLow),
-      userName: _beaconUserName(config.identity.name, config.beacon.marker),
-      userPublicKey: config.identity.publicKey.take(32).toList(),
-      marker: _markerColor(config.beacon.marker),
-    );
-    if (config.beacon.shareLocation &&
-        config.beacon.latitude != null &&
-        config.beacon.longitude != null) {
-      beacon.latitude = config.beacon.latitude!;
-      beacon.longitude = config.beacon.longitude!;
-    }
-
-    final beaconBytes = beacon.writeToBuffer();
-    final payload = config.passphrase.isEmpty
-        ? beaconBytes
-        : await _encryptBeacon(beaconBytes, config.passphrase);
-    final packet = proto.NetworkPacket(
-      operation: proto.Operation.BROADCAST,
-      interface: proto.Interface.HALOW,
-      payload: utf8.encode(base64Encode(payload)),
-    );
-    return _transport.invokeMethod<void>('sendPacket', {
-      'label': 'Beacon',
-      'packet': Uint8List.fromList(packet.writeToBuffer()),
-    });
-  }
-
   String _take(String value, int maxLength) {
     return value.length > maxLength ? value.substring(0, maxLength) : value;
-  }
-
-  String _beaconUserName(String userName, String marker) {
-    final normalizedName = userName.trim().isEmpty ? 'EdgeZ User' : userName;
-    final normalizedMarker = _normalizeMarker(marker);
-    if (normalizedMarker == 'default') return _take(normalizedName, 64);
-    final suffix = '|m=$normalizedMarker';
-    return _take(normalizedName, (64 - suffix.length).clamp(0, 64)) + suffix;
   }
 
   proto.MarkerColor _markerColor(String marker) {
@@ -242,27 +204,6 @@ class EdgezMeshSdk {
       'blue_gray',
     };
     return markers.contains(marker) ? marker : 'default';
-  }
-
-  Future<List<int>> _encryptBeacon(List<int> payload, String passphrase) async {
-    final random = Random.secure();
-    final nonce = List<int>.generate(12, (_) => random.nextInt(256));
-    final keyHash = await Sha256().hash(utf8.encode(passphrase));
-    final secretKey = SecretKey(keyHash.bytes);
-    final secretBox = await AesGcm.with256bits().encrypt(
-      payload,
-      secretKey: secretKey,
-      nonce: nonce,
-    );
-    return <int>[
-      0x45,
-      0x5a,
-      0x42,
-      0x01,
-      ...nonce,
-      ...secretBox.cipherText,
-      ...secretBox.mac.bytes,
-    ];
   }
 
   Future<proto.Beacon?> decodeBeaconPayload(

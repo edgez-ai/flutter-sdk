@@ -119,9 +119,7 @@ class EdgezMeshSession extends ChangeNotifier {
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
   var _initInFlight = false;
-  var _beaconSendInFlight = false;
   String? _lastInitKey;
-  Timer? _beaconTimer;
   final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
       <String, _PendingVoiceMessage>{};
 
@@ -188,7 +186,6 @@ class EdgezMeshSession extends ChangeNotifier {
     await sdk.disconnect();
     _bleReady = false;
     _lastInitKey = null;
-    _stopBeaconLoop();
     _setState(
       EdgezMeshState.initial().copyWith(statusLine: 'Disconnected'),
     );
@@ -830,49 +827,10 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'User mesh settings sent'));
       await sdk.requestDeviceSettings(identity: config.identity);
       _setState(_state.copyWith(statusLine: 'Device settings requested'));
-      _startBeaconLoop();
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
     } finally {
       _initInFlight = false;
-    }
-  }
-
-  void _startBeaconLoop() {
-    _stopBeaconLoop();
-    final config = _lastMeshConfig;
-    if (config == null || !_bleReady) return;
-    unawaited(_sendBeaconIfReady());
-    _beaconTimer = Timer.periodic(
-      Duration(seconds: config.beacon.normalizedIntervalSeconds),
-      (_) => unawaited(_sendBeaconIfReady()),
-    );
-  }
-
-  void _stopBeaconLoop() {
-    _beaconTimer?.cancel();
-    _beaconTimer = null;
-    _beaconSendInFlight = false;
-  }
-
-  Future<void> _sendBeaconIfReady() async {
-    final config = _lastMeshConfig;
-    if (config == null || !_bleReady || _beaconSendInFlight) return;
-    if (_state.connection != EdgezConnectionType.ble) return;
-    final status = _state.status;
-    if (status != null &&
-        (!status.supported || !status.stackInitialized || !status.meshMode)) {
-      return;
-    }
-
-    _beaconSendInFlight = true;
-    try {
-      await sdk.sendBeacon(config);
-      _setState(_state.copyWith(statusLine: 'Beacon sent'));
-    } catch (error) {
-      _setState(_state.copyWith(statusLine: 'Beacon send failed: $error'));
-    } finally {
-      _beaconSendInFlight = false;
     }
   }
 
@@ -1008,7 +966,6 @@ class EdgezMeshSession extends ChangeNotifier {
 
   @override
   void dispose() {
-    _stopBeaconLoop();
     _pendingVoiceMessages.clear();
     _subscription.cancel();
     super.dispose();
