@@ -80,6 +80,10 @@ void main() {
       await session.initializeMesh(config);
       expect(ble.callsFor('initializeMesh'), isEmpty);
 
+      await session.connectBle('11:22:33:44:55:66');
+      expect(ble.callsFor('connectBle'), hasLength(1));
+      expect(ble.callsFor('initializeMesh'), isEmpty);
+
       ble.emitConnection(EdgezConnectionType.ble);
       ble.emitReady();
       await ble.flushEvents();

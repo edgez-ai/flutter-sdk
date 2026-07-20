@@ -246,6 +246,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   }
 
   Future<void> _connectBleDevice(String deviceId) async {
+    // Match the Android flow: make the current mesh configuration available
+    // before BLE service discovery emits its ready event.
+    await _saveAppSettings();
     await session.connectBle(deviceId);
   }
 
