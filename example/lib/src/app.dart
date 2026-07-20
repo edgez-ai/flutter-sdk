@@ -55,7 +55,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   String meshCountry = 'US';
   String meshId = 'edgez';
-  String passphrase = '';
+  String passphrase = 'edgez123';
   String maxHop = '4';
   int meshBandwidthMhz = 1;
   int meshFrequencyKhz = 902500;
