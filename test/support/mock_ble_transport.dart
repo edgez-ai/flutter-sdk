@@ -19,11 +19,14 @@ class MockBleCall {
 }
 
 class MockBleTransport implements EdgezPlatformTransport {
+  static const int maxPayloadBytes = 512;
+
   final StreamController<Object?> _events =
       StreamController<Object?>.broadcast();
   final List<MockBleCall> calls = <MockBleCall>[];
   final Map<String, Object?> results = <String, Object?>{};
   final Map<String, Object> errors = <String, Object>{};
+  final List<Uint8List> transmittedFrames = <Uint8List>[];
 
   @override
   Stream<Object?> get events => _events.stream;
@@ -33,6 +36,11 @@ class MockBleTransport implements EdgezPlatformTransport {
     calls.add(MockBleCall(method, arguments));
     final error = errors[method];
     if (error != null) throw error;
+    if (arguments is Map && arguments['packet'] is Uint8List) {
+      transmittedFrames.add(
+        encodeFrame(arguments['packet']! as Uint8List),
+      );
+    }
     return results[method] as T?;
   }
 
@@ -73,10 +81,41 @@ class MockBleTransport implements EdgezPlatformTransport {
   }
 
   void emitPacket(NetworkPacket packet) {
+    emitFrame(encodeFrame(packet.writeToBuffer()));
+  }
+
+  void emitFrame(List<int> frame) {
+    final packet = decodeFrame(frame);
     _events.add(<Object?, Object?>{
       'type': 'packet',
-      'packet': packet.writeToBuffer(),
+      'packet': packet,
     });
+  }
+
+  Uint8List encodeFrame(List<int> payload) {
+    if (payload.length > maxPayloadBytes) {
+      throw StateError(
+        'Mock BLE payload too large: ${payload.length}/$maxPayloadBytes',
+      );
+    }
+    return Uint8List.fromList(<int>[
+      0x45,
+      0x5a,
+      payload.length & 0xff,
+      (payload.length >> 8) & 0xff,
+      ...payload,
+    ]);
+  }
+
+  Uint8List decodeFrame(List<int> frame) {
+    if (frame.length < 4 || frame[0] != 0x45 || frame[1] != 0x5a) {
+      throw const FormatException('Mock BLE frame has invalid EZ header');
+    }
+    final payloadLength = frame[2] | (frame[3] << 8);
+    if (payloadLength > maxPayloadBytes || frame.length != payloadLength + 4) {
+      throw const FormatException('Mock BLE frame has invalid payload length');
+    }
+    return Uint8List.fromList(frame.sublist(4));
   }
 
   void emitLog(String message) {

@@ -10,6 +10,7 @@ import 'example_database.dart';
 import 'models.dart';
 import 'nodes_tab.dart';
 import 'settings_tab.dart';
+import 'topology_screen.dart';
 
 enum AppDestination {
   nodes('Nodes', Icons.hub_outlined, Icons.hub),
@@ -37,6 +38,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   late final EdgezIdentityStore identityStore;
   AppDestination destination = AppDestination.nodes;
   int? selectedNodeNum;
+  bool showTopology = false;
   EdgezUserIdentity? userIdentity;
   bool databaseReady = false;
   bool persistenceEnabled = false;
@@ -247,7 +249,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   Future<void> _disconnect() async {
     await session.disconnect();
-    setState(() => selectedNodeNum = null);
+    setState(() {
+      selectedNodeNum = null;
+      showTopology = false;
+    });
   }
 
   Future<void> _saveAppSettings() async {
@@ -380,34 +385,40 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         final selected =
             selectedNodeNum == null ? null : meshState.nodes[selectedNodeNum!];
         final body = switch (destination) {
-          AppDestination.nodes => selected == null
-              ? NodesScreen(
-                  activeConnection: meshState.connection,
-                  status: meshState.status,
+          AppDestination.nodes => showTopology
+              ? TopologyScreen(
                   users: meshState.sortedNodes,
-                  sensorSamples: meshState.sensorSamples,
-                  topologyLinks: meshState.topologyLinks,
-                  onRemoveNode: _removeNode,
-                  onOpenNode: _openNode,
+                  links: meshState.topologyLinks,
+                  onBack: () => setState(() => showTopology = false),
                 )
-              : selected.opensConversation
-                  ? ConversationScreen(
+              : selected == null
+                  ? NodesScreen(
                       activeConnection: meshState.connection,
-                      user: selected,
-                      messages: meshState.conversations[selected.nodeNum] ??
-                          const <EdgezConversationMessage>[],
-                      onBack: () => setState(() => selectedNodeNum = null),
-                      onSendMessage: _sendMessage,
-                      onStartVoiceMessage: _startVoiceMessage,
-                      onStopVoiceMessage: _stopVoiceMessage,
-                      onReplayVoiceMessage: session.playVoiceMessage,
+                      status: meshState.status,
+                      users: meshState.sortedNodes,
+                      sensorSamples: meshState.sensorSamples,
+                      onOpenTopology: () => setState(() => showTopology = true),
+                      onRemoveNode: _removeNode,
+                      onOpenNode: _openNode,
                     )
-                  : DeviceDetailScreen(
-                      user: selected,
-                      samples: meshState.sensorSamples[selected.nodeNum] ??
-                          const <EdgezSensorSample>[],
-                      onBack: () => setState(() => selectedNodeNum = null),
-                    ),
+                  : selected.opensConversation
+                      ? ConversationScreen(
+                          activeConnection: meshState.connection,
+                          user: selected,
+                          messages: meshState.conversations[selected.nodeNum] ??
+                              const <EdgezConversationMessage>[],
+                          onBack: () => setState(() => selectedNodeNum = null),
+                          onSendMessage: _sendMessage,
+                          onStartVoiceMessage: _startVoiceMessage,
+                          onStopVoiceMessage: _stopVoiceMessage,
+                          onReplayVoiceMessage: session.playVoiceMessage,
+                        )
+                      : DeviceDetailScreen(
+                          user: selected,
+                          samples: meshState.sensorSamples[selected.nodeNum] ??
+                              const <EdgezSensorSample>[],
+                          onBack: () => setState(() => selectedNodeNum = null),
+                        ),
           AppDestination.debug => DebugScreen(
               activeConnection: meshState.connection,
               meshStatus: meshState.status,
@@ -551,7 +562,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               selectedIndex: AppDestination.values.indexOf(destination),
               onDestinationSelected: (index) => setState(() {
                 destination = AppDestination.values[index];
-                if (destination != AppDestination.nodes) selectedNodeNum = null;
+                if (destination != AppDestination.nodes) {
+                  selectedNodeNum = null;
+                  showTopology = false;
+                }
               }),
               destinations: AppDestination.values.map((item) {
                 return NavigationDestination(

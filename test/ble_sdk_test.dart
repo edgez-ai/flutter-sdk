@@ -173,8 +173,12 @@ void main() {
       expect(packet.to.toInt(), 0x200);
       expect(packet.msg.mime, Mime.MIME_TEXT);
       expect(packet.msg.payload, isNotEmpty);
+      final frame = ble.transmittedFrames.single;
+      expect(frame.sublist(0, 2), <int>[0x45, 0x5a]);
+      expect(frame[2] | (frame[3] << 8), packet.writeToBuffer().length);
 
-      final receiverSdk = EdgezMeshSdk(transport: MockBleTransport());
+      final receiverBle = MockBleTransport();
+      final receiverSdk = EdgezMeshSdk(transport: receiverBle);
       final cleartext = await receiverSdk.decryptTextMessage(
         config: EdgezMeshConfig(identity: receiver),
         sender: EdgezMeshNode(
@@ -192,6 +196,7 @@ void main() {
         payload: packet.msg.payload,
       );
       expect(cleartext, 'hello over mocked BLE');
+      await receiverBle.close();
     });
 
     test('surfaces failures returned by the mocked BLE layer', () async {
@@ -206,6 +211,17 @@ void main() {
             'mock connection failed',
           ),
         ),
+      );
+    });
+
+    test('rejects malformed BLE protocol frames', () {
+      expect(
+        () => ble.emitFrame(<int>[0x00, 0x00, 0x00, 0x00]),
+        throwsFormatException,
+      );
+      expect(
+        () => ble.emitFrame(<int>[0x45, 0x5a, 0x02, 0x00, 0x01]),
+        throwsFormatException,
       );
     });
   });

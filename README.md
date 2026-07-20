@@ -14,6 +14,11 @@ The SDK owns BLE transport and mesh operations:
 - text and voice message send APIs
 - device settings send APIs
 
+Production builds use `EdgezChannelTransport`, which bridges the SDK to the
+Android BLE plugin through Flutter method and event channels. Tests can inject
+an `EdgezPlatformTransport` implementation to mock BLE commands and incoming
+events without hardware.
+
 The example app is intentionally in-memory only. It does not use SQLite and it does not include the map tab or Organic Maps dependencies.
 
 ## Current Android Reference
@@ -56,3 +61,16 @@ Regenerate the stubs after changing the schema:
 dart pub get
 tool/generate_protos.sh
 ```
+
+## Tests
+
+Run the SDK tests with:
+
+```sh
+flutter test
+```
+
+`test/support/mock_ble_transport.dart` provides an in-memory BLE transport.
+The mocked-BLE suite verifies connection commands and events, ready-gated mesh
+initialization, inbound beacons and sensor values, encrypted conversations, and
+transport failures.
