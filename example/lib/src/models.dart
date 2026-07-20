@@ -6,7 +6,8 @@ enum ExampleDeviceType {
   user('User', true),
   gateway('Gateway', false),
   beacon('Beacon', false),
-  sensor('Sensor', false);
+  sensor('Sensor', false),
+  relay('Relay', false);
 
   const ExampleDeviceType(this.label, this.opensConversation);
 

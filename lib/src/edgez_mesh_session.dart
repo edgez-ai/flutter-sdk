@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -14,11 +13,13 @@ class EdgezMeshState {
     required Map<String, EdgezBleDevice> bleDevices,
     required Map<int, EdgezMeshNode> nodes,
     required Map<int, List<EdgezSensorSample>> sensorSamples,
+    required List<EdgezTopologyLink> topologyLinks,
     required Map<int, List<EdgezConversationMessage>> conversations,
     required this.statusLine,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         sensorSamples = _freezeSensorSamples(sensorSamples),
+        topologyLinks = List<EdgezTopologyLink>.unmodifiable(topologyLinks),
         conversations = _freezeConversations(conversations);
 
   factory EdgezMeshState.initial() {
@@ -28,6 +29,7 @@ class EdgezMeshState {
       bleDevices: const <String, EdgezBleDevice>{},
       nodes: const <int, EdgezMeshNode>{},
       sensorSamples: const <int, List<EdgezSensorSample>>{},
+      topologyLinks: const <EdgezTopologyLink>[],
       conversations: const <int, List<EdgezConversationMessage>>{},
       statusLine: 'Connect with BLE, then save mesh settings.',
     );
@@ -38,6 +40,7 @@ class EdgezMeshState {
   final Map<String, EdgezBleDevice> bleDevices;
   final Map<int, EdgezMeshNode> nodes;
   final Map<int, List<EdgezSensorSample>> sensorSamples;
+  final List<EdgezTopologyLink> topologyLinks;
   final Map<int, List<EdgezConversationMessage>> conversations;
   final String statusLine;
 
@@ -62,6 +65,7 @@ class EdgezMeshState {
     Map<String, EdgezBleDevice>? bleDevices,
     Map<int, EdgezMeshNode>? nodes,
     Map<int, List<EdgezSensorSample>>? sensorSamples,
+    List<EdgezTopologyLink>? topologyLinks,
     Map<int, List<EdgezConversationMessage>>? conversations,
     String? statusLine,
   }) {
@@ -71,6 +75,7 @@ class EdgezMeshState {
       bleDevices: bleDevices ?? this.bleDevices,
       nodes: nodes ?? this.nodes,
       sensorSamples: sensorSamples ?? this.sensorSamples,
+      topologyLinks: topologyLinks ?? this.topologyLinks,
       conversations: conversations ?? this.conversations,
       statusLine: statusLine ?? this.statusLine,
     );
@@ -504,6 +509,8 @@ class EdgezMeshSession extends ChangeNotifier {
             ipAddress: packet.status.ipAddr,
             gateway: packet.status.gateway,
             macAddress: packet.status.macAddress.toInt(),
+            licensed: packet.status.licensed,
+            firmwareVersion: packet.status.firmwareVersion,
           ),
         ),
       );
@@ -513,14 +520,62 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'Device settings received'));
     }
 
-    if (packet.hasPayload() ||
-        packet.operation == proto.Operation.ACKNOWLEDGE) {
+    if (packet.hasReport()) {
+      _handleTopologyReport(packet);
+    }
+
+    if (packet.hasMsg() || packet.operation == proto.Operation.ACKNOWLEDGE) {
       unawaited(_handleConversationPacket(packet));
     }
 
-    if (!packet.hasBeacon()) return;
-    final beacon = _parseBeacon(packet.beacon);
-    if (beacon == null) return;
+    if (packet.hasBeacon()) {
+      _handleBeacon(packet, packet.beacon);
+    } else if (packet.hasPayload()) {
+      unawaited(_handleLegacyBeaconPacket(packet));
+    }
+  }
+
+  void _handleTopologyReport(proto.NetworkPacket packet) {
+    final reporter = packet.from.toInt();
+    if (reporter == 0) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const windowMs = 5 * 60 * 1000;
+    final latestByPair = <String, EdgezTopologyLink>{};
+    for (final link in _state.topologyLinks) {
+      if (link.lastSeenMs >= now - windowMs) {
+        latestByPair[link.undirectedKey] = link;
+      }
+    }
+    for (final peer in packet.report.peers) {
+      final peerNode = peer.id.toInt();
+      if (peerNode == 0 || peerNode == reporter) continue;
+      final link = EdgezTopologyLink(
+        reporterNodeNum: reporter,
+        peerNodeNum: peerNode,
+        encodedRssi: peer.rssi > 0 ? peer.rssi : 1000,
+        lastSeenMs: now,
+      );
+      latestByPair[link.undirectedKey] = link;
+    }
+    final links = latestByPair.values.toList()
+      ..sort((left, right) => right.lastSeenMs.compareTo(left.lastSeenMs));
+    _setState(
+      _state.copyWith(
+        topologyLinks: links,
+        statusLine: 'Topology report received',
+      ),
+    );
+  }
+
+  Future<void> _handleLegacyBeaconPacket(proto.NetworkPacket packet) async {
+    final beacon = await sdk.decodeBeaconPayload(
+      packet.payload,
+      passphrase: _lastMeshConfig?.passphrase ?? '',
+    );
+    if (beacon != null) _handleBeacon(packet, beacon);
+  }
+
+  void _handleBeacon(proto.NetworkPacket packet, proto.Beacon beacon) {
     final nodeNum = packet.from.toInt();
     if (nodeNum == 0) return;
 
@@ -536,7 +591,7 @@ class EdgezMeshSession extends ChangeNotifier {
       marker: _markerId(beacon.marker),
       publicKey: beacon.userPublicKey,
       latitude:
-          beacon.hasAttitude() && beacon.attitude != 0 ? beacon.attitude : null,
+          beacon.hasLatitude() && beacon.latitude != 0 ? beacon.latitude : null,
       longitude: beacon.hasLongitude() && beacon.longitude != 0
           ? beacon.longitude
           : null,
@@ -568,14 +623,19 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> _handleConversationPacket(proto.NetworkPacket packet) async {
     if (packet.operation == proto.Operation.ACKNOWLEDGE) {
+      if (!packet.hasMsg()) return;
       _markMessageDelivered(
-        _formatUuid(packet.messageIdHigh.toInt(), packet.messageIdLow.toInt()),
+        _formatUuid(
+          packet.msg.messageIdHigh.toInt(),
+          packet.msg.messageIdLow.toInt(),
+        ),
       );
       return;
     }
-    if (!packet.hasPayload()) return;
-    if (packet.mime != proto.Mime.MIME_TEXT &&
-        packet.mime != proto.Mime.MIME_VOICE) {
+    if (!packet.hasMsg()) return;
+    final message = packet.msg;
+    if (message.mime != proto.Mime.MIME_TEXT &&
+        message.mime != proto.Mime.MIME_VOICE) {
       return;
     }
     final config = _lastMeshConfig;
@@ -585,22 +645,22 @@ class EdgezMeshSession extends ChangeNotifier {
 
     final sender = _state.nodes[fromNode];
     final now = DateTime.now().millisecondsSinceEpoch;
-    final messageUuid =
-        _formatUuid(packet.messageIdHigh.toInt(), packet.messageIdLow.toInt());
+    final messageUuid = _formatUuid(
+        message.messageIdHigh.toInt(), message.messageIdLow.toInt());
     String? text;
     String status = '';
     _CompletedVoiceMessage? completedVoice;
     if (sender == null) {
       text = 'Unable to decrypt message';
       status = 'Sender public key is missing';
-    } else if (packet.mime == proto.Mime.MIME_TEXT) {
+    } else if (message.mime == proto.Mime.MIME_TEXT) {
       try {
         text = await sdk.decryptTextMessage(
           config: config,
           sender: sender,
           fromNode: fromNode,
           toNode: toNode,
-          payload: packet.payload,
+          payload: message.payload,
         );
       } catch (error) {
         status = error.toString();
@@ -614,7 +674,7 @@ class EdgezMeshSession extends ChangeNotifier {
           sender: sender,
           fromNode: fromNode,
           toNode: toNode,
-          payload: packet.payload,
+          payload: message.payload,
         );
       } catch (error) {
         status = error.toString();
@@ -633,7 +693,7 @@ class EdgezMeshSession extends ChangeNotifier {
       fromNode,
       () => EdgezMeshNode(
         nodeNum: fromNode,
-        userUuid: _formatUuid(packet.userHigh.toInt(), packet.userLow.toInt()),
+        userUuid: '',
         displayName: 'Node ${fromNode.toRadixString(16)}',
         route: _state.connection.name.toUpperCase(),
         lastSeenMs: now,
@@ -644,7 +704,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _appendMessage(
       EdgezConversationMessage(
         nodeNum: fromNode,
-        text: text ?? 'Voice message',
+        text: text,
         mine: false,
         timestampMs: now,
         messageUuid: messageUuid,
@@ -659,15 +719,15 @@ class EdgezMeshSession extends ChangeNotifier {
 
     final localNode = _state.status?.macAddress ?? 0;
     if (localNode != 0 &&
-        (packet.messageIdHigh.toInt() != 0 ||
-            packet.messageIdLow.toInt() != 0)) {
+        (message.messageIdHigh.toInt() != 0 ||
+            message.messageIdLow.toInt() != 0)) {
       unawaited(
         sdk.sendConversationAck(
           config: config,
           fromNode: localNode,
           toNode: fromNode,
-          messageIdHigh: packet.messageIdHigh.toInt(),
-          messageIdLow: packet.messageIdLow.toInt(),
+          messageIdHigh: message.messageIdHigh.toInt(),
+          messageIdLow: message.messageIdLow.toInt(),
           maxHop: config.maxHop,
         ),
       );
@@ -838,38 +898,36 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  proto.Beacon? _parseBeacon(String value) {
-    if (value.isEmpty) return null;
-    try {
-      return proto.Beacon.fromBuffer(base64Decode(value));
-    } catch (_) {
-      try {
-        return proto.Beacon.fromBuffer(utf8.encode(value));
-      } catch (_) {
-        return null;
-      }
-    }
-  }
-
   EdgezSensorData? _sensorData(proto.Beacon beacon) {
-    if (!beacon.hasSensorData()) return null;
+    if (beacon.sensorData.isEmpty) return null;
+    double? floatValue(proto.SensorType type) {
+      for (final value in beacon.sensorData) {
+        if (value.type == type && value.hasFloatValue()) {
+          return value.floatValue;
+        }
+      }
+      return null;
+    }
+
+    int? intValue(proto.SensorType type) {
+      for (final value in beacon.sensorData) {
+        if (value.type == type && value.hasIntValue()) return value.intValue;
+      }
+      return null;
+    }
+
     final data = EdgezSensorData(
-      latitude:
-          beacon.sensorData.latitude == 0 ? null : beacon.sensorData.latitude,
-      longitude:
-          beacon.sensorData.longitude == 0 ? null : beacon.sensorData.longitude,
-      altitude:
-          beacon.sensorData.altitude == 0 ? null : beacon.sensorData.altitude,
-      temperature: beacon.sensorData.temperature == 0
-          ? null
-          : beacon.sensorData.temperature,
-      humidity:
-          beacon.sensorData.humidity == 0 ? null : beacon.sensorData.humidity,
-      pressure:
-          beacon.sensorData.pressure == 0 ? null : beacon.sensorData.pressure,
-      vibrationAverage: beacon.sensorData.vibrationAverage == 0
-          ? null
-          : beacon.sensorData.vibrationAverage,
+      latitude: floatValue(proto.SensorType.SENSOR_LATITUDE),
+      longitude: floatValue(proto.SensorType.SENSOR_LONGITUDE),
+      temperature: floatValue(proto.SensorType.SENSOR_TEMPERATURE),
+      humidity: floatValue(proto.SensorType.SENSOR_HUMIDITY),
+      accelX: floatValue(proto.SensorType.SENSOR_ACCEL_X),
+      accelY: floatValue(proto.SensorType.SENSOR_ACCEL_Y),
+      accelZ: floatValue(proto.SensorType.SENSOR_ACCEL_Z),
+      gyroX: floatValue(proto.SensorType.SENSOR_GYRO_X),
+      gyroY: floatValue(proto.SensorType.SENSOR_GYRO_Y),
+      gyroZ: floatValue(proto.SensorType.SENSOR_GYRO_Z),
+      binaryLengthBytes: intValue(proto.SensorType.SENSOR_LENGTH),
     );
     return data.hasAnyValue ? data : null;
   }
@@ -917,6 +975,7 @@ class EdgezMeshSession extends ChangeNotifier {
       proto.DeviceType.DEVICE_TYPE_GATEWAY => 'Gateway',
       proto.DeviceType.DEVICE_TYPE_BEACON => 'Beacon',
       proto.DeviceType.DEVICE_TYPE_SENSOR => 'Sensor',
+      proto.DeviceType.DEVICE_TYPE_RELAY => 'Relay',
       proto.DeviceType.DEVICE_TYPE_UNKNOWN => 'Unknown',
       _ => 'Unspecified',
     };

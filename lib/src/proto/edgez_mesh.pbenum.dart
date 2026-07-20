@@ -23,6 +23,8 @@ class Operation extends $pb.ProtobufEnum {
       Operation._(2, _omitEnumNames ? '' : 'RESPONSE');
   static const Operation ACKNOWLEDGE =
       Operation._(3, _omitEnumNames ? '' : 'ACKNOWLEDGE');
+  static const Operation STREAMING =
+      Operation._(4, _omitEnumNames ? '' : 'STREAMING');
   static const Operation BROADCAST =
       Operation._(9, _omitEnumNames ? '' : 'BROADCAST');
 
@@ -31,6 +33,7 @@ class Operation extends $pb.ProtobufEnum {
     REQUEST,
     RESPONSE,
     ACKNOWLEDGE,
+    STREAMING,
     BROADCAST,
   ];
 
@@ -51,6 +54,8 @@ class Interface extends $pb.ProtobufEnum {
       Interface._(4, _omitEnumNames ? '' : 'ETHERNET');
   static const Interface HALOW = Interface._(5, _omitEnumNames ? '' : 'HALOW');
   static const Interface LORA = Interface._(6, _omitEnumNames ? '' : 'LORA');
+  static const Interface LIBP2P =
+      Interface._(7, _omitEnumNames ? '' : 'LIBP2P');
 
   static const $core.List<Interface> values = <Interface>[
     INTERFACE_UNSPECIFIED,
@@ -60,10 +65,11 @@ class Interface extends $pb.ProtobufEnum {
     ETHERNET,
     HALOW,
     LORA,
+    LIBP2P,
   ];
 
   static final $core.List<Interface?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 6);
+      $pb.ProtobufEnum.$_initByValueList(values, 7);
   static Interface? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
@@ -79,6 +85,8 @@ class Mime extends $pb.ProtobufEnum {
   static const Mime MIME_VIDEO = Mime._(4, _omitEnumNames ? '' : 'MIME_VIDEO');
   static const Mime MIME_BINARY =
       Mime._(5, _omitEnumNames ? '' : 'MIME_BINARY');
+  static const Mime MIME_VOICE_CALL =
+      Mime._(6, _omitEnumNames ? '' : 'MIME_VOICE_CALL');
 
   static const $core.List<Mime> values = <Mime>[
     MIME_UNSPECIFIED,
@@ -87,10 +95,11 @@ class Mime extends $pb.ProtobufEnum {
     MIME_IMAGE,
     MIME_VIDEO,
     MIME_BINARY,
+    MIME_VOICE_CALL,
   ];
 
   static final $core.List<Mime?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 5);
+      $pb.ProtobufEnum.$_initByValueList(values, 6);
   static Mime? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
@@ -232,6 +241,8 @@ class DeviceType extends $pb.ProtobufEnum {
       DeviceType._(4, _omitEnumNames ? '' : 'DEVICE_TYPE_BEACON');
   static const DeviceType DEVICE_TYPE_SENSOR =
       DeviceType._(5, _omitEnumNames ? '' : 'DEVICE_TYPE_SENSOR');
+  static const DeviceType DEVICE_TYPE_RELAY =
+      DeviceType._(6, _omitEnumNames ? '' : 'DEVICE_TYPE_RELAY');
 
   static const $core.List<DeviceType> values = <DeviceType>[
     DEVICE_TYPE_UNSPECIFIED,
@@ -240,10 +251,11 @@ class DeviceType extends $pb.ProtobufEnum {
     DEVICE_TYPE_GATEWAY,
     DEVICE_TYPE_BEACON,
     DEVICE_TYPE_SENSOR,
+    DEVICE_TYPE_RELAY,
   ];
 
   static final $core.List<DeviceType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 5);
+      $pb.ProtobufEnum.$_initByValueList(values, 6);
   static DeviceType? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
@@ -279,6 +291,55 @@ class AlertCondition extends $pb.ProtobufEnum {
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
   const AlertCondition._(super.value, super.name);
+}
+
+class SensorType extends $pb.ProtobufEnum {
+  static const SensorType SENSOR_UNKNOWN =
+      SensorType._(0, _omitEnumNames ? '' : 'SENSOR_UNKNOWN');
+  static const SensorType SENSOR_TEMPERATURE =
+      SensorType._(1, _omitEnumNames ? '' : 'SENSOR_TEMPERATURE');
+  static const SensorType SENSOR_HUMIDITY =
+      SensorType._(2, _omitEnumNames ? '' : 'SENSOR_HUMIDITY');
+  static const SensorType SENSOR_LATITUDE =
+      SensorType._(3, _omitEnumNames ? '' : 'SENSOR_LATITUDE');
+  static const SensorType SENSOR_LONGITUDE =
+      SensorType._(4, _omitEnumNames ? '' : 'SENSOR_LONGITUDE');
+  static const SensorType SENSOR_LENGTH =
+      SensorType._(5, _omitEnumNames ? '' : 'SENSOR_LENGTH');
+  static const SensorType SENSOR_ACCEL_X =
+      SensorType._(6, _omitEnumNames ? '' : 'SENSOR_ACCEL_X');
+  static const SensorType SENSOR_ACCEL_Y =
+      SensorType._(7, _omitEnumNames ? '' : 'SENSOR_ACCEL_Y');
+  static const SensorType SENSOR_ACCEL_Z =
+      SensorType._(8, _omitEnumNames ? '' : 'SENSOR_ACCEL_Z');
+  static const SensorType SENSOR_GYRO_X =
+      SensorType._(9, _omitEnumNames ? '' : 'SENSOR_GYRO_X');
+  static const SensorType SENSOR_GYRO_Y =
+      SensorType._(10, _omitEnumNames ? '' : 'SENSOR_GYRO_Y');
+  static const SensorType SENSOR_GYRO_Z =
+      SensorType._(11, _omitEnumNames ? '' : 'SENSOR_GYRO_Z');
+
+  static const $core.List<SensorType> values = <SensorType>[
+    SENSOR_UNKNOWN,
+    SENSOR_TEMPERATURE,
+    SENSOR_HUMIDITY,
+    SENSOR_LATITUDE,
+    SENSOR_LONGITUDE,
+    SENSOR_LENGTH,
+    SENSOR_ACCEL_X,
+    SENSOR_ACCEL_Y,
+    SENSOR_ACCEL_Z,
+    SENSOR_GYRO_X,
+    SENSOR_GYRO_Y,
+    SENSOR_GYRO_Z,
+  ];
+
+  static final $core.List<SensorType?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 11);
+  static SensorType? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const SensorType._(super.value, super.name);
 }
 
 const $core.bool _omitEnumNames =

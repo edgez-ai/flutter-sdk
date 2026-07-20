@@ -53,6 +53,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   String meshId = 'edgez';
   String passphrase = '';
   String maxHop = '4';
+  int meshBandwidthMhz = 1;
+  int meshFrequencyKhz = 902500;
   String beaconIntervalSeconds = '30';
   String userName = 'Flutter Demo';
   ExampleMarker userMarker = ExampleMarker.blue;
@@ -69,6 +71,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   int deviceGeoIndex = 0;
   String uartI2cSensorType = '';
   String rs485SensorType = '';
+  String deviceType = 'relay';
+  String devicePassphrase = '';
+  bool deviceUpstreamEnabled = false;
+  String deviceUpstreamWifiSsid = '';
+  String deviceUpstreamWifiPassphrase = '';
+  String deviceBeaconMulticast = '';
+  bool deviceSleepModeEnabled = false;
 
   @override
   void initState() {
@@ -256,6 +265,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         meshId: meshId.trim(),
         passphrase: passphrase,
         maxHop: parsedMaxHop,
+        meshBandwidthMhz: meshBandwidthMhz,
+        meshFrequencyKhz: meshFrequencyKhz,
         beacon: EdgezBeaconConfig(
           intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 30,
           marker: userMarker.name,
@@ -295,6 +306,16 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         geoIndex: deviceGeoIndex,
         uartI2cSensorType: uartI2cSensorType,
         rs485SensorType: rs485SensorType,
+        passphrase: devicePassphrase,
+        upstreamWifiSsid:
+            deviceUpstreamEnabled ? deviceUpstreamWifiSsid.trim() : '',
+        upstreamWifiPassphrase:
+            deviceUpstreamEnabled ? deviceUpstreamWifiPassphrase : '',
+        beaconUnicast: deviceUpstreamEnabled
+            ? _parseIpv4Address(deviceBeaconMulticast)
+            : 0,
+        deviceType: deviceType,
+        sleepModeEnabled: deviceSleepModeEnabled,
       ),
     );
   }
@@ -365,6 +386,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                   status: meshState.status,
                   users: meshState.sortedNodes,
                   sensorSamples: meshState.sensorSamples,
+                  topologyLinks: meshState.topologyLinks,
                   onRemoveNode: _removeNode,
                   onOpenNode: _openNode,
                 )
@@ -407,6 +429,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               meshId: meshId,
               passphrase: passphrase,
               maxHop: maxHop,
+              meshBandwidthMhz: meshBandwidthMhz,
+              meshFrequencyKhz: meshFrequencyKhz,
               beaconIntervalSeconds: beaconIntervalSeconds,
               userName: userName,
               userIdentity: userIdentity,
@@ -423,6 +447,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               deviceGeoIndex: deviceGeoIndex,
               uartI2cSensorType: uartI2cSensorType,
               rs485SensorType: rs485SensorType,
+              deviceType: deviceType,
+              devicePassphrase: devicePassphrase,
+              deviceUpstreamEnabled: deviceUpstreamEnabled,
+              deviceUpstreamWifiSsid: deviceUpstreamWifiSsid,
+              deviceUpstreamWifiPassphrase: deviceUpstreamWifiPassphrase,
+              deviceBeaconMulticast: deviceBeaconMulticast,
+              deviceSleepModeEnabled: deviceSleepModeEnabled,
               onConnectBle: _connectBle,
               onStopBleScan: _stopBleScan,
               onConnectBleDevice: _connectBleDevice,
@@ -436,8 +467,27 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                   setState(() => autoReplayReceivedVoice = value),
               onDeviceModeChanged: (value) =>
                   setState(() => deviceModeEnabled = value),
-              onMeshCountryChanged: (value) =>
-                  setState(() => meshCountry = value),
+              onMeshCountryChanged: (value) => setState(() {
+                meshCountry = value;
+                final bandwidths = halowBandwidthOptions(value);
+                if (!bandwidths.contains(meshBandwidthMhz)) {
+                  meshBandwidthMhz = bandwidths.first;
+                }
+                final frequencies =
+                    halowFrequenciesKhz(value, meshBandwidthMhz);
+                if (!frequencies.contains(meshFrequencyKhz)) {
+                  meshFrequencyKhz = frequencies.first;
+                }
+              }),
+              onMeshBandwidthChanged: (value) => setState(() {
+                meshBandwidthMhz = value;
+                final frequencies = halowFrequenciesKhz(meshCountry, value);
+                if (!frequencies.contains(meshFrequencyKhz)) {
+                  meshFrequencyKhz = frequencies.first;
+                }
+              }),
+              onMeshFrequencyChanged: (value) =>
+                  setState(() => meshFrequencyKhz = value),
               onMeshIdChanged: (value) => setState(() => meshId = value),
               onPassphraseChanged: (value) =>
                   setState(() => passphrase = value),
@@ -471,6 +521,20 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                   setState(() => uartI2cSensorType = value),
               onRs485SensorChanged: (value) =>
                   setState(() => rs485SensorType = value),
+              onDeviceTypeChanged: (value) =>
+                  setState(() => deviceType = value),
+              onDevicePassphraseChanged: (value) =>
+                  setState(() => devicePassphrase = value),
+              onDeviceUpstreamEnabledChanged: (value) =>
+                  setState(() => deviceUpstreamEnabled = value),
+              onDeviceUpstreamWifiSsidChanged: (value) =>
+                  setState(() => deviceUpstreamWifiSsid = value),
+              onDeviceUpstreamWifiPassphraseChanged: (value) =>
+                  setState(() => deviceUpstreamWifiPassphrase = value),
+              onDeviceBeaconMulticastChanged: (value) =>
+                  setState(() => deviceBeaconMulticast = value),
+              onDeviceSleepModeChanged: (value) =>
+                  setState(() => deviceSleepModeEnabled = value),
             ),
         };
 
@@ -501,5 +565,17 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         );
       },
     );
+  }
+
+  int _parseIpv4Address(String value) {
+    final parts = value.split('.');
+    if (parts.length != 4) return 0;
+    var result = 0;
+    for (final part in parts) {
+      final octet = int.tryParse(part);
+      if (octet == null || octet < 0 || octet > 255) return 0;
+      result = (result << 8) | octet;
+    }
+    return result;
   }
 }

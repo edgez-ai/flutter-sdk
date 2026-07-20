@@ -37,6 +37,13 @@ class EdgezSensorData {
     this.humidity,
     this.pressure,
     this.vibrationAverage,
+    this.accelX,
+    this.accelY,
+    this.accelZ,
+    this.gyroX,
+    this.gyroY,
+    this.gyroZ,
+    this.binaryLengthBytes,
   });
 
   final double? latitude;
@@ -46,6 +53,13 @@ class EdgezSensorData {
   final double? humidity;
   final double? pressure;
   final double? vibrationAverage;
+  final double? accelX;
+  final double? accelY;
+  final double? accelZ;
+  final double? gyroX;
+  final double? gyroY;
+  final double? gyroZ;
+  final int? binaryLengthBytes;
 
   bool get hasAnyValue {
     return latitude != null ||
@@ -54,7 +68,14 @@ class EdgezSensorData {
         temperature != null ||
         humidity != null ||
         pressure != null ||
-        vibrationAverage != null;
+        vibrationAverage != null ||
+        accelX != null ||
+        accelY != null ||
+        accelZ != null ||
+        gyroX != null ||
+        gyroY != null ||
+        gyroZ != null ||
+        binaryLengthBytes != null;
   }
 }
 
@@ -68,6 +89,28 @@ class EdgezSensorSample {
   final int nodeNum;
   final int timestampMs;
   final EdgezSensorData data;
+}
+
+class EdgezTopologyLink {
+  const EdgezTopologyLink({
+    required this.reporterNodeNum,
+    required this.peerNodeNum,
+    required this.encodedRssi,
+    required this.lastSeenMs,
+  });
+
+  final int reporterNodeNum;
+  final int peerNodeNum;
+  final int encodedRssi;
+  final int lastSeenMs;
+
+  int? get rssiDbm => encodedRssi == 1000 ? null : encodedRssi - 1000;
+
+  String get undirectedKey {
+    final low = reporterNodeNum < peerNodeNum ? reporterNodeNum : peerNodeNum;
+    final high = reporterNodeNum < peerNodeNum ? peerNodeNum : reporterNodeNum;
+    return '$low:$high';
+  }
 }
 
 class EdgezBleDevice {
@@ -144,6 +187,8 @@ class EdgezMeshConfig {
     this.meshId = 'edgez',
     this.passphrase = '',
     this.maxHop = 4,
+    this.meshBandwidthMhz = 0,
+    this.meshFrequencyKhz = 0,
     this.beacon = const EdgezBeaconConfig(),
   });
 
@@ -151,6 +196,8 @@ class EdgezMeshConfig {
   final String meshId;
   final String passphrase;
   final int maxHop;
+  final int meshBandwidthMhz;
+  final int meshFrequencyKhz;
   final EdgezUserIdentity identity;
   final EdgezBeaconConfig beacon;
 
@@ -159,6 +206,8 @@ class EdgezMeshConfig {
         'meshId': meshId,
         'passphrase': passphrase,
         'maxHop': maxHop,
+        'meshBandwidthMhz': meshBandwidthMhz,
+        'meshFrequencyKhz': meshFrequencyKhz,
         'identity': identity.toMap(),
         'beacon': beacon.toMap(),
       };
@@ -208,6 +257,12 @@ class EdgezDeviceSettings {
     this.geoIndex = 0,
     this.uartI2cSensorType = '',
     this.rs485SensorType = '',
+    this.passphrase = '',
+    this.upstreamWifiSsid = '',
+    this.upstreamWifiPassphrase = '',
+    this.beaconUnicast = 0,
+    this.deviceType = 'relay',
+    this.sleepModeEnabled = false,
   });
 
   final bool deviceModeEnabled;
@@ -223,6 +278,12 @@ class EdgezDeviceSettings {
   final int geoIndex;
   final String uartI2cSensorType;
   final String rs485SensorType;
+  final String passphrase;
+  final String upstreamWifiSsid;
+  final String upstreamWifiPassphrase;
+  final int beaconUnicast;
+  final String deviceType;
+  final bool sleepModeEnabled;
 
   Map<String, Object?> toMap() => {
         'deviceModeEnabled': deviceModeEnabled,
@@ -238,6 +299,12 @@ class EdgezDeviceSettings {
         'geoIndex': geoIndex,
         'uartI2cSensorType': uartI2cSensorType,
         'rs485SensorType': rs485SensorType,
+        'passphrase': passphrase,
+        'upstreamWifiSsid': upstreamWifiSsid,
+        'upstreamWifiPassphrase': upstreamWifiPassphrase,
+        'beaconUnicast': beaconUnicast,
+        'deviceType': deviceType,
+        'sleepModeEnabled': sleepModeEnabled,
       };
 }
 
@@ -253,6 +320,8 @@ class EdgezMeshStatus {
     required this.ipAddress,
     required this.gateway,
     required this.macAddress,
+    this.licensed = false,
+    this.firmwareVersion = '',
   });
 
   final bool supported;
@@ -265,6 +334,8 @@ class EdgezMeshStatus {
   final String ipAddress;
   final String gateway;
   final int macAddress;
+  final bool licensed;
+  final String firmwareVersion;
 
   bool get isUsable => supported && stackInitialized && linkUp && routeReady;
 
@@ -280,6 +351,8 @@ class EdgezMeshStatus {
       ipAddress: map['ipAddress'] as String? ?? '',
       gateway: map['gateway'] as String? ?? '',
       macAddress: map['macAddress'] as int? ?? 0,
+      licensed: map['licensed'] == true,
+      firmwareVersion: map['firmwareVersion'] as String? ?? '',
     );
   }
 }
