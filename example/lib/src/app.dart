@@ -50,6 +50,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool shareLocation = false;
   bool autoReplayReceivedVoice = false;
   bool deviceModeEnabled = false;
+  bool bleAutoConnect = false;
+  EdgezBleDevice? selectedBleDevice;
 
   String meshCountry = 'US';
   String meshId = 'edgez';
@@ -435,6 +437,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               autoReplayReceivedVoice: autoReplayReceivedVoice,
               deviceModeEnabled: deviceModeEnabled,
               bleDevices: meshState.sortedBleDevices,
+              selectedBleDevice: selectedBleDevice,
+              meshStatus: meshState.status,
+              bleAutoConnect: bleAutoConnect,
               statusLine: meshState.statusLine,
               meshCountry: meshCountry,
               meshId: meshId,
@@ -468,6 +473,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               onConnectBle: _connectBle,
               onStopBleScan: _stopBleScan,
               onConnectBleDevice: _connectBleDevice,
+              onSelectBleDevice: (device) =>
+                  setState(() => selectedBleDevice = device),
+              onBleAutoConnectChanged: (value) =>
+                  setState(() => bleAutoConnect = value),
               onDisconnect: _disconnect,
               onSaveAppSettings: _saveAppSettings,
               onRegenerateUserKeyPair: _regenerateUserKeyPair,
