@@ -228,6 +228,41 @@ class ScriptConfigAction extends $pb.ProtobufEnum {
   const ScriptConfigAction._(super.value, super.name);
 }
 
+class LicenseStatus extends $pb.ProtobufEnum {
+  static const LicenseStatus LICENSE_STATUS_UNSPECIFIED =
+      LicenseStatus._(0, _omitEnumNames ? '' : 'LICENSE_STATUS_UNSPECIFIED');
+  static const LicenseStatus LICENSE_STATUS_AUTHORIZED =
+      LicenseStatus._(1, _omitEnumNames ? '' : 'LICENSE_STATUS_AUTHORIZED');
+  static const LicenseStatus LICENSE_STATUS_DEVICE_NOT_LICENSED =
+      LicenseStatus._(
+          2, _omitEnumNames ? '' : 'LICENSE_STATUS_DEVICE_NOT_LICENSED');
+  static const LicenseStatus LICENSE_STATUS_SDK_RELEASE_REQUIRED =
+      LicenseStatus._(
+          3, _omitEnumNames ? '' : 'LICENSE_STATUS_SDK_RELEASE_REQUIRED');
+  static const LicenseStatus LICENSE_STATUS_SDK_VERSION_INCOMPATIBLE =
+      LicenseStatus._(
+          4, _omitEnumNames ? '' : 'LICENSE_STATUS_SDK_VERSION_INCOMPATIBLE');
+  static const LicenseStatus LICENSE_STATUS_SDK_RELEASE_INVALID =
+      LicenseStatus._(
+          5, _omitEnumNames ? '' : 'LICENSE_STATUS_SDK_RELEASE_INVALID');
+
+  static const $core.List<LicenseStatus> values = <LicenseStatus>[
+    LICENSE_STATUS_UNSPECIFIED,
+    LICENSE_STATUS_AUTHORIZED,
+    LICENSE_STATUS_DEVICE_NOT_LICENSED,
+    LICENSE_STATUS_SDK_RELEASE_REQUIRED,
+    LICENSE_STATUS_SDK_VERSION_INCOMPATIBLE,
+    LICENSE_STATUS_SDK_RELEASE_INVALID,
+  ];
+
+  static final $core.List<LicenseStatus?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 5);
+  static LicenseStatus? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const LicenseStatus._(super.value, super.name);
+}
+
 class DeviceType extends $pb.ProtobufEnum {
   static const DeviceType DEVICE_TYPE_UNSPECIFIED =
       DeviceType._(0, _omitEnumNames ? '' : 'DEVICE_TYPE_UNSPECIFIED');

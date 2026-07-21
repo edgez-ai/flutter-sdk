@@ -145,6 +145,27 @@ final $typed_data.Uint8List scriptConfigActionDescriptor = $convert.base64Decode
     'FFNDUklQVF9DT05GSUdfQ09NTUlUEAMSGAoUU0NSSVBUX0NPTkZJR19ERUxFVEUQBBIYChRTQ1'
     'JJUFRfQ09ORklHX1JFUE9SVBAF');
 
+@$core.Deprecated('Use licenseStatusDescriptor instead')
+const LicenseStatus$json = {
+  '1': 'LicenseStatus',
+  '2': [
+    {'1': 'LICENSE_STATUS_UNSPECIFIED', '2': 0},
+    {'1': 'LICENSE_STATUS_AUTHORIZED', '2': 1},
+    {'1': 'LICENSE_STATUS_DEVICE_NOT_LICENSED', '2': 2},
+    {'1': 'LICENSE_STATUS_SDK_RELEASE_REQUIRED', '2': 3},
+    {'1': 'LICENSE_STATUS_SDK_VERSION_INCOMPATIBLE', '2': 4},
+    {'1': 'LICENSE_STATUS_SDK_RELEASE_INVALID', '2': 5},
+  ],
+};
+
+/// Descriptor for `LicenseStatus`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List licenseStatusDescriptor = $convert.base64Decode(
+    'Cg1MaWNlbnNlU3RhdHVzEh4KGkxJQ0VOU0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZTElDRU'
+    '5TRV9TVEFUVVNfQVVUSE9SSVpFRBABEiYKIkxJQ0VOU0VfU1RBVFVTX0RFVklDRV9OT1RfTElD'
+    'RU5TRUQQAhInCiNMSUNFTlNFX1NUQVRVU19TREtfUkVMRUFTRV9SRVFVSVJFRBADEisKJ0xJQ0'
+    'VOU0VfU1RBVFVTX1NES19WRVJTSU9OX0lOQ09NUEFUSUJMRRAEEiYKIkxJQ0VOU0VfU1RBVFVT'
+    'X1NES19SRUxFQVNFX0lOVkFMSUQQBQ==');
+
 @$core.Deprecated('Use deviceTypeDescriptor instead')
 const DeviceType$json = {
   '1': 'DeviceType',
@@ -532,7 +553,14 @@ const HaLowInterfaceStatus$json = {
     {'1': 'ip_addr', '3': 9, '4': 1, '5': 9, '10': 'ipAddr'},
     {'1': 'gateway', '3': 10, '4': 1, '5': 9, '10': 'gateway'},
     {'1': 'mac_address', '3': 11, '4': 1, '5': 4, '10': 'macAddress'},
-    {'1': 'licensed', '3': 12, '4': 1, '5': 8, '10': 'licensed'},
+    {
+      '1': 'license_status',
+      '3': 12,
+      '4': 1,
+      '5': 14,
+      '6': '.ai.edgez.halow.LicenseStatus',
+      '10': 'licenseStatus'
+    },
     {'1': 'firmware_version', '3': 13, '4': 1, '5': 9, '10': 'firmwareVersion'},
   ],
 };
@@ -545,8 +573,9 @@ final $typed_data.Uint8List haLowInterfaceStatusDescriptor = $convert.base64Deco
     'gFIAEoCFIKcm91dGVSZWFkeRIoChByZWFkeV9mb3JfcmVwb3J0GAYgASgIUg5yZWFkeUZvclJl'
     'cG9ydBIcCglldGhlcnR5cGUYByABKA1SCWV0aGVydHlwZRIXCgdtZXNoX2lkGAggASgJUgZtZX'
     'NoSWQSFwoHaXBfYWRkchgJIAEoCVIGaXBBZGRyEhgKB2dhdGV3YXkYCiABKAlSB2dhdGV3YXkS'
-    'HwoLbWFjX2FkZHJlc3MYCyABKARSCm1hY0FkZHJlc3MSGgoIbGljZW5zZWQYDCABKAhSCGxpY2'
-    'Vuc2VkEikKEGZpcm13YXJlX3ZlcnNpb24YDSABKAlSD2Zpcm13YXJlVmVyc2lvbg==');
+    'HwoLbWFjX2FkZHJlc3MYCyABKARSCm1hY0FkZHJlc3MSRAoObGljZW5zZV9zdGF0dXMYDCABKA'
+    '4yHS5haS5lZGdlei5oYWxvdy5MaWNlbnNlU3RhdHVzUg1saWNlbnNlU3RhdHVzEikKEGZpcm13'
+    'YXJlX3ZlcnNpb24YDSABKAlSD2Zpcm13YXJlVmVyc2lvbg==');
 
 @$core.Deprecated('Use haLowInitConfigDescriptor instead')
 const HaLowInitConfig$json = {

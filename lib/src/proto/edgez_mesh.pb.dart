@@ -956,7 +956,7 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     $core.String? ipAddr,
     $core.String? gateway,
     $fixnum.Int64? macAddress,
-    $core.bool? licensed,
+    LicenseStatus? licenseStatus,
     $core.String? firmwareVersion,
   }) {
     final result = create();
@@ -971,7 +971,7 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     if (ipAddr != null) result.ipAddr = ipAddr;
     if (gateway != null) result.gateway = gateway;
     if (macAddress != null) result.macAddress = macAddress;
-    if (licensed != null) result.licensed = licensed;
+    if (licenseStatus != null) result.licenseStatus = licenseStatus;
     if (firmwareVersion != null) result.firmwareVersion = firmwareVersion;
     return result;
   }
@@ -1002,7 +1002,8 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(
         11, _omitFieldNames ? '' : 'macAddress', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOB(12, _omitFieldNames ? '' : 'licensed')
+    ..aE<LicenseStatus>(12, _omitFieldNames ? '' : 'licenseStatus',
+        enumValues: LicenseStatus.values)
     ..aOS(13, _omitFieldNames ? '' : 'firmwareVersion')
     ..hasRequiredFields = false;
 
@@ -1127,13 +1128,13 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
   void clearMacAddress() => $_clearField(11);
 
   @$pb.TagNumber(12)
-  $core.bool get licensed => $_getBF(11);
+  LicenseStatus get licenseStatus => $_getN(11);
   @$pb.TagNumber(12)
-  set licensed($core.bool value) => $_setBool(11, value);
+  set licenseStatus(LicenseStatus value) => $_setField(12, value);
   @$pb.TagNumber(12)
-  $core.bool hasLicensed() => $_has(11);
+  $core.bool hasLicenseStatus() => $_has(11);
   @$pb.TagNumber(12)
-  void clearLicensed() => $_clearField(12);
+  void clearLicenseStatus() => $_clearField(12);
 
   @$pb.TagNumber(13)
   $core.String get firmwareVersion => $_getSZ(12);

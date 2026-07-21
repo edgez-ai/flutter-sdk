@@ -92,6 +92,40 @@ void main() {
       await subscription.cancel();
     });
 
+    test('maps every HaLow license status from protobuf', () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final statuses = <LicenseStatus, EdgezLicenseStatus>{
+        LicenseStatus.LICENSE_STATUS_UNSPECIFIED:
+            EdgezLicenseStatus.unspecified,
+        LicenseStatus.LICENSE_STATUS_AUTHORIZED: EdgezLicenseStatus.authorized,
+        LicenseStatus.LICENSE_STATUS_DEVICE_NOT_LICENSED:
+            EdgezLicenseStatus.deviceNotLicensed,
+        LicenseStatus.LICENSE_STATUS_SDK_RELEASE_REQUIRED:
+            EdgezLicenseStatus.sdkReleaseRequired,
+        LicenseStatus.LICENSE_STATUS_SDK_VERSION_INCOMPATIBLE:
+            EdgezLicenseStatus.sdkVersionIncompatible,
+        LicenseStatus.LICENSE_STATUS_SDK_RELEASE_INVALID:
+            EdgezLicenseStatus.sdkReleaseInvalid,
+      };
+
+      for (final entry in statuses.entries) {
+        ble.emitPacket(
+          NetworkPacket(
+            status: HaLowInterfaceStatus(licenseStatus: entry.key),
+          ),
+        );
+        await ble.flushEvents();
+
+        expect(session.state.status?.licenseStatus, entry.value);
+        expect(
+          session.state.status?.licensed,
+          entry.value == EdgezLicenseStatus.authorized,
+        );
+      }
+
+      session.dispose();
+    });
+
     test('session initializes only after mocked BLE becomes ready', () async {
       final session = EdgezMeshSession(sdk: sdk);
       final identity = await _newIdentity('Local user', 10, 20);

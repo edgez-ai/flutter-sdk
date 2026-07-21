@@ -305,9 +305,19 @@ class SettingsScreen extends StatefulWidget {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                meshStatus!.licensed
-                                    ? 'Licensed'
-                                    : 'Unlicensed',
+                                switch (meshStatus!.licenseStatus) {
+                                  EdgezLicenseStatus.authorized => 'Licensed',
+                                  EdgezLicenseStatus.deviceNotLicensed =>
+                                    'Device not licensed',
+                                  EdgezLicenseStatus.sdkReleaseRequired =>
+                                    'SDK release required',
+                                  EdgezLicenseStatus.sdkVersionIncompatible =>
+                                    'SDK version incompatible',
+                                  EdgezLicenseStatus.sdkReleaseInvalid =>
+                                    'SDK release invalid',
+                                  EdgezLicenseStatus.unspecified =>
+                                    'License status unknown',
+                                },
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
