@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:cryptography/cryptography.dart';
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:fixnum/fixnum.dart';
@@ -292,6 +295,75 @@ void main() {
       session.dispose();
     });
 
+    test('voice call decrypts and plays BLE audio frames in order', () async {
+      final voiceSdk = _OrderedVoiceSdk();
+      final session = EdgezMeshSession(sdk: voiceSdk);
+      const remoteNode = 0x223344556677;
+      const localNode = 0x112233445566;
+      const identity = EdgezUserIdentity(
+        userIdHigh: 70,
+        userIdLow: 80,
+        name: 'Local caller',
+        publicKey: <int>[1],
+      );
+      await session.initializeMesh(const EdgezMeshConfig(identity: identity));
+      voiceSdk.emit(
+        EdgezMeshEvent(
+          type: EdgezMeshEventType.status,
+          status: const EdgezMeshStatus(
+            supported: true,
+            macAddress: localNode,
+            stackInitialized: true,
+            meshMode: true,
+            linkUp: true,
+            routeReady: true,
+            readyForReport: true,
+            meshId: 'edgez',
+            ipAddress: '',
+            gateway: '',
+          ),
+        ),
+      );
+      voiceSdk.emit(
+        const EdgezMeshEvent(
+          type: EdgezMeshEventType.node,
+          node: EdgezMeshNode(
+            nodeNum: remoteNode,
+            userUuid: 'remote',
+            displayName: 'Remote caller',
+            route: 'BLE',
+            lastSeenMs: 1,
+            marker: 'blue',
+            publicKey: <int>[2],
+          ),
+        ),
+      );
+      await voiceSdk.flush();
+
+      await session.startVoiceCall(remoteNode);
+      final callId = session.state.voiceCall.callId;
+      voiceSdk.plaintexts[1] = _voicePacket(2, callId, 1);
+      voiceSdk.emitVoice(remoteNode, 1);
+      await voiceSdk.flush();
+      expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.active);
+
+      voiceSdk.plaintexts[2] = _voicePacket(4, callId, 2, <int>[11]);
+      voiceSdk.plaintexts[3] = _voicePacket(4, callId, 3, <int>[22]);
+      voiceSdk.emitVoice(remoteNode, 2);
+      voiceSdk.emitVoice(remoteNode, 3);
+      await voiceSdk.flush();
+
+      expect(voiceSdk.decryptStarted, <int>[1, 2]);
+      voiceSdk.releaseFirstAudio.complete();
+      await voiceSdk.flush();
+      await voiceSdk.flush();
+      expect(voiceSdk.decryptStarted, <int>[1, 2, 3]);
+      expect(voiceSdk.played, <int>[11, 22]);
+
+      session.dispose();
+      await voiceSdk.close();
+    });
+
     test('session ignores self and identity-empty firmware beacons', () async {
       final session = EdgezMeshSession(sdk: sdk);
       final identity = await _newIdentity('Local user', 10, 20);
@@ -404,6 +476,95 @@ void main() {
       );
     });
   });
+}
+
+Uint8List _voicePacket(int type, int callId, int sequence,
+    [List<int> audio = const <int>[]]) {
+  final packet = Uint8List(17 + audio.length);
+  packet.setRange(0, 4, const <int>[0x45, 0x56, 0x43, 0x32]);
+  final data = ByteData.sublistView(packet);
+  data.setUint8(4, type);
+  data.setInt64(5, callId, Endian.little);
+  data.setInt32(13, sequence, Endian.little);
+  packet.setRange(17, packet.length, audio);
+  return packet;
+}
+
+class _OrderedVoiceSdk extends EdgezMeshSdk {
+  _OrderedVoiceSdk() : super(transport: MockBleTransport());
+
+  final StreamController<EdgezMeshEvent> _events =
+      StreamController<EdgezMeshEvent>.broadcast();
+  final Map<int, List<int>> plaintexts = <int, List<int>>{};
+  final List<int> decryptStarted = <int>[];
+  final List<int> played = <int>[];
+  final Completer<void> releaseFirstAudio = Completer<void>();
+
+  @override
+  Stream<EdgezMeshEvent> get events => _events.stream;
+
+  void emit(EdgezMeshEvent event) => _events.add(event);
+
+  void emitVoice(int fromNode, int marker) {
+    emit(
+      EdgezMeshEvent(
+        type: EdgezMeshEventType.voiceFrame,
+        packet: <int>[
+          for (var shift = 40; shift >= 0; shift -= 8)
+            (fromNode >> shift) & 0xff,
+          marker,
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<bool> requestMicrophonePermission() async => true;
+
+  @override
+  Future<void> startLiveVoiceAudio() async {}
+
+  @override
+  Future<void> stopLiveVoiceAudio() async {}
+
+  @override
+  Future<void> sendVoiceCallFrame({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode toNode,
+    required int fromNode,
+    required List<int> plaintext,
+    required int sequence,
+    int maxHop = 0,
+  }) async {}
+
+  @override
+  Future<EdgezVoiceCallEnvelope> decryptVoiceCallFrame({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode sender,
+    required int localNode,
+    required List<int> payload,
+  }) async {
+    final marker = payload.last;
+    decryptStarted.add(marker);
+    if (marker == 2) await releaseFirstAudio.future;
+    return EdgezVoiceCallEnvelope(
+      fromNode: sender.nodeNum,
+      sequence: marker,
+      plaintext: plaintexts[marker]!,
+    );
+  }
+
+  @override
+  Future<void> playLiveVoiceAudio(List<int> audio) async {
+    played.add(audio.single);
+  }
+
+  Future<void> flush() async {
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+  }
+
+  Future<void> close() => _events.close();
 }
 
 Future<EdgezUserIdentity> _newIdentity(

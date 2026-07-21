@@ -145,6 +145,7 @@ class EdgezMeshSession extends ChangeNotifier {
   var _initInFlight = false;
   String? _lastInitKey;
   var _voiceCallSequence = 1;
+  Future<void> _voiceFramePipeline = Future<void>.value();
   var _voiceAudioSendInFlight = false;
   List<int>? _pendingVoiceAudio;
   final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
@@ -715,7 +716,12 @@ class EdgezMeshSession extends ChangeNotifier {
           statusLine: 'Conversation message received',
         );
       case EdgezMeshEventType.voiceFrame:
-        unawaited(_handleVoiceCallFrame(event.packet));
+        // BLE notifications are ordered. Keep decrypt + playback ordered too:
+        // allowing asynchronous decryptions to overtake one another turns valid
+        // 40 ms ADPCM frames into audible clicks and noise.
+        _voiceFramePipeline = _voiceFramePipeline.then(
+          (_) => _handleVoiceCallFrame(event.packet),
+        );
       case EdgezMeshEventType.voiceAudio:
         if (_state.voiceCall.isActive && event.packet.isNotEmpty) {
           _queueVoiceAudio(event.packet);

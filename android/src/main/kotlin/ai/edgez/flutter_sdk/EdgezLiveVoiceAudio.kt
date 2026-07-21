@@ -187,7 +187,13 @@ internal class EdgezLiveVoiceAudio(
         }
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setUsage(
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                    AudioAttributes.USAGE_MEDIA
+                } else {
+                    AudioAttributes.USAGE_VOICE_COMMUNICATION
+                },
+            )
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
         audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
