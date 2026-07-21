@@ -68,6 +68,15 @@ enum ScriptConfigAction {
   SCRIPT_CONFIG_REPORT = 5;
 }
 
+enum LicenseStatus {
+  LICENSE_STATUS_UNSPECIFIED = 0;
+  LICENSE_STATUS_AUTHORIZED = 1;
+  LICENSE_STATUS_DEVICE_NOT_LICENSED = 2;
+  LICENSE_STATUS_SDK_RELEASE_REQUIRED = 3;
+  LICENSE_STATUS_SDK_VERSION_INCOMPATIBLE = 4;
+  LICENSE_STATUS_SDK_RELEASE_INVALID = 5;
+}
+
 message MessageBody {
   uint64 message_id_high = 1;
   uint64 message_id_low = 2;
@@ -184,7 +193,7 @@ message HaLowInterfaceStatus {
   string ip_addr = 9;
   string gateway = 10;
   uint64 mac_address = 11;
-  bool licensed = 12;
+  LicenseStatus license_status = 12;
   string firmware_version = 13;
 }
 

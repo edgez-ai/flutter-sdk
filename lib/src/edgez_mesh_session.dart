@@ -762,7 +762,12 @@ class EdgezMeshSession extends ChangeNotifier {
             ipAddress: packet.status.ipAddr,
             gateway: packet.status.gateway,
             macAddress: packet.status.macAddress.toInt(),
-            licensed: packet.status.licensed,
+            licenseStatus: EdgezLicenseStatus.values[
+              packet.status.licenseStatus.value.clamp(
+                0,
+                EdgezLicenseStatus.values.length - 1,
+              ),
+            ],
             firmwareVersion: packet.status.firmwareVersion,
           ),
         ),

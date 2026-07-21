@@ -311,6 +311,28 @@ class EdgezDeviceSettings {
       };
 }
 
+enum EdgezLicenseStatus {
+  unspecified,
+  authorized,
+  deviceNotLicensed,
+  sdkReleaseRequired,
+  sdkVersionIncompatible,
+  sdkReleaseInvalid;
+
+  static EdgezLicenseStatus fromWire(Object? value) {
+    if (value is int && value >= 0 && value < values.length) {
+      return values[value];
+    }
+    if (value is String) {
+      return values.firstWhere(
+        (status) => status.name == value,
+        orElse: () => EdgezLicenseStatus.unspecified,
+      );
+    }
+    return EdgezLicenseStatus.unspecified;
+  }
+}
+
 class EdgezMeshStatus {
   const EdgezMeshStatus({
     required this.supported,
@@ -323,7 +345,7 @@ class EdgezMeshStatus {
     required this.ipAddress,
     required this.gateway,
     required this.macAddress,
-    this.licensed = false,
+    this.licenseStatus = EdgezLicenseStatus.unspecified,
     this.firmwareVersion = '',
   });
 
@@ -337,8 +359,10 @@ class EdgezMeshStatus {
   final String ipAddress;
   final String gateway;
   final int macAddress;
-  final bool licensed;
+  final EdgezLicenseStatus licenseStatus;
   final String firmwareVersion;
+
+  bool get licensed => licenseStatus == EdgezLicenseStatus.authorized;
 
   bool get isUsable => supported && stackInitialized && linkUp && routeReady;
 
@@ -354,7 +378,12 @@ class EdgezMeshStatus {
       ipAddress: map['ipAddress'] as String? ?? '',
       gateway: map['gateway'] as String? ?? '',
       macAddress: map['macAddress'] as int? ?? 0,
-      licensed: map['licensed'] == true,
+      licenseStatus: EdgezLicenseStatus.fromWire(
+        map['licenseStatus'] ??
+            (map['licensed'] == true
+                ? EdgezLicenseStatus.authorized.index
+                : null),
+      ),
       firmwareVersion: map['firmwareVersion'] as String? ?? '',
     );
   }
