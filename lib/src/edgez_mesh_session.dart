@@ -145,6 +145,8 @@ class EdgezMeshSession extends ChangeNotifier {
   var _initInFlight = false;
   String? _lastInitKey;
   var _voiceCallSequence = 1;
+  var _voiceAudioSendInFlight = false;
+  List<int>? _pendingVoiceAudio;
   final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
       <String, _PendingVoiceMessage>{};
   static const Set<String> _knownMarkerIds = <String>{
@@ -266,6 +268,9 @@ class EdgezMeshSession extends ChangeNotifier {
     if (peer == null || !peer.opensConversation) {
       throw StateError('Voice-call peer is unavailable');
     }
+    if (!await sdk.requestMicrophonePermission()) {
+      throw StateError('Microphone permission denied');
+    }
     final callId = Random.secure().nextInt(0x7fffffff) |
         (Random.secure().nextInt(0x7fffffff) << 31);
     _voiceCallSequence = 1;
@@ -292,7 +297,6 @@ class EdgezMeshSession extends ChangeNotifier {
       throw StateError('No incoming voice call');
     }
     await _sendVoiceCallPacket(_callAccept);
-    await sdk.startLiveVoiceAudio();
     _setState(
       _state.copyWith(
         voiceCall: EdgezVoiceCallState(
@@ -303,20 +307,27 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Voice call active',
       ),
     );
+    try {
+      await sdk.startLiveVoiceAudio();
+    } catch (_) {
+      await _resetVoiceCall();
+      rethrow;
+    }
   }
 
   Future<void> endVoiceCall() async {
+    Future<void>? endFrame;
     if (!_state.voiceCall.isIdle) {
-      try {
-        await _sendVoiceCallPacket(_callEnd);
-      } catch (_) {
-        // Always release local audio even if the remote end disappeared.
-      }
+      endFrame = _sendVoiceCallPacket(_callEnd);
     }
     await _resetVoiceCall();
+    if (endFrame != null) {
+      unawaited(endFrame.catchError((_) {}));
+    }
   }
 
   Future<void> _resetVoiceCall() async {
+    _pendingVoiceAudio = null;
     await sdk.stopLiveVoiceAudio();
     _setState(
       _state.copyWith(
@@ -351,6 +362,30 @@ class EdgezMeshSession extends ChangeNotifier {
       sequence: sequence,
       maxHop: config.maxHop,
     );
+  }
+
+  void _queueVoiceAudio(List<int> audio) {
+    _pendingVoiceAudio = List<int>.from(audio);
+    if (_voiceAudioSendInFlight) return;
+    _voiceAudioSendInFlight = true;
+    unawaited(_drainVoiceAudio());
+  }
+
+  Future<void> _drainVoiceAudio() async {
+    try {
+      while (_state.voiceCall.isActive && _pendingVoiceAudio != null) {
+        final audio = _pendingVoiceAudio!;
+        _pendingVoiceAudio = null;
+        await _sendVoiceCallPacket(_callAudio, audio);
+      }
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Voice audio send failed: $error'));
+    } finally {
+      _voiceAudioSendInFlight = false;
+      if (_state.voiceCall.isActive && _pendingVoiceAudio != null) {
+        _queueVoiceAudio(_pendingVoiceAudio!);
+      }
+    }
   }
 
   Future<void> connectBle(String deviceId) async {
@@ -683,7 +718,7 @@ class EdgezMeshSession extends ChangeNotifier {
         unawaited(_handleVoiceCallFrame(event.packet));
       case EdgezMeshEventType.voiceAudio:
         if (_state.voiceCall.isActive && event.packet.isNotEmpty) {
-          unawaited(_sendVoiceCallPacket(_callAudio, event.packet));
+          _queueVoiceAudio(event.packet);
         }
       case EdgezMeshEventType.otaProgress:
         _setState(
@@ -1181,7 +1216,6 @@ class EdgezMeshSession extends ChangeNotifier {
           if (call.phase == EdgezVoiceCallPhase.outgoing &&
               call.callId == packet.callId &&
               call.peerNodeNum == fromNode) {
-            await sdk.startLiveVoiceAudio();
             _setState(
               _state.copyWith(
                 voiceCall: EdgezVoiceCallState(
@@ -1192,6 +1226,12 @@ class EdgezMeshSession extends ChangeNotifier {
                 statusLine: 'Voice call active',
               ),
             );
+            try {
+              await sdk.startLiveVoiceAudio();
+            } catch (_) {
+              await _resetVoiceCall();
+              rethrow;
+            }
           }
         case _callEnd:
           if (call.callId == packet.callId) await _resetVoiceCall();

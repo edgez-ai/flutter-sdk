@@ -17,6 +17,8 @@ import android.os.Build
 import android.os.SystemClock
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.max
+import kotlin.math.sqrt
 
 private const val CALL_SAMPLE_RATE = 8_000
 private const val CALL_FRAME_MS = 40
@@ -27,6 +29,7 @@ private const val PLAYBACK_REPRIME_GAP_MS = CALL_FRAME_MS * 4L
 internal class EdgezLiveVoiceAudio(
     context: Context,
     private val onEncodedFrame: (ByteArray) -> Unit,
+    private val onError: (Throwable) -> Unit,
 ) {
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val executor = Executors.newSingleThreadExecutor()
@@ -67,6 +70,8 @@ internal class EdgezLiveVoiceAudio(
                 NoiseSuppressor.create(recorder.audioSessionId)?.also { it.enabled = true }
             } else null
             val pcm = ShortArray(CALL_SAMPLES_PER_FRAME)
+            val voiceDetector = VoiceActivityDetector()
+            var preRollFrame: ShortArray? = null
             try {
                 check(recorder.state == AudioRecord.STATE_INITIALIZED) {
                     "Live voice AudioRecord initialization failed"
@@ -85,9 +90,21 @@ internal class EdgezLiveVoiceAudio(
                         offset += read
                     }
                     if (offset == pcm.size && capturing.get()) {
-                        onEncodedFrame(encodeImaAdpcm(pcm))
+                        val decision = voiceDetector.analyze(pcm)
+                        if (decision.speechStarted) {
+                            preRollFrame?.let { frame -> onEncodedFrame(encodeImaAdpcm(frame)) }
+                            preRollFrame = null
+                        }
+                        if (decision.shouldSend) {
+                            onEncodedFrame(encodeImaAdpcm(pcm))
+                        } else {
+                            preRollFrame = pcm.copyOf()
+                        }
                     }
                 }
+            } catch (error: Throwable) {
+                capturing.set(false)
+                onError(error)
             } finally {
                 if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
                 echo?.release()
@@ -217,6 +234,71 @@ internal class EdgezLiveVoiceAudio(
         player = null
         playbackFramesBuffered = 0
         lastPlaybackFrameAtMs = 0L
+    }
+}
+
+private data class VoiceActivityDecision(
+    val shouldSend: Boolean,
+    val speechStarted: Boolean,
+)
+
+private class VoiceActivityDetector(
+    private val minimumSpeechRms: Double = 40.0,
+    private val noiseMultiplier: Double = 1.6,
+    private val hangoverFrames: Int = 8,
+    private val calibrationFrames: Int = 10,
+) {
+    private var noiseRms = minimumSpeechRms / noiseMultiplier
+    private var remainingHangoverFrames = 0
+    private var framesObserved = 0
+    private val calibrationRms = DoubleArray(calibrationFrames.coerceAtLeast(0))
+    private val calibrationSeedFrames = minOf(3, calibrationFrames)
+
+    fun analyze(samples: ShortArray): VoiceActivityDecision {
+        if (samples.isEmpty()) return VoiceActivityDecision(false, false)
+        val rms = calculateRms(samples)
+        if (framesObserved < calibrationFrames) {
+            if (framesObserved >= calibrationSeedFrames) {
+                val threshold = max(minimumSpeechRms, noiseRms * noiseMultiplier)
+                if (rms >= threshold) {
+                    val started = remainingHangoverFrames == 0
+                    remainingHangoverFrames = hangoverFrames
+                    return VoiceActivityDecision(true, started)
+                }
+                if (remainingHangoverFrames > 0) {
+                    remainingHangoverFrames--
+                    return VoiceActivityDecision(true, false)
+                }
+            }
+            calibrationRms[framesObserved++] = rms
+            val observed = calibrationRms.copyOf(framesObserved).sortedArray()
+            noiseRms = observed[framesObserved / 2].coerceAtLeast(1.0)
+            return VoiceActivityDecision(false, false)
+        }
+        val threshold = max(minimumSpeechRms, noiseRms * noiseMultiplier)
+        if (rms >= threshold) {
+            val started = remainingHangoverFrames == 0
+            remainingHangoverFrames = hangoverFrames
+            return VoiceActivityDecision(true, started)
+        }
+        if (remainingHangoverFrames > 0) {
+            remainingHangoverFrames--
+            return VoiceActivityDecision(true, false)
+        }
+        noiseRms = noiseRms * 0.95 + rms * 0.05
+        return VoiceActivityDecision(false, false)
+    }
+
+    private fun calculateRms(samples: ShortArray): Double {
+        var sum = 0.0
+        for (sample in samples) sum += sample
+        val mean = sum / samples.size
+        var sumSquares = 0.0
+        for (sample in samples) {
+            val value = sample - mean
+            sumSquares += value * value
+        }
+        return sqrt(sumSquares / samples.size)
     }
 }
 

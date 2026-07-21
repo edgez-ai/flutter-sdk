@@ -247,6 +247,51 @@ void main() {
       session.dispose();
     });
 
+    test('voice call queues invite and ends locally without waiting for BLE',
+        () async {
+      ble.results['requestMicrophonePermission'] = true;
+      final session = EdgezMeshSession(sdk: sdk);
+      final local = await _newIdentity('Local caller', 70, 80);
+      final remote = await _newIdentity('Remote caller', 90, 100);
+      await session.initializeMesh(
+        EdgezMeshConfig(identity: local, maxHop: 4),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(
+            macAddress: Int64(0x112233445566),
+            stackInitialized: true,
+          ),
+        ),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(0x223344556677),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(remote.userIdHigh),
+            userIdLow: Int64(remote.userIdLow),
+            userName: remote.name,
+            userPublicKey: remote.publicKey,
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      await session.startVoiceCall(0x223344556677);
+      expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.outgoing);
+      expect(ble.callsFor('sendVoiceCallFrame'), hasLength(1));
+
+      await session.endVoiceCall();
+      expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.idle);
+      expect(ble.callsFor('stopLiveVoiceAudio'), hasLength(1));
+      await ble.flushEvents();
+      expect(ble.callsFor('sendVoiceCallFrame'), hasLength(2));
+
+      session.dispose();
+    });
+
     test('session ignores self and identity-empty firmware beacons', () async {
       final session = EdgezMeshSession(sdk: sdk);
       final identity = await _newIdentity('Local user', 10, 20);

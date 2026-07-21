@@ -50,6 +50,8 @@ class EdgezMeshSdk {
 
   final EdgezPlatformTransport _transport;
   static const _voiceChunkAudioBytes = 290;
+  final Map<String, Future<SecretKey>> _conversationKeyCache =
+      <String, Future<SecretKey>>{};
 
   Stream<EdgezMeshEvent>? _meshEvents;
 
@@ -629,6 +631,25 @@ class EdgezMeshSdk {
   }
 
   Future<SecretKey> _conversationKey({
+    required EdgezUserIdentity identity,
+    required int localNode,
+    required int peerNode,
+    required List<int> peerPublicKey,
+  }) {
+    final cacheKey = '$localNode:$peerNode:'
+        '${base64Encode(identity.publicKey)}:${base64Encode(peerPublicKey)}';
+    return _conversationKeyCache.putIfAbsent(
+      cacheKey,
+      () => _deriveConversationKey(
+        identity: identity,
+        localNode: localNode,
+        peerNode: peerNode,
+        peerPublicKey: peerPublicKey,
+      ),
+    );
+  }
+
+  Future<SecretKey> _deriveConversationKey({
     required EdgezUserIdentity identity,
     required int localNode,
     required int peerNode,

@@ -127,6 +127,9 @@ class EdgezFlutterSdkPlugin :
     private var txWriteInFlight = false
     private var voiceTxWriteInFlight = false
     private var dataWriteInFlight = false
+    private var capturedVoiceFrames = 0
+    private var transmittedVoiceFrames = 0
+    private var receivedVoiceFrames = 0
     private var scanGeneration = 0
 
     private val bluetoothAdapter: BluetoothAdapter?
@@ -166,9 +169,29 @@ class EdgezFlutterSdkPlugin :
         events = EventChannel(binding.binaryMessenger, "edgez_flutter_sdk/events")
         methods.setMethodCallHandler(this)
         events.setStreamHandler(this)
-        liveVoiceAudio = EdgezLiveVoiceAudio(context) { audio ->
-            emit(mapOf("type" to "voiceAudio", "packet" to audio))
-        }
+        liveVoiceAudio = EdgezLiveVoiceAudio(
+            context,
+            onEncodedFrame = { audio ->
+                capturedVoiceFrames++
+                if (capturedVoiceFrames == 1 || capturedVoiceFrames % 25 == 0) {
+                    emit(
+                        mapOf(
+                            "type" to "log",
+                            "log" to "Live voice captured frames=$capturedVoiceFrames bytes=${audio.size}",
+                        ),
+                    )
+                }
+                emit(mapOf("type" to "voiceAudio", "packet" to audio))
+            },
+            onError = { error ->
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "Live voice capture failed: ${error.message}",
+                    ),
+                )
+            },
+        )
         val bondFilter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
         if (Build.VERSION.SDK_INT >= 33) {
             context.registerReceiver(bondStateReceiver, bondFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -282,6 +305,9 @@ class EdgezFlutterSdkPlugin :
                     result.error("microphone_permission_denied", "Microphone permission denied", null)
                     return
                 }
+                capturedVoiceFrames = 0
+                transmittedVoiceFrames = 0
+                receivedVoiceFrames = 0
                 runCatching { liveVoiceAudio?.start() }
                     .fold(
                         onSuccess = { result.success(null) },
@@ -687,6 +713,15 @@ class EdgezFlutterSdkPlugin :
                 if (voiceTxWriteInFlight) voiceTxQueue.pollLast() else voiceTxQueue.pollFirst()
             }
             voiceTxQueue.addLast(frame)
+            transmittedVoiceFrames++
+        }
+        if (transmittedVoiceFrames == 1 || transmittedVoiceFrames % 25 == 0) {
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "Live voice queued frames=$transmittedVoiceFrames bytes=${frame.size}",
+                ),
+            )
         }
         return if (writeNextVoiceFrame(activeGatt, voice)) {
             Result.success("BLE voice queued")
@@ -1292,6 +1327,15 @@ class EdgezFlutterSdkPlugin :
             return
         }
         emit(mapOf("type" to "voiceFrame", "packet" to payload))
+        receivedVoiceFrames++
+        if (receivedVoiceFrames == 1 || receivedVoiceFrames % 25 == 0) {
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "Live voice received frames=$receivedVoiceFrames bytes=${payload.size}",
+                ),
+            )
+        }
     }
 
     private fun findMagicOffset(buffer: ByteArray, length: Int): Int {
