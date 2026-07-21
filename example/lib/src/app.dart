@@ -537,6 +537,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                           user: selected,
                           messages: meshState.conversations[selected.nodeNum] ??
                               const <EdgezConversationMessage>[],
+                          sensorSamples:
+                              meshState.sensorSamples[selected.nodeNum] ??
+                                  const <EdgezSensorSample>[],
                           onBack: () => setState(() => selectedNodeNum = null),
                           onSendMessage: _sendMessage,
                           onStartVoiceMessage: _startVoiceMessage,

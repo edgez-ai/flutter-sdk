@@ -1,3 +1,5 @@
+import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
+import 'package:edgez_flutter_sdk_example/src/conversation_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:edgez_flutter_sdk_example/src/app.dart';
@@ -75,5 +77,53 @@ void main() {
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
     expect(find.text('BLE connection'), findsOneWidget);
+  });
+
+  testWidgets('conversation shows GPS without overflowing a narrow screen',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ConversationScreen(
+            activeConnection: EdgezConnectionType.ble,
+            user: const EdgezMeshNode(
+              nodeNum: 0x112233445566,
+              userUuid: 'remote-user',
+              displayName: 'A remote user with a very long display name',
+              route: 'BLE',
+              lastSeenMs: 1,
+              marker: 'green',
+              deviceType: 'User',
+            ),
+            messages: const <EdgezConversationMessage>[],
+            sensorSamples: const <EdgezSensorSample>[
+              EdgezSensorSample(
+                nodeNum: 0x112233445566,
+                timestampMs: 1700000000000,
+                data: EdgezSensorData(
+                  latitude: 59.329323,
+                  longitude: 18.068581,
+                ),
+              ),
+            ],
+            callState: const EdgezVoiceCallState(),
+            onBack: () {},
+            onSendMessage: (_) {},
+            onStartVoiceMessage: () async => true,
+            onStopVoiceMessage: (_) async {},
+            onReplayVoiceMessage: (_) {},
+            onStartCall: () async {},
+            onAcceptCall: () async {},
+            onEndCall: () async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Latest sensor location'), findsOneWidget);
+    expect(find.text('59.329323, 18.068581'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

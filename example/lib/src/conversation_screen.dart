@@ -10,6 +10,7 @@ class ConversationScreen extends StatefulWidget {
     required this.activeConnection,
     required this.user,
     required this.messages,
+    required this.sensorSamples,
     required this.onBack,
     required this.onSendMessage,
     required this.onStartVoiceMessage,
@@ -25,6 +26,7 @@ class ConversationScreen extends StatefulWidget {
   final EdgezConnectionType activeConnection;
   final EdgezMeshNode user;
   final List<EdgezConversationMessage> messages;
+  final List<EdgezSensorSample> sensorSamples;
   final VoidCallback onBack;
   final ValueChanged<String> onSendMessage;
   final Future<bool> Function() onStartVoiceMessage;
@@ -94,65 +96,131 @@ class _ConversationScreenState extends State<ConversationScreen> {
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
     final callForThisUser = widget.callState.peerNodeNum == widget.user.nodeNum;
+    final displayName = widget.user.resolvedDisplayName.trim();
+    final avatarText = displayName.isEmpty ? '?' : displayName[0].toUpperCase();
+    EdgezSensorSample? latestLocation;
+    for (final sample in widget.sensorSamples) {
+      if (sample.data.latitude == null || sample.data.longitude == null) {
+        continue;
+      }
+      if (latestLocation == null ||
+          sample.timestampMs > latestLocation.timestampMs) {
+        latestLocation = sample;
+      }
+    }
+    final location = latestLocation;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: <Widget>[
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                TextButton(onPressed: widget.onBack, child: const Text('Back')),
-                Row(
+                IconButton(
+                  onPressed: widget.onBack,
+                  tooltip: 'Back',
+                  icon: const Icon(Icons.arrow_back),
+                ),
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: widget.user.exampleMarker.color,
+                  child: Text(
+                    avatarText,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        widget.user.resolvedDisplayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        '${widget.user.exampleDeviceType.label} · '
+                        '${widget.user.opensConversation ? 'Encrypted' : 'Waiting for key'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      Text(
+                        widget.user.nodeId,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: widget.callState.isIdle
+                      ? 'Start voice call'
+                      : callForThisUser
+                          ? 'End voice call'
+                          : 'Another call is active',
+                  onPressed: !canSendVoice
+                      ? null
+                      : widget.callState.isIdle
+                          ? () => unawaited(widget.onStartCall())
+                          : callForThisUser
+                              ? () => unawaited(widget.onEndCall())
+                              : null,
+                  icon: Icon(
+                    widget.callState.isIdle
+                        ? Icons.call_outlined
+                        : Icons.call_end,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    IconButton(
-                      tooltip: widget.callState.isIdle
-                          ? 'Start voice call'
-                          : callForThisUser
-                              ? 'End voice call'
-                              : 'Another call is active',
-                      onPressed: !canSendVoice
-                          ? null
-                          : widget.callState.isIdle
-                              ? () => unawaited(widget.onStartCall())
-                              : callForThisUser
-                                  ? () => unawaited(widget.onEndCall())
-                                  : null,
-                      icon: Icon(
-                        widget.callState.isIdle
-                            ? Icons.call_outlined
-                            : Icons.call_end,
-                      ),
+                    Icon(
+                      location != null ? Icons.gps_fixed : Icons.gps_off,
+                      color: location != null
+                          ? widget.user.exampleMarker.color
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    if (widget.user.hasLocation)
-                      Icon(Icons.location_on,
-                          color: widget.user.exampleMarker.color),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: <Widget>[
-                        Text(widget.user.resolvedDisplayName,
-                            style: Theme.of(context).textTheme.titleLarge),
-                        Text('Node ${widget.user.nodeId}',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        Text('User ${widget.user.exampleUserId}',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        Text('Marker ${widget.user.exampleMarker.label}',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        Text('Type ${widget.user.exampleDeviceType.label}',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        if (widget.user.exampleGeoFenceName.isNotEmpty)
-                          Text('Geofence ${widget.user.exampleGeoFenceName}',
-                              style: Theme.of(context).textTheme.bodySmall),
-                        if (widget.user.sleeping)
-                          Text('Sleeping',
-                              style: Theme.of(context).textTheme.bodySmall),
-                      ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Latest sensor location',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          if (location != null) ...<Widget>[
+                            SelectableText(
+                              '${_formatCoordinate(location.data.latitude)}, '
+                              '${_formatCoordinate(location.data.longitude)}',
+                            ),
+                            if (location.timestampMs > 0)
+                              Text(
+                                'Updated ${_formatLocationTime(location.timestampMs)}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                          ] else
+                            Text(
+                              'No GPS location received in sensor data',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
             const SizedBox(height: 12),
             if (callForThisUser && !widget.callState.isIdle) ...<Widget>[
@@ -302,6 +370,16 @@ class _ConversationScreenState extends State<ConversationScreen> {
       ),
     );
   }
+}
+
+String _formatCoordinate(double? value) =>
+    value == null ? '—' : value.toStringAsFixed(6);
+
+String _formatLocationTime(int timestampMs) {
+  final value = DateTime.fromMillisecondsSinceEpoch(timestampMs).toLocal();
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)} '
+      '${twoDigits(value.hour)}:${twoDigits(value.minute)}:${twoDigits(value.second)}';
 }
 
 class ConversationBubble extends StatelessWidget {
