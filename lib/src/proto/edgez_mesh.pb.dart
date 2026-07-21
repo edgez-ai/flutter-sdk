@@ -21,54 +21,230 @@ export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
 export 'edgez_mesh.pbenum.dart';
 
+class MessageBody extends $pb.GeneratedMessage {
+  factory MessageBody({
+    $fixnum.Int64? messageIdHigh,
+    $fixnum.Int64? messageIdLow,
+    $core.int? sequence,
+    Mime? mime,
+    $core.List<$core.int>? payload,
+    $fixnum.Int64? groupIdHigh,
+    $fixnum.Int64? groupIdLow,
+  }) {
+    final result = create();
+    if (messageIdHigh != null) result.messageIdHigh = messageIdHigh;
+    if (messageIdLow != null) result.messageIdLow = messageIdLow;
+    if (sequence != null) result.sequence = sequence;
+    if (mime != null) result.mime = mime;
+    if (payload != null) result.payload = payload;
+    if (groupIdHigh != null) result.groupIdHigh = groupIdHigh;
+    if (groupIdLow != null) result.groupIdLow = groupIdLow;
+    return result;
+  }
+
+  MessageBody._();
+
+  factory MessageBody.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory MessageBody.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'MessageBody',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
+      createEmptyInstance: create)
+    ..a<$fixnum.Int64>(
+        1, _omitFieldNames ? '' : 'messageIdHigh', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(
+        2, _omitFieldNames ? '' : 'messageIdLow', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aI(3, _omitFieldNames ? '' : 'sequence', fieldType: $pb.PbFieldType.OS3)
+    ..aE<Mime>(4, _omitFieldNames ? '' : 'mime', enumValues: Mime.values)
+    ..a<$core.List<$core.int>>(
+        5, _omitFieldNames ? '' : 'payload', $pb.PbFieldType.OY)
+    ..a<$fixnum.Int64>(
+        6, _omitFieldNames ? '' : 'groupIdHigh', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(
+        7, _omitFieldNames ? '' : 'groupIdLow', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MessageBody clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MessageBody copyWith(void Function(MessageBody) updates) =>
+      super.copyWith((message) => updates(message as MessageBody))
+          as MessageBody;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MessageBody create() => MessageBody._();
+  @$core.override
+  MessageBody createEmptyInstance() => create();
+  static $pb.PbList<MessageBody> createRepeated() => $pb.PbList<MessageBody>();
+  @$core.pragma('dart2js:noInline')
+  static MessageBody getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<MessageBody>(create);
+  static MessageBody? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get messageIdHigh => $_getI64(0);
+  @$pb.TagNumber(1)
+  set messageIdHigh($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasMessageIdHigh() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearMessageIdHigh() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $fixnum.Int64 get messageIdLow => $_getI64(1);
+  @$pb.TagNumber(2)
+  set messageIdLow($fixnum.Int64 value) => $_setInt64(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasMessageIdLow() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearMessageIdLow() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get sequence => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set sequence($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasSequence() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSequence() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  Mime get mime => $_getN(3);
+  @$pb.TagNumber(4)
+  set mime(Mime value) => $_setField(4, value);
+  @$pb.TagNumber(4)
+  $core.bool hasMime() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearMime() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.List<$core.int> get payload => $_getN(4);
+  @$pb.TagNumber(5)
+  set payload($core.List<$core.int> value) => $_setBytes(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasPayload() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearPayload() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $fixnum.Int64 get groupIdHigh => $_getI64(5);
+  @$pb.TagNumber(6)
+  set groupIdHigh($fixnum.Int64 value) => $_setInt64(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasGroupIdHigh() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearGroupIdHigh() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $fixnum.Int64 get groupIdLow => $_getI64(6);
+  @$pb.TagNumber(7)
+  set groupIdLow($fixnum.Int64 value) => $_setInt64(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasGroupIdLow() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearGroupIdLow() => $_clearField(7);
+}
+
+class Report extends $pb.GeneratedMessage {
+  factory Report({
+    $core.Iterable<Peer>? peers,
+  }) {
+    final result = create();
+    if (peers != null) result.peers.addAll(peers);
+    return result;
+  }
+
+  Report._();
+
+  factory Report.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory Report.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'Report',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
+      createEmptyInstance: create)
+    ..pPM<Peer>(1, _omitFieldNames ? '' : 'peers', subBuilder: Peer.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Report clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Report copyWith(void Function(Report) updates) =>
+      super.copyWith((message) => updates(message as Report)) as Report;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static Report create() => Report._();
+  @$core.override
+  Report createEmptyInstance() => create();
+  static $pb.PbList<Report> createRepeated() => $pb.PbList<Report>();
+  @$core.pragma('dart2js:noInline')
+  static Report getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Report>(create);
+  static Report? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<Peer> get peers => $_getList(0);
+}
+
 enum NetworkPacket_Body {
   payload,
-  beacon,
+  msg,
   status,
   init,
   deviceSettings,
   scriptConfig,
+  beacon,
+  report,
   notSet
 }
 
 class NetworkPacket extends $pb.GeneratedMessage {
   factory NetworkPacket({
-    $fixnum.Int64? messageIdHigh,
-    $fixnum.Int64? messageIdLow,
     $fixnum.Int64? from,
     $fixnum.Int64? to,
     Operation? operation,
     Interface? interface,
-    $core.int? sequence,
-    $fixnum.Int64? userHigh,
-    $fixnum.Int64? userLow,
-    Mime? mime,
-    $core.int? maxHop,
     $core.List<$core.int>? payload,
-    $core.String? beacon,
+    MessageBody? msg,
     HaLowInterfaceStatus? status,
     HaLowInitConfig? init,
     DeviceSettings? deviceSettings,
     ScriptConfig? scriptConfig,
+    Beacon? beacon,
+    Report? report,
   }) {
     final result = create();
-    if (messageIdHigh != null) result.messageIdHigh = messageIdHigh;
-    if (messageIdLow != null) result.messageIdLow = messageIdLow;
     if (from != null) result.from = from;
     if (to != null) result.to = to;
     if (operation != null) result.operation = operation;
     if (interface != null) result.interface = interface;
-    if (sequence != null) result.sequence = sequence;
-    if (userHigh != null) result.userHigh = userHigh;
-    if (userLow != null) result.userLow = userLow;
-    if (mime != null) result.mime = mime;
-    if (maxHop != null) result.maxHop = maxHop;
     if (payload != null) result.payload = payload;
-    if (beacon != null) result.beacon = beacon;
+    if (msg != null) result.msg = msg;
     if (status != null) result.status = status;
     if (init != null) result.init = init;
     if (deviceSettings != null) result.deviceSettings = deviceSettings;
     if (scriptConfig != null) result.scriptConfig = scriptConfig;
+    if (beacon != null) result.beacon = beacon;
+    if (report != null) result.report = report;
     return result;
   }
 
@@ -84,43 +260,32 @@ class NetworkPacket extends $pb.GeneratedMessage {
   static const $core.Map<$core.int, NetworkPacket_Body>
       _NetworkPacket_BodyByTag = {
     100: NetworkPacket_Body.payload,
-    101: NetworkPacket_Body.beacon,
+    101: NetworkPacket_Body.msg,
     102: NetworkPacket_Body.status,
     103: NetworkPacket_Body.init,
     104: NetworkPacket_Body.deviceSettings,
     105: NetworkPacket_Body.scriptConfig,
+    106: NetworkPacket_Body.beacon,
+    107: NetworkPacket_Body.report,
     0: NetworkPacket_Body.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'NetworkPacket',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
       createEmptyInstance: create)
-    ..oo(0, [100, 101, 102, 103, 104, 105])
-    ..a<$fixnum.Int64>(
-        1, _omitFieldNames ? '' : 'messageIdHigh', $pb.PbFieldType.OU6,
+    ..oo(0, [100, 101, 102, 103, 104, 105, 106, 107])
+    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'from', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
-    ..a<$fixnum.Int64>(
-        2, _omitFieldNames ? '' : 'messageIdLow', $pb.PbFieldType.OU6,
+    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'to', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
-    ..a<$fixnum.Int64>(3, _omitFieldNames ? '' : 'from', $pb.PbFieldType.OU6,
-        defaultOrMaker: $fixnum.Int64.ZERO)
-    ..a<$fixnum.Int64>(4, _omitFieldNames ? '' : 'to', $pb.PbFieldType.OU6,
-        defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aE<Operation>(5, _omitFieldNames ? '' : 'operation',
+    ..aE<Operation>(3, _omitFieldNames ? '' : 'operation',
         enumValues: Operation.values)
-    ..aE<Interface>(6, _omitFieldNames ? '' : 'interface',
+    ..aE<Interface>(4, _omitFieldNames ? '' : 'interface',
         enumValues: Interface.values)
-    ..aI(7, _omitFieldNames ? '' : 'sequence', fieldType: $pb.PbFieldType.OU3)
-    ..a<$fixnum.Int64>(
-        8, _omitFieldNames ? '' : 'userHigh', $pb.PbFieldType.OU6,
-        defaultOrMaker: $fixnum.Int64.ZERO)
-    ..a<$fixnum.Int64>(9, _omitFieldNames ? '' : 'userLow', $pb.PbFieldType.OU6,
-        defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aE<Mime>(10, _omitFieldNames ? '' : 'mime', enumValues: Mime.values)
-    ..aI(11, _omitFieldNames ? '' : 'maxHop', fieldType: $pb.PbFieldType.OU3)
     ..a<$core.List<$core.int>>(
         100, _omitFieldNames ? '' : 'payload', $pb.PbFieldType.OY)
-    ..aOS(101, _omitFieldNames ? '' : 'beacon')
+    ..aOM<MessageBody>(101, _omitFieldNames ? '' : 'msg',
+        subBuilder: MessageBody.create)
     ..aOM<HaLowInterfaceStatus>(102, _omitFieldNames ? '' : 'status',
         subBuilder: HaLowInterfaceStatus.create)
     ..aOM<HaLowInitConfig>(103, _omitFieldNames ? '' : 'init',
@@ -129,6 +294,10 @@ class NetworkPacket extends $pb.GeneratedMessage {
         subBuilder: DeviceSettings.create)
     ..aOM<ScriptConfig>(105, _omitFieldNames ? '' : 'scriptConfig',
         subBuilder: ScriptConfig.create)
+    ..aOM<Beacon>(106, _omitFieldNames ? '' : 'beacon',
+        subBuilder: Beacon.create)
+    ..aOM<Report>(107, _omitFieldNames ? '' : 'report',
+        subBuilder: Report.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -158,6 +327,8 @@ class NetworkPacket extends $pb.GeneratedMessage {
   @$pb.TagNumber(103)
   @$pb.TagNumber(104)
   @$pb.TagNumber(105)
+  @$pb.TagNumber(106)
+  @$pb.TagNumber(107)
   NetworkPacket_Body whichBody() => _NetworkPacket_BodyByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(100)
   @$pb.TagNumber(101)
@@ -165,168 +336,131 @@ class NetworkPacket extends $pb.GeneratedMessage {
   @$pb.TagNumber(103)
   @$pb.TagNumber(104)
   @$pb.TagNumber(105)
+  @$pb.TagNumber(106)
+  @$pb.TagNumber(107)
   void clearBody() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
-  $fixnum.Int64 get messageIdHigh => $_getI64(0);
+  $fixnum.Int64 get from => $_getI64(0);
   @$pb.TagNumber(1)
-  set messageIdHigh($fixnum.Int64 value) => $_setInt64(0, value);
+  set from($fixnum.Int64 value) => $_setInt64(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasMessageIdHigh() => $_has(0);
+  $core.bool hasFrom() => $_has(0);
   @$pb.TagNumber(1)
-  void clearMessageIdHigh() => $_clearField(1);
+  void clearFrom() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  $fixnum.Int64 get messageIdLow => $_getI64(1);
+  $fixnum.Int64 get to => $_getI64(1);
   @$pb.TagNumber(2)
-  set messageIdLow($fixnum.Int64 value) => $_setInt64(1, value);
+  set to($fixnum.Int64 value) => $_setInt64(1, value);
   @$pb.TagNumber(2)
-  $core.bool hasMessageIdLow() => $_has(1);
+  $core.bool hasTo() => $_has(1);
   @$pb.TagNumber(2)
-  void clearMessageIdLow() => $_clearField(2);
+  void clearTo() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  $fixnum.Int64 get from => $_getI64(2);
+  Operation get operation => $_getN(2);
   @$pb.TagNumber(3)
-  set from($fixnum.Int64 value) => $_setInt64(2, value);
+  set operation(Operation value) => $_setField(3, value);
   @$pb.TagNumber(3)
-  $core.bool hasFrom() => $_has(2);
+  $core.bool hasOperation() => $_has(2);
   @$pb.TagNumber(3)
-  void clearFrom() => $_clearField(3);
+  void clearOperation() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $fixnum.Int64 get to => $_getI64(3);
+  Interface get interface => $_getN(3);
   @$pb.TagNumber(4)
-  set to($fixnum.Int64 value) => $_setInt64(3, value);
+  set interface(Interface value) => $_setField(4, value);
   @$pb.TagNumber(4)
-  $core.bool hasTo() => $_has(3);
+  $core.bool hasInterface() => $_has(3);
   @$pb.TagNumber(4)
-  void clearTo() => $_clearField(4);
-
-  @$pb.TagNumber(5)
-  Operation get operation => $_getN(4);
-  @$pb.TagNumber(5)
-  set operation(Operation value) => $_setField(5, value);
-  @$pb.TagNumber(5)
-  $core.bool hasOperation() => $_has(4);
-  @$pb.TagNumber(5)
-  void clearOperation() => $_clearField(5);
-
-  @$pb.TagNumber(6)
-  Interface get interface => $_getN(5);
-  @$pb.TagNumber(6)
-  set interface(Interface value) => $_setField(6, value);
-  @$pb.TagNumber(6)
-  $core.bool hasInterface() => $_has(5);
-  @$pb.TagNumber(6)
-  void clearInterface() => $_clearField(6);
-
-  @$pb.TagNumber(7)
-  $core.int get sequence => $_getIZ(6);
-  @$pb.TagNumber(7)
-  set sequence($core.int value) => $_setUnsignedInt32(6, value);
-  @$pb.TagNumber(7)
-  $core.bool hasSequence() => $_has(6);
-  @$pb.TagNumber(7)
-  void clearSequence() => $_clearField(7);
-
-  @$pb.TagNumber(8)
-  $fixnum.Int64 get userHigh => $_getI64(7);
-  @$pb.TagNumber(8)
-  set userHigh($fixnum.Int64 value) => $_setInt64(7, value);
-  @$pb.TagNumber(8)
-  $core.bool hasUserHigh() => $_has(7);
-  @$pb.TagNumber(8)
-  void clearUserHigh() => $_clearField(8);
-
-  @$pb.TagNumber(9)
-  $fixnum.Int64 get userLow => $_getI64(8);
-  @$pb.TagNumber(9)
-  set userLow($fixnum.Int64 value) => $_setInt64(8, value);
-  @$pb.TagNumber(9)
-  $core.bool hasUserLow() => $_has(8);
-  @$pb.TagNumber(9)
-  void clearUserLow() => $_clearField(9);
-
-  @$pb.TagNumber(10)
-  Mime get mime => $_getN(9);
-  @$pb.TagNumber(10)
-  set mime(Mime value) => $_setField(10, value);
-  @$pb.TagNumber(10)
-  $core.bool hasMime() => $_has(9);
-  @$pb.TagNumber(10)
-  void clearMime() => $_clearField(10);
-
-  @$pb.TagNumber(11)
-  $core.int get maxHop => $_getIZ(10);
-  @$pb.TagNumber(11)
-  set maxHop($core.int value) => $_setUnsignedInt32(10, value);
-  @$pb.TagNumber(11)
-  $core.bool hasMaxHop() => $_has(10);
-  @$pb.TagNumber(11)
-  void clearMaxHop() => $_clearField(11);
+  void clearInterface() => $_clearField(4);
 
   @$pb.TagNumber(100)
-  $core.List<$core.int> get payload => $_getN(11);
+  $core.List<$core.int> get payload => $_getN(4);
   @$pb.TagNumber(100)
-  set payload($core.List<$core.int> value) => $_setBytes(11, value);
+  set payload($core.List<$core.int> value) => $_setBytes(4, value);
   @$pb.TagNumber(100)
-  $core.bool hasPayload() => $_has(11);
+  $core.bool hasPayload() => $_has(4);
   @$pb.TagNumber(100)
   void clearPayload() => $_clearField(100);
 
   @$pb.TagNumber(101)
-  $core.String get beacon => $_getSZ(12);
+  MessageBody get msg => $_getN(5);
   @$pb.TagNumber(101)
-  set beacon($core.String value) => $_setString(12, value);
+  set msg(MessageBody value) => $_setField(101, value);
   @$pb.TagNumber(101)
-  $core.bool hasBeacon() => $_has(12);
+  $core.bool hasMsg() => $_has(5);
   @$pb.TagNumber(101)
-  void clearBeacon() => $_clearField(101);
+  void clearMsg() => $_clearField(101);
+  @$pb.TagNumber(101)
+  MessageBody ensureMsg() => $_ensure(5);
 
   @$pb.TagNumber(102)
-  HaLowInterfaceStatus get status => $_getN(13);
+  HaLowInterfaceStatus get status => $_getN(6);
   @$pb.TagNumber(102)
   set status(HaLowInterfaceStatus value) => $_setField(102, value);
   @$pb.TagNumber(102)
-  $core.bool hasStatus() => $_has(13);
+  $core.bool hasStatus() => $_has(6);
   @$pb.TagNumber(102)
   void clearStatus() => $_clearField(102);
   @$pb.TagNumber(102)
-  HaLowInterfaceStatus ensureStatus() => $_ensure(13);
+  HaLowInterfaceStatus ensureStatus() => $_ensure(6);
 
   @$pb.TagNumber(103)
-  HaLowInitConfig get init => $_getN(14);
+  HaLowInitConfig get init => $_getN(7);
   @$pb.TagNumber(103)
   set init(HaLowInitConfig value) => $_setField(103, value);
   @$pb.TagNumber(103)
-  $core.bool hasInit() => $_has(14);
+  $core.bool hasInit() => $_has(7);
   @$pb.TagNumber(103)
   void clearInit() => $_clearField(103);
   @$pb.TagNumber(103)
-  HaLowInitConfig ensureInit() => $_ensure(14);
+  HaLowInitConfig ensureInit() => $_ensure(7);
 
   @$pb.TagNumber(104)
-  DeviceSettings get deviceSettings => $_getN(15);
+  DeviceSettings get deviceSettings => $_getN(8);
   @$pb.TagNumber(104)
   set deviceSettings(DeviceSettings value) => $_setField(104, value);
   @$pb.TagNumber(104)
-  $core.bool hasDeviceSettings() => $_has(15);
+  $core.bool hasDeviceSettings() => $_has(8);
   @$pb.TagNumber(104)
   void clearDeviceSettings() => $_clearField(104);
   @$pb.TagNumber(104)
-  DeviceSettings ensureDeviceSettings() => $_ensure(15);
+  DeviceSettings ensureDeviceSettings() => $_ensure(8);
 
   @$pb.TagNumber(105)
-  ScriptConfig get scriptConfig => $_getN(16);
+  ScriptConfig get scriptConfig => $_getN(9);
   @$pb.TagNumber(105)
   set scriptConfig(ScriptConfig value) => $_setField(105, value);
   @$pb.TagNumber(105)
-  $core.bool hasScriptConfig() => $_has(16);
+  $core.bool hasScriptConfig() => $_has(9);
   @$pb.TagNumber(105)
   void clearScriptConfig() => $_clearField(105);
   @$pb.TagNumber(105)
-  ScriptConfig ensureScriptConfig() => $_ensure(16);
+  ScriptConfig ensureScriptConfig() => $_ensure(9);
+
+  @$pb.TagNumber(106)
+  Beacon get beacon => $_getN(10);
+  @$pb.TagNumber(106)
+  set beacon(Beacon value) => $_setField(106, value);
+  @$pb.TagNumber(106)
+  $core.bool hasBeacon() => $_has(10);
+  @$pb.TagNumber(106)
+  void clearBeacon() => $_clearField(106);
+  @$pb.TagNumber(106)
+  Beacon ensureBeacon() => $_ensure(10);
+
+  @$pb.TagNumber(107)
+  Report get report => $_getN(11);
+  @$pb.TagNumber(107)
+  set report(Report value) => $_setField(107, value);
+  @$pb.TagNumber(107)
+  $core.bool hasReport() => $_has(11);
+  @$pb.TagNumber(107)
+  void clearReport() => $_clearField(107);
+  @$pb.TagNumber(107)
+  Report ensureReport() => $_ensure(11);
 }
 
 class GeoFence extends $pb.GeneratedMessage {
@@ -447,24 +581,20 @@ class GeoFence extends $pb.GeneratedMessage {
   void clearGeoIndex() => $_clearField(6);
 }
 
+enum SensorData_Value { boolValue, intValue, floatValue, notSet }
+
 class SensorData extends $pb.GeneratedMessage {
   factory SensorData({
-    $core.double? latitude,
-    $core.double? longitude,
-    $core.double? altitude,
-    $core.double? temperature,
-    $core.double? humidity,
-    $core.double? pressure,
-    $core.double? vibrationAverage,
+    SensorType? type,
+    $core.bool? boolValue,
+    $core.int? intValue,
+    $core.double? floatValue,
   }) {
     final result = create();
-    if (latitude != null) result.latitude = latitude;
-    if (longitude != null) result.longitude = longitude;
-    if (altitude != null) result.altitude = altitude;
-    if (temperature != null) result.temperature = temperature;
-    if (humidity != null) result.humidity = humidity;
-    if (pressure != null) result.pressure = pressure;
-    if (vibrationAverage != null) result.vibrationAverage = vibrationAverage;
+    if (type != null) result.type = type;
+    if (boolValue != null) result.boolValue = boolValue;
+    if (intValue != null) result.intValue = intValue;
+    if (floatValue != null) result.floatValue = floatValue;
     return result;
   }
 
@@ -477,18 +607,22 @@ class SensorData extends $pb.GeneratedMessage {
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
+  static const $core.Map<$core.int, SensorData_Value> _SensorData_ValueByTag = {
+    2: SensorData_Value.boolValue,
+    3: SensorData_Value.intValue,
+    4: SensorData_Value.floatValue,
+    0: SensorData_Value.notSet
+  };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'SensorData',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
       createEmptyInstance: create)
-    ..aD(4, _omitFieldNames ? '' : 'latitude', fieldType: $pb.PbFieldType.OF)
-    ..aD(5, _omitFieldNames ? '' : 'longitude', fieldType: $pb.PbFieldType.OF)
-    ..aD(6, _omitFieldNames ? '' : 'altitude', fieldType: $pb.PbFieldType.OF)
-    ..aD(7, _omitFieldNames ? '' : 'temperature', fieldType: $pb.PbFieldType.OF)
-    ..aD(8, _omitFieldNames ? '' : 'humidity', fieldType: $pb.PbFieldType.OF)
-    ..aD(9, _omitFieldNames ? '' : 'pressure', fieldType: $pb.PbFieldType.OF)
-    ..aD(10, _omitFieldNames ? '' : 'vibrationAverage',
-        fieldType: $pb.PbFieldType.OF)
+    ..oo(0, [2, 3, 4])
+    ..aE<SensorType>(1, _omitFieldNames ? '' : 'type',
+        enumValues: SensorType.values)
+    ..aOB(2, _omitFieldNames ? '' : 'boolValue')
+    ..aI(3, _omitFieldNames ? '' : 'intValue', fieldType: $pb.PbFieldType.OS3)
+    ..aD(4, _omitFieldNames ? '' : 'floatValue', fieldType: $pb.PbFieldType.OF)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -510,68 +644,124 @@ class SensorData extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<SensorData>(create);
   static SensorData? _defaultInstance;
 
+  @$pb.TagNumber(2)
+  @$pb.TagNumber(3)
   @$pb.TagNumber(4)
-  $core.double get latitude => $_getN(0);
+  SensorData_Value whichValue() => _SensorData_ValueByTag[$_whichOneof(0)]!;
+  @$pb.TagNumber(2)
+  @$pb.TagNumber(3)
   @$pb.TagNumber(4)
-  set latitude($core.double value) => $_setFloat(0, value);
+  void clearValue() => $_clearField($_whichOneof(0));
+
+  @$pb.TagNumber(1)
+  SensorType get type => $_getN(0);
+  @$pb.TagNumber(1)
+  set type(SensorType value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasType() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearType() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.bool get boolValue => $_getBF(1);
+  @$pb.TagNumber(2)
+  set boolValue($core.bool value) => $_setBool(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasBoolValue() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearBoolValue() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get intValue => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set intValue($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasIntValue() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearIntValue() => $_clearField(3);
+
   @$pb.TagNumber(4)
-  $core.bool hasLatitude() => $_has(0);
+  $core.double get floatValue => $_getN(3);
   @$pb.TagNumber(4)
-  void clearLatitude() => $_clearField(4);
+  set floatValue($core.double value) => $_setFloat(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasFloatValue() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearFloatValue() => $_clearField(4);
+}
 
-  @$pb.TagNumber(5)
-  $core.double get longitude => $_getN(1);
-  @$pb.TagNumber(5)
-  set longitude($core.double value) => $_setFloat(1, value);
-  @$pb.TagNumber(5)
-  $core.bool hasLongitude() => $_has(1);
-  @$pb.TagNumber(5)
-  void clearLongitude() => $_clearField(5);
+class Peer extends $pb.GeneratedMessage {
+  factory Peer({
+    $fixnum.Int64? id,
+    $core.int? rssi,
+    $core.Iterable<SensorData>? sensorData,
+  }) {
+    final result = create();
+    if (id != null) result.id = id;
+    if (rssi != null) result.rssi = rssi;
+    if (sensorData != null) result.sensorData.addAll(sensorData);
+    return result;
+  }
 
-  @$pb.TagNumber(6)
-  $core.double get altitude => $_getN(2);
-  @$pb.TagNumber(6)
-  set altitude($core.double value) => $_setFloat(2, value);
-  @$pb.TagNumber(6)
-  $core.bool hasAltitude() => $_has(2);
-  @$pb.TagNumber(6)
-  void clearAltitude() => $_clearField(6);
+  Peer._();
 
-  @$pb.TagNumber(7)
-  $core.double get temperature => $_getN(3);
-  @$pb.TagNumber(7)
-  set temperature($core.double value) => $_setFloat(3, value);
-  @$pb.TagNumber(7)
-  $core.bool hasTemperature() => $_has(3);
-  @$pb.TagNumber(7)
-  void clearTemperature() => $_clearField(7);
+  factory Peer.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory Peer.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
 
-  @$pb.TagNumber(8)
-  $core.double get humidity => $_getN(4);
-  @$pb.TagNumber(8)
-  set humidity($core.double value) => $_setFloat(4, value);
-  @$pb.TagNumber(8)
-  $core.bool hasHumidity() => $_has(4);
-  @$pb.TagNumber(8)
-  void clearHumidity() => $_clearField(8);
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'Peer',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
+      createEmptyInstance: create)
+    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'id', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aI(2, _omitFieldNames ? '' : 'rssi', fieldType: $pb.PbFieldType.OS3)
+    ..pPM<SensorData>(3, _omitFieldNames ? '' : 'sensorData',
+        subBuilder: SensorData.create)
+    ..hasRequiredFields = false;
 
-  @$pb.TagNumber(9)
-  $core.double get pressure => $_getN(5);
-  @$pb.TagNumber(9)
-  set pressure($core.double value) => $_setFloat(5, value);
-  @$pb.TagNumber(9)
-  $core.bool hasPressure() => $_has(5);
-  @$pb.TagNumber(9)
-  void clearPressure() => $_clearField(9);
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Peer clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Peer copyWith(void Function(Peer) updates) =>
+      super.copyWith((message) => updates(message as Peer)) as Peer;
 
-  @$pb.TagNumber(10)
-  $core.double get vibrationAverage => $_getN(6);
-  @$pb.TagNumber(10)
-  set vibrationAverage($core.double value) => $_setFloat(6, value);
-  @$pb.TagNumber(10)
-  $core.bool hasVibrationAverage() => $_has(6);
-  @$pb.TagNumber(10)
-  void clearVibrationAverage() => $_clearField(10);
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static Peer create() => Peer._();
+  @$core.override
+  Peer createEmptyInstance() => create();
+  static $pb.PbList<Peer> createRepeated() => $pb.PbList<Peer>();
+  @$core.pragma('dart2js:noInline')
+  static Peer getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Peer>(create);
+  static Peer? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get id => $_getI64(0);
+  @$pb.TagNumber(1)
+  set id($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get rssi => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set rssi($core.int value) => $_setSignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasRssi() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearRssi() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $pb.PbList<SensorData> get sensorData => $_getList(2);
 }
 
 class Beacon extends $pb.GeneratedMessage {
@@ -580,29 +770,26 @@ class Beacon extends $pb.GeneratedMessage {
     $fixnum.Int64? userIdLow,
     $core.String? userName,
     $core.List<$core.int>? userPublicKey,
-    $core.double? attitude,
+    $core.double? latitude,
     $core.double? longitude,
     MarkerColor? marker,
     DeviceType? deviceType,
-    $core.int? beaconIntervalSeconds,
     $core.bool? sleeping,
     GeoFence? geoFence,
-    SensorData? sensorData,
+    $core.Iterable<SensorData>? sensorData,
   }) {
     final result = create();
     if (userIdHigh != null) result.userIdHigh = userIdHigh;
     if (userIdLow != null) result.userIdLow = userIdLow;
     if (userName != null) result.userName = userName;
     if (userPublicKey != null) result.userPublicKey = userPublicKey;
-    if (attitude != null) result.attitude = attitude;
+    if (latitude != null) result.latitude = latitude;
     if (longitude != null) result.longitude = longitude;
     if (marker != null) result.marker = marker;
     if (deviceType != null) result.deviceType = deviceType;
-    if (beaconIntervalSeconds != null)
-      result.beaconIntervalSeconds = beaconIntervalSeconds;
     if (sleeping != null) result.sleeping = sleeping;
     if (geoFence != null) result.geoFence = geoFence;
-    if (sensorData != null) result.sensorData = sensorData;
+    if (sensorData != null) result.sensorData.addAll(sensorData);
     return result;
   }
 
@@ -628,18 +815,16 @@ class Beacon extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'userName')
     ..a<$core.List<$core.int>>(
         4, _omitFieldNames ? '' : 'userPublicKey', $pb.PbFieldType.OY)
-    ..aD(5, _omitFieldNames ? '' : 'attitude', fieldType: $pb.PbFieldType.OF)
+    ..aD(5, _omitFieldNames ? '' : 'latitude', fieldType: $pb.PbFieldType.OF)
     ..aD(6, _omitFieldNames ? '' : 'longitude', fieldType: $pb.PbFieldType.OF)
     ..aE<MarkerColor>(7, _omitFieldNames ? '' : 'marker',
         enumValues: MarkerColor.values)
     ..aE<DeviceType>(8, _omitFieldNames ? '' : 'deviceType',
         enumValues: DeviceType.values)
-    ..aI(9, _omitFieldNames ? '' : 'beaconIntervalSeconds',
-        fieldType: $pb.PbFieldType.OU3)
     ..aOB(10, _omitFieldNames ? '' : 'sleeping')
     ..aOM<GeoFence>(100, _omitFieldNames ? '' : 'geoFence',
         subBuilder: GeoFence.create)
-    ..aOM<SensorData>(101, _omitFieldNames ? '' : 'sensorData',
+    ..pPM<SensorData>(101, _omitFieldNames ? '' : 'sensorData',
         subBuilder: SensorData.create)
     ..hasRequiredFields = false;
 
@@ -699,13 +884,13 @@ class Beacon extends $pb.GeneratedMessage {
   void clearUserPublicKey() => $_clearField(4);
 
   @$pb.TagNumber(5)
-  $core.double get attitude => $_getN(4);
+  $core.double get latitude => $_getN(4);
   @$pb.TagNumber(5)
-  set attitude($core.double value) => $_setFloat(4, value);
+  set latitude($core.double value) => $_setFloat(4, value);
   @$pb.TagNumber(5)
-  $core.bool hasAttitude() => $_has(4);
+  $core.bool hasLatitude() => $_has(4);
   @$pb.TagNumber(5)
-  void clearAttitude() => $_clearField(5);
+  void clearLatitude() => $_clearField(5);
 
   @$pb.TagNumber(6)
   $core.double get longitude => $_getN(5);
@@ -734,45 +919,28 @@ class Beacon extends $pb.GeneratedMessage {
   @$pb.TagNumber(8)
   void clearDeviceType() => $_clearField(8);
 
-  @$pb.TagNumber(9)
-  $core.int get beaconIntervalSeconds => $_getIZ(8);
-  @$pb.TagNumber(9)
-  set beaconIntervalSeconds($core.int value) => $_setUnsignedInt32(8, value);
-  @$pb.TagNumber(9)
-  $core.bool hasBeaconIntervalSeconds() => $_has(8);
-  @$pb.TagNumber(9)
-  void clearBeaconIntervalSeconds() => $_clearField(9);
-
   @$pb.TagNumber(10)
-  $core.bool get sleeping => $_getBF(9);
+  $core.bool get sleeping => $_getBF(8);
   @$pb.TagNumber(10)
-  set sleeping($core.bool value) => $_setBool(9, value);
+  set sleeping($core.bool value) => $_setBool(8, value);
   @$pb.TagNumber(10)
-  $core.bool hasSleeping() => $_has(9);
+  $core.bool hasSleeping() => $_has(8);
   @$pb.TagNumber(10)
   void clearSleeping() => $_clearField(10);
 
   @$pb.TagNumber(100)
-  GeoFence get geoFence => $_getN(10);
+  GeoFence get geoFence => $_getN(9);
   @$pb.TagNumber(100)
   set geoFence(GeoFence value) => $_setField(100, value);
   @$pb.TagNumber(100)
-  $core.bool hasGeoFence() => $_has(10);
+  $core.bool hasGeoFence() => $_has(9);
   @$pb.TagNumber(100)
   void clearGeoFence() => $_clearField(100);
   @$pb.TagNumber(100)
-  GeoFence ensureGeoFence() => $_ensure(10);
+  GeoFence ensureGeoFence() => $_ensure(9);
 
   @$pb.TagNumber(101)
-  SensorData get sensorData => $_getN(11);
-  @$pb.TagNumber(101)
-  set sensorData(SensorData value) => $_setField(101, value);
-  @$pb.TagNumber(101)
-  $core.bool hasSensorData() => $_has(11);
-  @$pb.TagNumber(101)
-  void clearSensorData() => $_clearField(101);
-  @$pb.TagNumber(101)
-  SensorData ensureSensorData() => $_ensure(11);
+  $pb.PbList<SensorData> get sensorData => $_getList(10);
 }
 
 class HaLowInterfaceStatus extends $pb.GeneratedMessage {
@@ -788,6 +956,8 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     $core.String? ipAddr,
     $core.String? gateway,
     $fixnum.Int64? macAddress,
+    $core.bool? licensed,
+    $core.String? firmwareVersion,
   }) {
     final result = create();
     if (supported != null) result.supported = supported;
@@ -801,6 +971,8 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     if (ipAddr != null) result.ipAddr = ipAddr;
     if (gateway != null) result.gateway = gateway;
     if (macAddress != null) result.macAddress = macAddress;
+    if (licensed != null) result.licensed = licensed;
+    if (firmwareVersion != null) result.firmwareVersion = firmwareVersion;
     return result;
   }
 
@@ -830,6 +1002,8 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(
         11, _omitFieldNames ? '' : 'macAddress', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aOB(12, _omitFieldNames ? '' : 'licensed')
+    ..aOS(13, _omitFieldNames ? '' : 'firmwareVersion')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -951,6 +1125,24 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
   $core.bool hasMacAddress() => $_has(10);
   @$pb.TagNumber(11)
   void clearMacAddress() => $_clearField(11);
+
+  @$pb.TagNumber(12)
+  $core.bool get licensed => $_getBF(11);
+  @$pb.TagNumber(12)
+  set licensed($core.bool value) => $_setBool(11, value);
+  @$pb.TagNumber(12)
+  $core.bool hasLicensed() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearLicensed() => $_clearField(12);
+
+  @$pb.TagNumber(13)
+  $core.String get firmwareVersion => $_getSZ(12);
+  @$pb.TagNumber(13)
+  set firmwareVersion($core.String value) => $_setString(12, value);
+  @$pb.TagNumber(13)
+  $core.bool hasFirmwareVersion() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearFirmwareVersion() => $_clearField(13);
 }
 
 class HaLowInitConfig extends $pb.GeneratedMessage {
@@ -963,6 +1155,12 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
     $fixnum.Int64? userIdLow,
     $core.String? userName,
     $core.List<$core.int>? userPublicKey,
+    $core.String? marker,
+    $core.bool? hasLocation,
+    $core.double? latitude,
+    $core.double? longitude,
+    $core.int? meshBandwidthMhz,
+    $core.int? meshFrequencyKhz,
   }) {
     final result = create();
     if (countryCode != null) result.countryCode = countryCode;
@@ -973,6 +1171,12 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
     if (userIdLow != null) result.userIdLow = userIdLow;
     if (userName != null) result.userName = userName;
     if (userPublicKey != null) result.userPublicKey = userPublicKey;
+    if (marker != null) result.marker = marker;
+    if (hasLocation != null) result.hasLocation = hasLocation;
+    if (latitude != null) result.latitude = latitude;
+    if (longitude != null) result.longitude = longitude;
+    if (meshBandwidthMhz != null) result.meshBandwidthMhz = meshBandwidthMhz;
+    if (meshFrequencyKhz != null) result.meshFrequencyKhz = meshFrequencyKhz;
     return result;
   }
 
@@ -1002,6 +1206,14 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
     ..aOS(7, _omitFieldNames ? '' : 'userName')
     ..a<$core.List<$core.int>>(
         8, _omitFieldNames ? '' : 'userPublicKey', $pb.PbFieldType.OY)
+    ..aOS(9, _omitFieldNames ? '' : 'marker')
+    ..aOB(10, _omitFieldNames ? '' : 'hasLocation')
+    ..aD(11, _omitFieldNames ? '' : 'latitude', fieldType: $pb.PbFieldType.OF)
+    ..aD(12, _omitFieldNames ? '' : 'longitude', fieldType: $pb.PbFieldType.OF)
+    ..aI(13, _omitFieldNames ? '' : 'meshBandwidthMhz',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(14, _omitFieldNames ? '' : 'meshFrequencyKhz',
+        fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1096,6 +1308,60 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
   $core.bool hasUserPublicKey() => $_has(7);
   @$pb.TagNumber(8)
   void clearUserPublicKey() => $_clearField(8);
+
+  @$pb.TagNumber(9)
+  $core.String get marker => $_getSZ(8);
+  @$pb.TagNumber(9)
+  set marker($core.String value) => $_setString(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasMarker() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearMarker() => $_clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.bool get hasLocation => $_getBF(9);
+  @$pb.TagNumber(10)
+  set hasLocation($core.bool value) => $_setBool(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasHasLocation() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearHasLocation() => $_clearField(10);
+
+  @$pb.TagNumber(11)
+  $core.double get latitude => $_getN(10);
+  @$pb.TagNumber(11)
+  set latitude($core.double value) => $_setFloat(10, value);
+  @$pb.TagNumber(11)
+  $core.bool hasLatitude() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearLatitude() => $_clearField(11);
+
+  @$pb.TagNumber(12)
+  $core.double get longitude => $_getN(11);
+  @$pb.TagNumber(12)
+  set longitude($core.double value) => $_setFloat(11, value);
+  @$pb.TagNumber(12)
+  $core.bool hasLongitude() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearLongitude() => $_clearField(12);
+
+  @$pb.TagNumber(13)
+  $core.int get meshBandwidthMhz => $_getIZ(12);
+  @$pb.TagNumber(13)
+  set meshBandwidthMhz($core.int value) => $_setUnsignedInt32(12, value);
+  @$pb.TagNumber(13)
+  $core.bool hasMeshBandwidthMhz() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearMeshBandwidthMhz() => $_clearField(13);
+
+  @$pb.TagNumber(14)
+  $core.int get meshFrequencyKhz => $_getIZ(13);
+  @$pb.TagNumber(14)
+  set meshFrequencyKhz($core.int value) => $_setUnsignedInt32(13, value);
+  @$pb.TagNumber(14)
+  $core.bool hasMeshFrequencyKhz() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearMeshFrequencyKhz() => $_clearField(14);
 }
 
 class DeviceSettings extends $pb.GeneratedMessage {
@@ -1118,6 +1384,12 @@ class DeviceSettings extends $pb.GeneratedMessage {
     $core.String? uartI2cSensorType,
     $core.String? rs485SensorType,
     $core.int? geoIndex,
+    $core.String? passphrase,
+    $core.String? upstreamWifiSsid,
+    $core.String? upstreamWifiPassphrase,
+    $fixnum.Int64? beaconUnicast,
+    DeviceType? deviceType,
+    $core.bool? sleepModeEnabled,
   }) {
     final result = create();
     if (action != null) result.action = action;
@@ -1139,6 +1411,13 @@ class DeviceSettings extends $pb.GeneratedMessage {
     if (uartI2cSensorType != null) result.uartI2cSensorType = uartI2cSensorType;
     if (rs485SensorType != null) result.rs485SensorType = rs485SensorType;
     if (geoIndex != null) result.geoIndex = geoIndex;
+    if (passphrase != null) result.passphrase = passphrase;
+    if (upstreamWifiSsid != null) result.upstreamWifiSsid = upstreamWifiSsid;
+    if (upstreamWifiPassphrase != null)
+      result.upstreamWifiPassphrase = upstreamWifiPassphrase;
+    if (beaconUnicast != null) result.beaconUnicast = beaconUnicast;
+    if (deviceType != null) result.deviceType = deviceType;
+    if (sleepModeEnabled != null) result.sleepModeEnabled = sleepModeEnabled;
     return result;
   }
 
@@ -1183,6 +1462,15 @@ class DeviceSettings extends $pb.GeneratedMessage {
     ..aOS(16, _omitFieldNames ? '' : 'uartI2cSensorType')
     ..aOS(17, _omitFieldNames ? '' : 'rs485SensorType')
     ..aI(18, _omitFieldNames ? '' : 'geoIndex', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(19, _omitFieldNames ? '' : 'passphrase')
+    ..aOS(20, _omitFieldNames ? '' : 'upstreamWifiSsid')
+    ..aOS(21, _omitFieldNames ? '' : 'upstreamWifiPassphrase')
+    ..a<$fixnum.Int64>(
+        22, _omitFieldNames ? '' : 'beaconUnicast', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aE<DeviceType>(24, _omitFieldNames ? '' : 'deviceType',
+        enumValues: DeviceType.values)
+    ..aOB(25, _omitFieldNames ? '' : 'sleepModeEnabled')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1369,6 +1657,60 @@ class DeviceSettings extends $pb.GeneratedMessage {
   $core.bool hasGeoIndex() => $_has(17);
   @$pb.TagNumber(18)
   void clearGeoIndex() => $_clearField(18);
+
+  @$pb.TagNumber(19)
+  $core.String get passphrase => $_getSZ(18);
+  @$pb.TagNumber(19)
+  set passphrase($core.String value) => $_setString(18, value);
+  @$pb.TagNumber(19)
+  $core.bool hasPassphrase() => $_has(18);
+  @$pb.TagNumber(19)
+  void clearPassphrase() => $_clearField(19);
+
+  @$pb.TagNumber(20)
+  $core.String get upstreamWifiSsid => $_getSZ(19);
+  @$pb.TagNumber(20)
+  set upstreamWifiSsid($core.String value) => $_setString(19, value);
+  @$pb.TagNumber(20)
+  $core.bool hasUpstreamWifiSsid() => $_has(19);
+  @$pb.TagNumber(20)
+  void clearUpstreamWifiSsid() => $_clearField(20);
+
+  @$pb.TagNumber(21)
+  $core.String get upstreamWifiPassphrase => $_getSZ(20);
+  @$pb.TagNumber(21)
+  set upstreamWifiPassphrase($core.String value) => $_setString(20, value);
+  @$pb.TagNumber(21)
+  $core.bool hasUpstreamWifiPassphrase() => $_has(20);
+  @$pb.TagNumber(21)
+  void clearUpstreamWifiPassphrase() => $_clearField(21);
+
+  @$pb.TagNumber(22)
+  $fixnum.Int64 get beaconUnicast => $_getI64(21);
+  @$pb.TagNumber(22)
+  set beaconUnicast($fixnum.Int64 value) => $_setInt64(21, value);
+  @$pb.TagNumber(22)
+  $core.bool hasBeaconUnicast() => $_has(21);
+  @$pb.TagNumber(22)
+  void clearBeaconUnicast() => $_clearField(22);
+
+  @$pb.TagNumber(24)
+  DeviceType get deviceType => $_getN(22);
+  @$pb.TagNumber(24)
+  set deviceType(DeviceType value) => $_setField(24, value);
+  @$pb.TagNumber(24)
+  $core.bool hasDeviceType() => $_has(22);
+  @$pb.TagNumber(24)
+  void clearDeviceType() => $_clearField(24);
+
+  @$pb.TagNumber(25)
+  $core.bool get sleepModeEnabled => $_getBF(23);
+  @$pb.TagNumber(25)
+  set sleepModeEnabled($core.bool value) => $_setBool(23, value);
+  @$pb.TagNumber(25)
+  $core.bool hasSleepModeEnabled() => $_has(23);
+  @$pb.TagNumber(25)
+  void clearSleepModeEnabled() => $_clearField(25);
 }
 
 class ScriptConfig extends $pb.GeneratedMessage {

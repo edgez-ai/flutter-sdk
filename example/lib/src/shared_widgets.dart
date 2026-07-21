@@ -22,10 +22,16 @@ class HaLowMeshStatusIcon extends StatelessWidget {
 }
 
 class InfoCard extends StatelessWidget {
-  const InfoCard({required this.title, required this.children, super.key});
+  const InfoCard({
+    required this.title,
+    required this.children,
+    this.action,
+    super.key,
+  });
 
   final String title;
   final List<Widget> children;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +42,17 @@ class InfoCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (action case final action?) action,
+              ],
+            ),
             const SizedBox(height: 8),
             ...children,
           ],

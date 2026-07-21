@@ -6,18 +6,73 @@ import 'package:flutter/material.dart';
 import 'models.dart';
 import 'shared_widgets.dart';
 
-class SettingsScreen extends StatelessWidget {
+List<int> halowFrequenciesKhz(String country, int bandwidthMhz) {
+  List<int> range(int start, int end, int step) =>
+      <int>[for (var value = start; value <= end; value += step) value];
+  return switch (country) {
+    'US' => switch (bandwidthMhz) {
+        1 => range(902500, 927500, 1000),
+        2 => range(903000, 927000, 2000),
+        4 => range(904000, 926000, 4000),
+        8 => range(908000, 924000, 8000),
+        _ => const <int>[],
+      },
+    'JP' => switch (bandwidthMhz) {
+        1 => range(920500, 927500, 1000),
+        2 => range(921000, 927000, 2000),
+        4 => const <int>[922000, 926000],
+        8 => const <int>[924000],
+        _ => const <int>[],
+      },
+    'EU' => switch (bandwidthMhz) {
+        1 => range(863500, 867500, 1000),
+        2 => const <int>[864000, 866000],
+        4 => const <int>[865000],
+        _ => const <int>[],
+      },
+    _ => const <int>[],
+  };
+}
+
+List<int> halowBandwidthOptions(String country) => <int>[1, 2, 4, 8]
+    .where((value) => halowFrequenciesKhz(country, value).isNotEmpty)
+    .toList(growable: false);
+
+String halowFrequencyLabel(String country, int frequencyKhz) {
+  final baseKhz = switch (country) {
+    'US' => 902000,
+    'JP' => 920000,
+    'EU' => 863000,
+    _ => frequencyKhz,
+  };
+  final channel = (frequencyKhz - baseKhz) ~/ 500;
+  return 'Channel $channel - ${frequencyKhz / 1000} MHz';
+}
+
+enum _SettingsTab { user, meshNetwork, others }
+
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     required this.activeConnection,
     required this.shareLocation,
     required this.autoReplayReceivedVoice,
     required this.deviceModeEnabled,
     required this.bleDevices,
+    required this.selectedBleDevice,
+    required this.meshStatus,
+    required this.bleAutoConnect,
     required this.statusLine,
+    required this.otaAvailableVersion,
+    required this.otaCheckInProgress,
+    required this.otaInProgress,
+    required this.otaProgress,
+    required this.otaMessage,
     required this.meshCountry,
     required this.meshId,
     required this.passphrase,
     required this.maxHop,
+    required this.meshBandwidthMhz,
+    required this.meshFrequencyKhz,
     required this.beaconIntervalSeconds,
     required this.userName,
     required this.userIdentity,
@@ -34,10 +89,22 @@ class SettingsScreen extends StatelessWidget {
     required this.deviceGeoIndex,
     required this.uartI2cSensorType,
     required this.rs485SensorType,
+    required this.deviceType,
+    required this.devicePassphrase,
+    required this.deviceUpstreamEnabled,
+    required this.deviceUpstreamWifiSsid,
+    required this.deviceUpstreamWifiPassphrase,
+    required this.deviceBeaconMulticast,
+    required this.deviceSleepModeEnabled,
     required this.onConnectBle,
     required this.onStopBleScan,
     required this.onConnectBleDevice,
+    required this.onSelectBleDevice,
+    required this.onBleAutoConnectChanged,
     required this.onDisconnect,
+    required this.onCheckForOtaUpdate,
+    required this.onInstallOtaUpdate,
+    required this.onAbortOta,
     required this.onSaveAppSettings,
     required this.onRegenerateUserKeyPair,
     required this.onSaveDeviceSettings,
@@ -45,6 +112,8 @@ class SettingsScreen extends StatelessWidget {
     required this.onAutoReplayChanged,
     required this.onDeviceModeChanged,
     required this.onMeshCountryChanged,
+    required this.onMeshBandwidthChanged,
+    required this.onMeshFrequencyChanged,
     required this.onMeshIdChanged,
     required this.onPassphraseChanged,
     required this.onMaxHopChanged,
@@ -63,6 +132,13 @@ class SettingsScreen extends StatelessWidget {
     required this.onDeviceGeoIndexChanged,
     required this.onUartI2cSensorChanged,
     required this.onRs485SensorChanged,
+    required this.onDeviceTypeChanged,
+    required this.onDevicePassphraseChanged,
+    required this.onDeviceUpstreamEnabledChanged,
+    required this.onDeviceUpstreamWifiSsidChanged,
+    required this.onDeviceUpstreamWifiPassphraseChanged,
+    required this.onDeviceBeaconMulticastChanged,
+    required this.onDeviceSleepModeChanged,
     super.key,
   });
 
@@ -71,11 +147,21 @@ class SettingsScreen extends StatelessWidget {
   final bool autoReplayReceivedVoice;
   final bool deviceModeEnabled;
   final List<EdgezBleDevice> bleDevices;
+  final EdgezBleDevice? selectedBleDevice;
+  final EdgezMeshStatus? meshStatus;
+  final bool bleAutoConnect;
   final String statusLine;
+  final String? otaAvailableVersion;
+  final bool otaCheckInProgress;
+  final bool otaInProgress;
+  final double otaProgress;
+  final String otaMessage;
   final String meshCountry;
   final String meshId;
   final String passphrase;
   final String maxHop;
+  final int meshBandwidthMhz;
+  final int meshFrequencyKhz;
   final String beaconIntervalSeconds;
   final String userName;
   final EdgezUserIdentity? userIdentity;
@@ -92,10 +178,22 @@ class SettingsScreen extends StatelessWidget {
   final int deviceGeoIndex;
   final String uartI2cSensorType;
   final String rs485SensorType;
+  final String deviceType;
+  final String devicePassphrase;
+  final bool deviceUpstreamEnabled;
+  final String deviceUpstreamWifiSsid;
+  final String deviceUpstreamWifiPassphrase;
+  final String deviceBeaconMulticast;
+  final bool deviceSleepModeEnabled;
   final VoidCallback onConnectBle;
   final VoidCallback onStopBleScan;
   final ValueChanged<String> onConnectBleDevice;
+  final ValueChanged<EdgezBleDevice> onSelectBleDevice;
+  final ValueChanged<bool> onBleAutoConnectChanged;
   final VoidCallback onDisconnect;
+  final FutureOr<void> Function() onCheckForOtaUpdate;
+  final FutureOr<void> Function() onInstallOtaUpdate;
+  final FutureOr<void> Function() onAbortOta;
   final FutureOr<void> Function() onSaveAppSettings;
   final FutureOr<void> Function() onRegenerateUserKeyPair;
   final FutureOr<void> Function() onSaveDeviceSettings;
@@ -103,6 +201,8 @@ class SettingsScreen extends StatelessWidget {
   final ValueChanged<bool> onAutoReplayChanged;
   final ValueChanged<bool> onDeviceModeChanged;
   final ValueChanged<String> onMeshCountryChanged;
+  final ValueChanged<int> onMeshBandwidthChanged;
+  final ValueChanged<int> onMeshFrequencyChanged;
   final ValueChanged<String> onMeshIdChanged;
   final ValueChanged<String> onPassphraseChanged;
   final ValueChanged<String> onMaxHopChanged;
@@ -121,205 +221,255 @@ class SettingsScreen extends StatelessWidget {
   final ValueChanged<int> onDeviceGeoIndexChanged;
   final ValueChanged<String> onUartI2cSensorChanged;
   final ValueChanged<String> onRs485SensorChanged;
+  final ValueChanged<String> onDeviceTypeChanged;
+  final ValueChanged<String> onDevicePassphraseChanged;
+  final ValueChanged<bool> onDeviceUpstreamEnabledChanged;
+  final ValueChanged<String> onDeviceUpstreamWifiSsidChanged;
+  final ValueChanged<String> onDeviceUpstreamWifiPassphraseChanged;
+  final ValueChanged<String> onDeviceBeaconMulticastChanged;
+  final ValueChanged<bool> onDeviceSleepModeChanged;
 
   @override
-  Widget build(BuildContext context) {
+  State<SettingsScreen> createState() => _SettingsScreenState();
+
+  Widget _buildContent(
+    BuildContext context, {
+    required _SettingsTab selectedTab,
+    required TabController tabController,
+    required ValueChanged<int> onTabChanged,
+    required VoidCallback onSelectBle,
+  }) {
+    const cardGap = SizedBox(height: 12);
+    final sensorsEnabled =
+        uartI2cSensorType.isNotEmpty || rs485SensorType.isNotEmpty;
+    final geoFenceEnabled = deviceGeoFenceName.trim().isNotEmpty;
+    final selectedBle = selectedBleDevice;
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
           Text('Settings', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 12),
+          if (statusLine.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 4),
+            Text(statusLine, style: Theme.of(context).textTheme.bodySmall),
+          ],
+          cardGap,
           InfoCard(
             title: 'BLE connection',
+            action: OutlinedButton(
+              onPressed: onSelectBle,
+              child: const Text('Select'),
+            ),
             children: <Widget>[
-              Text('Active connection: ${activeConnection.name.toUpperCase()}'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
-                  FilledButton.icon(
-                      onPressed: onConnectBle,
-                      icon: const Icon(Icons.bluetooth_searching),
-                      label: const Text('Scan BLE')),
-                  OutlinedButton.icon(
-                      onPressed: onStopBleScan,
-                      icon: const Icon(Icons.stop_circle_outlined),
-                      label: const Text('Stop')),
-                  OutlinedButton.icon(
-                      onPressed: onDisconnect,
-                      icon: const Icon(Icons.link_off),
-                      label: const Text('Disconnect')),
-                  OutlinedButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.battery_saver),
-                      label: const Text('Battery optimization')),
-                ],
-              ),
-              if (statusLine.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                Text(statusLine, style: Theme.of(context).textTheme.bodySmall)
-              ],
-              const SizedBox(height: 10),
-              if (bleDevices.isEmpty)
-                const Text('No BLE devices found yet.')
-              else
-                for (final device in bleDevices)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.bluetooth),
-                    title:
-                        Text(device.name.isEmpty ? 'BLE device' : device.name),
-                    subtitle: Text('${device.id} · RSSI ${device.rssi}'),
-                    trailing: FilledButton(
-                      onPressed: () => onConnectBleDevice(device.id),
-                      child: const Text('Connect'),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Selected device',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        Text(selectedBle?.label ?? 'No BLE device selected'),
+                        if (selectedBle != null)
+                          Text(
+                            selectedBle.id,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        Text(
+                          activeConnection == EdgezConnectionType.ble
+                              ? 'BLE connected'
+                              : 'BLE disconnected',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (activeConnection == EdgezConnectionType.ble &&
+                            meshStatus?.firmwareVersion.isNotEmpty == true)
+                          Text(
+                            'Firmware: ${meshStatus!.firmwareVersion}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        if (activeConnection == EdgezConnectionType.ble &&
+                            meshStatus != null)
+                          Row(
+                            children: <Widget>[
+                              Icon(
+                                meshStatus!.licensed
+                                    ? Icons.verified
+                                    : Icons.gpp_bad_outlined,
+                                size: 16,
+                                color: meshStatus!.licensed
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).colorScheme.error,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                meshStatus!.licensed
+                                    ? 'Licensed'
+                                    : 'Unlicensed',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                      ],
                     ),
                   ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            title: 'User mesh settings',
-            children: <Widget>[
-              Text(
-                  'These settings join the phone to the mesh as a normal user.',
-                  style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 8),
-              DropdownSetting<String>(
-                  label: 'Country',
-                  value: meshCountry,
-                  values: const <String>['US', 'JP', 'EU'],
-                  titleFor: (value) => value,
-                  onChanged: onMeshCountryChanged),
-              SettingsTextField(
-                  label: 'Mesh ID', value: meshId, onChanged: onMeshIdChanged),
-              SettingsTextField(
-                  label: 'Passphrase',
-                  value: passphrase,
-                  onChanged: onPassphraseChanged,
-                  obscureText: true),
-              SettingsTextField(
-                  label: 'Max hop',
-                  value: maxHop,
-                  onChanged: onMaxHopChanged,
-                  keyboardType: TextInputType.number),
-              SettingsTextField(
-                  label: 'Beacon interval seconds',
-                  value: beaconIntervalSeconds,
-                  onChanged: onBeaconIntervalChanged,
-                  keyboardType: TextInputType.number),
-              SettingsTextField(
-                  label: 'User name',
-                  value: userName,
-                  onChanged: onUserNameChanged),
-              const SizedBox(height: 8),
-              IdentitySummary(
-                identity: userIdentity,
-                onRegenerateUserKeyPair: onRegenerateUserKeyPair,
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: activeConnection == EdgezConnectionType.ble
+                        ? onDisconnect
+                        : selectedBle == null
+                            ? null
+                            : () => onConnectBleDevice(selectedBle.id),
+                    child: Text(
+                      activeConnection == EdgezConnectionType.ble
+                          ? 'Disconnect'
+                          : 'Connect',
+                    ),
+                  ),
+                ],
               ),
-              DropdownSetting<ExampleMarker>(
-                label: 'Marker',
-                value: userMarker,
-                values: ExampleMarker.values,
-                titleFor: (value) => value.label,
-                onChanged: onUserMarkerChanged,
-              ),
+              const Divider(height: 24),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Share location'),
-                value: shareLocation,
-                onChanged: onShareLocationChanged,
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Auto replay received voice'),
-                value: autoReplayReceivedVoice,
-                onChanged: onAutoReplayChanged,
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                    onPressed: () =>
-                        unawaited(Future<void>.value(onSaveAppSettings())),
-                    child: const Text('Save settings')),
+                title: const Text('Auto connect'),
+                subtitle: const Text(
+                  'Connect the selected BLE device on app start and reconnect if it drops',
+                ),
+                value: bleAutoConnect,
+                onChanged: onBleAutoConnectChanged,
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          InfoCard(
-            title: 'Device mode',
-            children: <Widget>[
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Device mode'),
-                value: deviceModeEnabled,
-                onChanged: onDeviceModeChanged,
-              ),
-              if (!deviceModeEnabled)
-                Text(
-                    'Enable device mode to configure device identity, beacon, geofence, and sensors.',
-                    style: Theme.of(context).textTheme.bodySmall),
-              if (deviceModeEnabled) ...<Widget>[
+          cardGap,
+          TabBar(
+            controller: tabController,
+            onTap: onTabChanged,
+            tabs: const <Widget>[
+              Tab(text: 'User'),
+              Tab(text: 'Mesh Network'),
+              Tab(text: 'Others'),
+            ],
+          ),
+          if (selectedTab == _SettingsTab.user) ...<Widget>[
+            cardGap,
+            InfoCard(
+              title: deviceModeEnabled ? 'Device user' : 'User',
+              children: <Widget>[
                 SettingsTextField(
-                    label: 'Device user name',
-                    value: deviceUserName,
-                    onChanged: onDeviceUserNameChanged),
+                  label: deviceModeEnabled ? 'Device user name' : 'User name',
+                  value: deviceModeEnabled ? deviceUserName : userName,
+                  onChanged: deviceModeEnabled
+                      ? onDeviceUserNameChanged
+                      : onUserNameChanged,
+                ),
                 DropdownSetting<ExampleMarker>(
-                  label: 'Device marker',
-                  value: deviceMarker,
+                  label: 'Marker',
+                  value: deviceModeEnabled ? deviceMarker : userMarker,
                   values: ExampleMarker.values,
                   titleFor: (value) => value.label,
-                  onChanged: onDeviceMarkerChanged,
+                  onChanged: deviceModeEnabled
+                      ? onDeviceMarkerChanged
+                      : onUserMarkerChanged,
                 ),
-                SettingsTextField(
-                    label: 'Device mesh ID',
-                    value: deviceMeshId,
-                    onChanged: onDeviceMeshIdChanged),
-                SettingsTextField(
-                    label: 'Device max hop',
-                    value: deviceMaxHop,
-                    onChanged: onDeviceMaxHopChanged,
-                    keyboardType: TextInputType.number),
-                SettingsTextField(
-                    label: 'Device beacon interval seconds',
-                    value: deviceBeaconIntervalSeconds,
-                    onChanged: onDeviceBeaconIntervalChanged,
-                    keyboardType: TextInputType.number),
+                if (deviceModeEnabled)
+                  Text(
+                    'ID ${userIdentity?.userUuid ?? 'Not loaded'}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  )
+                else
+                  IdentitySummary(
+                    identity: userIdentity,
+                    onRegenerateUserKeyPair: onRegenerateUserKeyPair,
+                  ),
+              ],
+            ),
+            cardGap,
+            InfoCard(
+              title: deviceModeEnabled ? 'Device location' : 'Location',
+              children: <Widget>[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Device share location'),
-                  value: deviceShareLocation,
-                  onChanged: onDeviceShareLocationChanged,
+                  title: const Text('Share location'),
+                  subtitle: const Text('Include location in HaLow beacon'),
+                  value:
+                      deviceModeEnabled ? deviceShareLocation : shareLocation,
+                  onChanged: deviceModeEnabled
+                      ? onDeviceShareLocationChanged
+                      : onShareLocationChanged,
                 ),
-                Row(
-                  children: <Widget>[
-                    Expanded(
+                if (deviceModeEnabled && deviceShareLocation)
+                  Row(
+                    children: <Widget>[
+                      Expanded(
                         child: SettingsTextField(
-                            label: 'Latitude',
-                            value: deviceLatitude,
-                            onChanged: onDeviceLatitudeChanged,
-                            keyboardType: TextInputType.number)),
-                    const SizedBox(width: 8),
-                    Expanded(
+                          label: 'Latitude',
+                          value: deviceLatitude,
+                          onChanged: onDeviceLatitudeChanged,
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
                         child: SettingsTextField(
-                            label: 'Longitude',
-                            value: deviceLongitude,
-                            onChanged: onDeviceLongitudeChanged,
-                            keyboardType: TextInputType.number)),
-                  ],
+                          label: 'Longitude',
+                          value: deviceLongitude,
+                          onChanged: onDeviceLongitudeChanged,
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ],
+          if (deviceModeEnabled) ...<Widget>[
+            cardGap,
+            InfoCard(
+              title: 'Device geofence',
+              children: <Widget>[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enable geofence'),
+                  subtitle: const Text('Include a geofence in device beacons'),
+                  value: geoFenceEnabled,
+                  onChanged: (enabled) => onDeviceGeoFenceNameChanged(
+                    enabled ? 'Geo fence' : '',
+                  ),
                 ),
                 SettingsTextField(
-                    label: 'Geo fence',
-                    value: deviceGeoFenceName,
-                    onChanged: onDeviceGeoFenceNameChanged),
+                  label: 'Geo fence',
+                  value: deviceGeoFenceName,
+                  onChanged: onDeviceGeoFenceNameChanged,
+                ),
                 StepperSetting(
-                    label: 'Geo index',
-                    value: deviceGeoIndex,
-                    onChanged: onDeviceGeoIndexChanged),
+                  label: 'Geo index',
+                  value: deviceGeoIndex,
+                  onChanged: onDeviceGeoIndexChanged,
+                ),
+              ],
+            ),
+            cardGap,
+            InfoCard(
+              title: 'Device sensors',
+              children: <Widget>[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enable sensors'),
+                  subtitle: const Text('Configure device sensor connectors'),
+                  value: sensorsEnabled,
+                  onChanged: (enabled) {
+                    if (enabled) {
+                      onUartI2cSensorChanged('sht3x_temperature_humidity');
+                    } else {
+                      onUartI2cSensorChanged('');
+                      onRs485SensorChanged('');
+                    }
+                  },
+                ),
                 DropdownSetting<String>(
-                  label: 'UART/I2C sensor',
+                  label: 'UART/I2C connector',
                   value: uartI2cSensorType,
                   values: const <String>[
                     '',
@@ -328,9 +478,10 @@ class SettingsScreen extends StatelessWidget {
                   ],
                   titleFor: (value) => value.isEmpty ? 'None' : value,
                   onChanged: onUartI2cSensorChanged,
+                  enabled: sensorsEnabled,
                 ),
                 DropdownSetting<String>(
-                  label: 'RS485 sensor',
+                  label: 'RS485 connector',
                   value: rs485SensorType,
                   values: const <String>[
                     '',
@@ -339,20 +490,348 @@ class SettingsScreen extends StatelessWidget {
                   ],
                   titleFor: (value) => value.isEmpty ? 'None' : value,
                   onChanged: onRs485SensorChanged,
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                      onPressed: () =>
-                          unawaited(Future<void>.value(onSaveDeviceSettings())),
-                      child: const Text('Save device settings')),
+                  enabled: sensorsEnabled,
                 ),
               ],
-            ],
-          ),
-          const SizedBox(height: 12),
+            ),
+          ],
+          if (deviceModeEnabled ||
+              selectedTab == _SettingsTab.meshNetwork) ...<Widget>[
+            cardGap,
+            InfoCard(
+              title: deviceModeEnabled ? 'Network' : 'Mesh network',
+              children: <Widget>[
+                if (!deviceModeEnabled) ...<Widget>[
+                  DropdownSetting<String>(
+                    label: 'Country',
+                    value: meshCountry,
+                    values: const <String>['US', 'JP', 'EU'],
+                    titleFor: (value) => value,
+                    onChanged: onMeshCountryChanged,
+                  ),
+                  DropdownSetting<int>(
+                    label: 'Bandwidth',
+                    value: meshBandwidthMhz,
+                    values: halowBandwidthOptions(meshCountry),
+                    titleFor: (value) => '$value MHz',
+                    onChanged: onMeshBandwidthChanged,
+                  ),
+                  DropdownSetting<int>(
+                    label: 'Frequency',
+                    value: meshFrequencyKhz,
+                    values: halowFrequenciesKhz(
+                      meshCountry,
+                      meshBandwidthMhz,
+                    ),
+                    titleFor: (value) =>
+                        halowFrequencyLabel(meshCountry, value),
+                    onChanged: onMeshFrequencyChanged,
+                  ),
+                ],
+                SettingsTextField(
+                  label: 'Mesh ID / SSID',
+                  value: deviceModeEnabled ? deviceMeshId : meshId,
+                  onChanged: deviceModeEnabled
+                      ? onDeviceMeshIdChanged
+                      : onMeshIdChanged,
+                ),
+                SettingsTextField(
+                  label: 'Passphrase',
+                  value: deviceModeEnabled ? devicePassphrase : passphrase,
+                  onChanged: deviceModeEnabled
+                      ? onDevicePassphraseChanged
+                      : onPassphraseChanged,
+                  obscureText: true,
+                ),
+                SettingsTextField(
+                  label: 'Max hop',
+                  value: deviceModeEnabled ? deviceMaxHop : maxHop,
+                  onChanged: deviceModeEnabled
+                      ? onDeviceMaxHopChanged
+                      : onMaxHopChanged,
+                  keyboardType: TextInputType.number,
+                ),
+                SettingsTextField(
+                  label: 'Beacon interval (seconds)',
+                  value: deviceModeEnabled
+                      ? deviceBeaconIntervalSeconds
+                      : beaconIntervalSeconds,
+                  onChanged: deviceModeEnabled
+                      ? onDeviceBeaconIntervalChanged
+                      : onBeaconIntervalChanged,
+                  keyboardType: TextInputType.number,
+                ),
+                if (!deviceModeEnabled)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      onPressed: () => unawaited(
+                        Future<void>.value(onSaveAppSettings()),
+                      ),
+                      child: const Text('Save settings'),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          if (deviceModeEnabled) ...<Widget>[
+            cardGap,
+            InfoCard(
+              title: 'Upstream network',
+              children: <Widget>[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enable upstream network'),
+                  subtitle: const Text(
+                      'Forward through Wi-Fi and send beacons to a multicast address.'),
+                  value: deviceUpstreamEnabled,
+                  onChanged: onDeviceUpstreamEnabledChanged,
+                ),
+                if (deviceUpstreamEnabled) ...<Widget>[
+                  SettingsTextField(
+                    label: 'Upstream Wi-Fi SSID',
+                    value: deviceUpstreamWifiSsid,
+                    onChanged: onDeviceUpstreamWifiSsidChanged,
+                  ),
+                  SettingsTextField(
+                    label: 'Upstream Wi-Fi passphrase',
+                    value: deviceUpstreamWifiPassphrase,
+                    onChanged: onDeviceUpstreamWifiPassphraseChanged,
+                    obscureText: true,
+                  ),
+                  DropdownSetting<String>(
+                    label: 'Beacon multicast',
+                    value: deviceBeaconMulticast,
+                    values: const <String>[
+                      '',
+                      '224.0.0.1',
+                      '224.0.0.251',
+                      '239.255.255.250',
+                      '239.255.0.1',
+                      '239.192.0.1',
+                    ],
+                    titleFor: (value) => switch (value) {
+                      '' => 'Not set',
+                      '224.0.0.1' => '224.0.0.1 - all hosts',
+                      '224.0.0.251' => '224.0.0.251 - mDNS',
+                      '239.255.255.250' => '239.255.255.250 - SSDP',
+                      '239.255.0.1' => '239.255.0.1 - site-local',
+                      _ => '239.192.0.1 - organization-local',
+                    },
+                    onChanged: onDeviceBeaconMulticastChanged,
+                  ),
+                ],
+              ],
+            ),
+            cardGap,
+            InfoCard(
+              title: 'Sleep mode',
+              children: <Widget>[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enable sleep mode'),
+                  subtitle:
+                      const Text('Allow the device to enter low-power sleep.'),
+                  value: deviceSleepModeEnabled,
+                  onChanged: onDeviceSleepModeChanged,
+                ),
+              ],
+            ),
+            cardGap,
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () =>
+                    unawaited(Future<void>.value(onSaveDeviceSettings())),
+                child: const Text('Save to device'),
+              ),
+            ),
+          ],
+          if (!deviceModeEnabled &&
+              selectedTab == _SettingsTab.others) ...<Widget>[
+            cardGap,
+            InfoCard(
+              title: 'Firmware update',
+              children: <Widget>[
+                Text(
+                  'Current: ${meshStatus?.firmwareVersion.isNotEmpty == true ? meshStatus!.firmwareVersion : 'Unknown'}',
+                ),
+                if (otaAvailableVersion != null)
+                  Text('Available: $otaAvailableVersion'),
+                if (otaInProgress) ...<Widget>[
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(value: otaProgress),
+                ],
+                if (otaMessage.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 6),
+                  Text(otaMessage,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: <Widget>[
+                    OutlinedButton(
+                      onPressed: activeConnection == EdgezConnectionType.ble &&
+                              !otaCheckInProgress &&
+                              !otaInProgress
+                          ? () => unawaited(
+                                Future<void>.value(onCheckForOtaUpdate()),
+                              )
+                          : null,
+                      child: Text(
+                        otaCheckInProgress ? 'Checking...' : 'Check for update',
+                      ),
+                    ),
+                    if (otaAvailableVersion != null && !otaInProgress)
+                      FilledButton(
+                        onPressed: activeConnection == EdgezConnectionType.ble
+                            ? () => unawaited(
+                                  Future<void>.value(onInstallOtaUpdate()),
+                                )
+                            : null,
+                        child: const Text('Update'),
+                      ),
+                    if (otaInProgress)
+                      TextButton(
+                        onPressed: () => unawaited(
+                          Future<void>.value(onAbortOta()),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            cardGap,
+            InfoCard(
+              title: 'Chat',
+              children: <Widget>[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Auto replay received voice'),
+                  subtitle: const Text(
+                      'Play new incoming voice messages automatically'),
+                  value: autoReplayReceivedVoice,
+                  onChanged: onAutoReplayChanged,
+                ),
+              ],
+            ),
+          ],
+          cardGap,
         ],
       ),
+    );
+  }
+
+  Widget _buildBleSelection(
+    BuildContext context, {
+    required EdgezBleDevice? selectedBleDevice,
+    required VoidCallback onBack,
+    required ValueChanged<EdgezBleDevice> onSelect,
+  }) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              IconButton(
+                onPressed: onBack,
+                tooltip: 'Back',
+                icon: const Icon(Icons.arrow_back),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Select BLE device',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(statusLine, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 12),
+          if (bleDevices.isEmpty)
+            const InfoCard(
+              title: 'Scanning for EdgeZ devices',
+              children: <Widget>[
+                LinearProgressIndicator(),
+                SizedBox(height: 8),
+                Text('Nearby BLE devices will appear here.'),
+              ],
+            )
+          else
+            for (final device in bleDevices) ...<Widget>[
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.bluetooth),
+                  title: Text(device.label),
+                  subtitle: Text('${device.id} · RSSI ${device.rssi}'),
+                  trailing: selectedBleDevice?.id == device.id
+                      ? const Icon(Icons.check_circle)
+                      : null,
+                  onTap: () => onSelect(device),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsScreenState extends State<SettingsScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  _SettingsTab _selectedTab = _SettingsTab.user;
+  bool _showBleSelection = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(
+      length: _SettingsTab.values.length,
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showBleSelection) {
+      return widget._buildBleSelection(
+        context,
+        selectedBleDevice: widget.selectedBleDevice,
+        onBack: () {
+          widget.onStopBleScan();
+          setState(() => _showBleSelection = false);
+        },
+        onSelect: (device) {
+          widget.onStopBleScan();
+          widget.onSelectBleDevice(device);
+          setState(() {
+            _showBleSelection = false;
+          });
+        },
+      );
+    }
+    return widget._buildContent(
+      context,
+      selectedTab: _selectedTab,
+      tabController: _tabController,
+      onTabChanged: (index) {
+        setState(() => _selectedTab = _SettingsTab.values[index]);
+      },
+      onSelectBle: () {
+        widget.onConnectBle();
+        setState(() => _showBleSelection = true);
+      },
     );
   }
 }
@@ -412,6 +891,7 @@ class DropdownSetting<T> extends StatelessWidget {
     required this.values,
     required this.titleFor,
     required this.onChanged,
+    this.enabled = true,
     super.key,
   });
 
@@ -420,6 +900,7 @@ class DropdownSetting<T> extends StatelessWidget {
   final List<T> values;
   final String Function(T value) titleFor;
   final ValueChanged<T> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -430,9 +911,11 @@ class DropdownSetting<T> extends StatelessWidget {
           .map((item) =>
               DropdownMenuItem<T>(value: item, child: Text(titleFor(item))))
           .toList(),
-      onChanged: (next) {
-        if (next != null) onChanged(next);
-      },
+      onChanged: enabled
+          ? (next) {
+              if (next != null) onChanged(next);
+            }
+          : null,
     );
   }
 }

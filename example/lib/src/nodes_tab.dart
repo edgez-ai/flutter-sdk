@@ -10,6 +10,7 @@ class NodesScreen extends StatelessWidget {
     required this.status,
     required this.users,
     required this.sensorSamples,
+    required this.onOpenTopology,
     required this.onRemoveNode,
     required this.onOpenNode,
     super.key,
@@ -19,6 +20,7 @@ class NodesScreen extends StatelessWidget {
   final EdgezMeshStatus? status;
   final List<EdgezMeshNode> users;
   final Map<int, List<EdgezSensorSample>> sensorSamples;
+  final VoidCallback onOpenTopology;
   final ValueChanged<EdgezMeshNode> onRemoveNode;
   final ValueChanged<EdgezMeshNode> onOpenNode;
 
@@ -33,6 +35,11 @@ class NodesScreen extends StatelessWidget {
               Expanded(
                   child: Text('Nodes',
                       style: Theme.of(context).textTheme.headlineMedium)),
+              TextButton.icon(
+                onPressed: onOpenTopology,
+                icon: const Icon(Icons.account_tree_outlined),
+                label: const Text('Topology'),
+              ),
               HaLowMeshStatusIcon(status: status),
             ],
           ),

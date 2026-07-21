@@ -10,8 +10,14 @@ import 'package:flutter/services.dart';
 import 'models.dart';
 import 'proto/edgez_mesh.pb.dart' as proto;
 
-class EdgezMeshSdk {
-  EdgezMeshSdk({
+abstract interface class EdgezPlatformTransport {
+  Stream<Object?> get events;
+
+  Future<T?> invokeMethod<T>(String method, [Object? arguments]);
+}
+
+class EdgezChannelTransport implements EdgezPlatformTransport {
+  EdgezChannelTransport({
     MethodChannel? methodChannel,
     EventChannel? eventChannel,
   })  : _methods =
@@ -21,38 +27,76 @@ class EdgezMeshSdk {
 
   final MethodChannel _methods;
   final EventChannel _events;
+
+  @override
+  Stream<Object?> get events => _events.receiveBroadcastStream();
+
+  @override
+  Future<T?> invokeMethod<T>(String method, [Object? arguments]) {
+    return _methods.invokeMethod<T>(method, arguments);
+  }
+}
+
+class EdgezMeshSdk {
+  EdgezMeshSdk({
+    MethodChannel? methodChannel,
+    EventChannel? eventChannel,
+    EdgezPlatformTransport? transport,
+  }) : _transport = transport ??
+            EdgezChannelTransport(
+              methodChannel: methodChannel,
+              eventChannel: eventChannel,
+            );
+
+  final EdgezPlatformTransport _transport;
   static const _voiceChunkAudioBytes = 290;
+  final Map<String, Future<SecretKey>> _conversationKeyCache =
+      <String, Future<SecretKey>>{};
 
   Stream<EdgezMeshEvent>? _meshEvents;
 
   Stream<EdgezMeshEvent> get events {
-    return _meshEvents ??= _events
-        .receiveBroadcastStream()
-        .where((event) => event is Map)
-        .map(
+    return _meshEvents ??= _transport.events.where((event) => event is Map).map(
           (event) =>
               EdgezMeshEvent.fromMap((event as Map).cast<Object?, Object?>()),
         );
   }
 
   Future<void> startBleScan() {
-    return _methods.invokeMethod<void>('startBleScan');
+    return _transport.invokeMethod<void>('startBleScan');
   }
 
   Future<void> stopBleScan() {
-    return _methods.invokeMethod<void>('stopBleScan');
+    return _transport.invokeMethod<void>('stopBleScan');
   }
 
   Future<void> connectBle(String deviceId) {
-    return _methods.invokeMethod<void>('connectBle', {'deviceId': deviceId});
+    return _transport.invokeMethod<void>('connectBle', {'deviceId': deviceId});
   }
 
   Future<void> disconnect() {
-    return _methods.invokeMethod<void>('disconnect');
+    return _transport.invokeMethod<void>('disconnect');
+  }
+
+  Future<bool> isOtaReady() async {
+    return await _transport.invokeMethod<bool>('isOtaReady') ?? false;
+  }
+
+  Future<String> performOta(List<int> firmwareImage) async {
+    if (firmwareImage.isEmpty) throw StateError('OTA image is empty');
+    return await _transport.invokeMethod<String>(
+          'performOta',
+          {'image': Uint8List.fromList(firmwareImage)},
+        ) ??
+        'Firmware uploaded; the device is restarting';
+  }
+
+  Future<void> abortOta() {
+    return _transport.invokeMethod<void>('abortOta');
   }
 
   Future<bool> requestMicrophonePermission() async {
-    return await _methods.invokeMethod<bool>('requestMicrophonePermission') ??
+    return await _transport.invokeMethod<bool>('requestMicrophonePermission') ??
         false;
   }
 
@@ -61,11 +105,11 @@ class EdgezMeshSdk {
     if (!permitted) {
       throw StateError('Microphone permission denied');
     }
-    await _methods.invokeMethod<void>('startVoiceRecording');
+    await _transport.invokeMethod<void>('startVoiceRecording');
   }
 
   Future<EdgezVoiceRecording?> stopVoiceRecording({bool send = true}) async {
-    final result = await _methods.invokeMethod<Object?>(
+    final result = await _transport.invokeMethod<Object?>(
       'stopVoiceRecording',
       {'send': send},
     );
@@ -83,18 +127,88 @@ class EdgezMeshSdk {
     if (message.voiceBytes.isEmpty) {
       throw StateError('Voice message has no audio bytes');
     }
-    return _methods.invokeMethod<void>('playVoiceMessage', {
+    return _transport.invokeMethod<void>('playVoiceMessage', {
       'bytes': Uint8List.fromList(message.voiceBytes),
       'codec': message.voiceCodec,
     });
+  }
+
+  Future<void> startLiveVoiceAudio() async {
+    final permitted = await requestMicrophonePermission();
+    if (!permitted) throw StateError('Microphone permission denied');
+    await _transport.invokeMethod<void>('startLiveVoiceAudio');
+  }
+
+  Future<void> stopLiveVoiceAudio() {
+    return _transport.invokeMethod<void>('stopLiveVoiceAudio');
+  }
+
+  Future<void> playLiveVoiceAudio(List<int> audio) {
+    return _transport.invokeMethod<void>(
+      'playLiveVoiceAudio',
+      {'audio': Uint8List.fromList(audio)},
+    );
+  }
+
+  Future<void> sendVoiceCallFrame({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode toNode,
+    required int fromNode,
+    required List<int> plaintext,
+    required int sequence,
+    int maxHop = 0,
+  }) async {
+    final encrypted = await _encryptConversationPayload(
+      identity: config.identity,
+      recipient: toNode,
+      fromNode: fromNode,
+      plaintext: plaintext,
+    );
+    await _transport.invokeMethod<void>('sendVoiceCallFrame', {
+      'to': toNode.nodeNum,
+      'maxHop': maxHop.clamp(0, 255),
+      'sequence': sequence,
+      'nonce': Uint8List.fromList(encrypted.nonce),
+      'ciphertext': Uint8List.fromList(encrypted.ciphertext),
+    });
+  }
+
+  Future<EdgezVoiceCallEnvelope> decryptVoiceCallFrame({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode sender,
+    required int localNode,
+    required List<int> payload,
+  }) async {
+    if (payload.length < 6 + 4 + 12 + 1) {
+      throw StateError('Compact voice frame is too short');
+    }
+    final data = ByteData.sublistView(Uint8List.fromList(payload));
+    var fromNode = 0;
+    for (var index = 0; index < 6; index++) {
+      fromNode = (fromNode << 8) | data.getUint8(index);
+    }
+    final sequence = data.getUint32(6, Endian.big);
+    final nonce = payload.sublist(10, 22);
+    final ciphertext = payload.sublist(22);
+    final plaintext = await _decryptConversationPayload(
+      identity: config.identity,
+      sender: sender,
+      fromNode: fromNode,
+      toNode: localNode,
+      nonce: nonce,
+      ciphertext: ciphertext,
+    );
+    return EdgezVoiceCallEnvelope(
+      fromNode: fromNode,
+      sequence: sequence,
+      plaintext: plaintext,
+    );
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) {
     final packet = proto.NetworkPacket(
       operation: proto.Operation.REQUEST,
       interface: proto.Interface.HALOW,
-      userHigh: Int64(config.identity.userIdHigh),
-      userLow: Int64(config.identity.userIdLow),
       init: proto.HaLowInitConfig(
         countryCode: _take(config.countryCode.toUpperCase(), 2),
         meshId: _take(config.meshId, 32),
@@ -104,9 +218,17 @@ class EdgezMeshSdk {
         userIdLow: Int64(config.identity.userIdLow),
         userName: _take(config.identity.name, 64),
         userPublicKey: config.identity.publicKey.take(32).toList(),
+        marker: _normalizeMarker(config.beacon.marker),
+        hasLocation: config.beacon.shareLocation &&
+            config.beacon.latitude != null &&
+            config.beacon.longitude != null,
+        latitude: config.beacon.shareLocation ? config.beacon.latitude : null,
+        longitude: config.beacon.shareLocation ? config.beacon.longitude : null,
+        meshBandwidthMhz: config.meshBandwidthMhz.clamp(0, 8),
+        meshFrequencyKhz: max(0, config.meshFrequencyKhz),
       ),
     );
-    return _methods.invokeMethod<void>('initializeMesh', {
+    return _transport.invokeMethod<void>('initializeMesh', {
       ...config.toMap(),
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
@@ -116,63 +238,18 @@ class EdgezMeshSdk {
     final packet = proto.NetworkPacket(
       operation: proto.Operation.REQUEST,
       interface: proto.Interface.HALOW,
-      userHigh: identity == null ? null : Int64(identity.userIdHigh),
-      userLow: identity == null ? null : Int64(identity.userIdLow),
       deviceSettings: proto.DeviceSettings(
         action: proto.DeviceSettingsAction.DEVICE_SETTINGS_GET,
       ),
     );
-    return _methods.invokeMethod<void>('sendPacket', {
+    return _transport.invokeMethod<void>('sendPacket', {
       'label': 'Device settings request',
-      'packet': Uint8List.fromList(packet.writeToBuffer()),
-    });
-  }
-
-  Future<void> sendBeacon(EdgezMeshConfig config) async {
-    final beacon = proto.Beacon(
-      userIdHigh: Int64(config.identity.userIdHigh),
-      userIdLow: Int64(config.identity.userIdLow),
-      userName: _beaconUserName(config.identity.name, config.beacon.marker),
-      userPublicKey: config.identity.publicKey.take(32).toList(),
-      marker: _markerColor(config.beacon.marker),
-      deviceType: proto.DeviceType.DEVICE_TYPE_USER,
-      beaconIntervalSeconds: config.beacon.normalizedIntervalSeconds,
-    );
-    if (config.beacon.shareLocation &&
-        config.beacon.latitude != null &&
-        config.beacon.longitude != null) {
-      beacon.attitude = config.beacon.latitude!;
-      beacon.longitude = config.beacon.longitude!;
-    }
-
-    final beaconBytes = beacon.writeToBuffer();
-    final payload = config.passphrase.isEmpty
-        ? beaconBytes
-        : await _encryptBeacon(beaconBytes, config.passphrase);
-    final packet = proto.NetworkPacket(
-      operation: proto.Operation.REQUEST,
-      interface: proto.Interface.HALOW,
-      userHigh: Int64(config.identity.userIdHigh),
-      userLow: Int64(config.identity.userIdLow),
-      maxHop: config.maxHop.clamp(0, 255),
-      beacon: base64Encode(payload),
-    );
-    return _methods.invokeMethod<void>('sendPacket', {
-      'label': 'Beacon',
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
   }
 
   String _take(String value, int maxLength) {
     return value.length > maxLength ? value.substring(0, maxLength) : value;
-  }
-
-  String _beaconUserName(String userName, String marker) {
-    final normalizedName = userName.trim().isEmpty ? 'EdgeZ User' : userName;
-    final normalizedMarker = _normalizeMarker(marker);
-    if (normalizedMarker == 'default') return _take(normalizedName, 64);
-    final suffix = '|m=$normalizedMarker';
-    return _take(normalizedName, (64 - suffix.length).clamp(0, 64)) + suffix;
   }
 
   proto.MarkerColor _markerColor(String marker) {
@@ -220,25 +297,59 @@ class EdgezMeshSdk {
     return markers.contains(marker) ? marker : 'default';
   }
 
-  Future<List<int>> _encryptBeacon(List<int> payload, String passphrase) async {
-    final random = Random.secure();
-    final nonce = List<int>.generate(12, (_) => random.nextInt(256));
-    final keyHash = await Sha256().hash(utf8.encode(passphrase));
-    final secretKey = SecretKey(keyHash.bytes);
-    final secretBox = await AesGcm.with256bits().encrypt(
-      payload,
-      secretKey: secretKey,
-      nonce: nonce,
-    );
-    return <int>[
-      0x45,
-      0x5a,
-      0x42,
-      0x01,
-      ...nonce,
-      ...secretBox.cipherText,
-      ...secretBox.mac.bytes,
-    ];
+  Future<proto.Beacon?> decodeBeaconPayload(
+    List<int> payload, {
+    String passphrase = '',
+  }) async {
+    List<int> decoded;
+    try {
+      decoded = base64Decode(utf8.decode(payload));
+    } catch (_) {
+      decoded = payload;
+    }
+    if (passphrase.isNotEmpty) {
+      decoded = await _decryptBeacon(decoded, passphrase) ?? decoded;
+    }
+    try {
+      return proto.Beacon.fromBuffer(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<int>?> _decryptBeacon(
+    List<int> payload,
+    String passphrase,
+  ) async {
+    const prefixLength = 4;
+    const nonceLength = 12;
+    const macLength = 16;
+    if (payload.length <= prefixLength + nonceLength + macLength ||
+        payload[0] != 0x45 ||
+        payload[1] != 0x5a ||
+        payload[2] != 0x42 ||
+        payload[3] != 0x01) {
+      return null;
+    }
+    try {
+      final keyHash = await Sha256().hash(utf8.encode(passphrase));
+      final nonce = payload.sublist(prefixLength, prefixLength + nonceLength);
+      final ciphertext = payload.sublist(
+        prefixLength + nonceLength,
+        payload.length - macLength,
+      );
+      final secretBox = SecretBox(
+        ciphertext,
+        nonce: nonce,
+        mac: Mac(payload.sublist(payload.length - macLength)),
+      );
+      return await AesGcm.with256bits().decrypt(
+        secretBox,
+        secretKey: SecretKey(keyHash.bytes),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String> sendTextMessage({
@@ -256,20 +367,19 @@ class EdgezMeshSdk {
       plaintext: utf8.encode(text),
     );
     final packet = proto.NetworkPacket(
-      messageIdHigh: Int64(messageId.$1),
-      messageIdLow: Int64(messageId.$2),
       from: Int64(fromNode),
       to: Int64(toNode.nodeNum),
       operation: proto.Operation.REQUEST,
       interface: proto.Interface.HALOW,
-      sequence: 1,
-      userHigh: Int64(config.identity.userIdHigh),
-      userLow: Int64(config.identity.userIdLow),
-      mime: proto.Mime.MIME_TEXT,
-      maxHop: maxHop.clamp(0, 255),
-      payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
+      msg: proto.MessageBody(
+        messageIdHigh: Int64(messageId.$1),
+        messageIdLow: Int64(messageId.$2),
+        sequence: 1,
+        mime: proto.Mime.MIME_TEXT,
+        payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
+      ),
     );
-    await _methods.invokeMethod<void>('sendPacket', {
+    await _transport.invokeMethod<void>('sendPacket', {
       'label': 'Conversation message',
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
@@ -331,20 +441,19 @@ class EdgezMeshSdk {
         plaintext: voiceChunk,
       );
       final packet = proto.NetworkPacket(
-        messageIdHigh: Int64(messageId.$1),
-        messageIdLow: Int64(messageId.$2),
         from: Int64(fromNode),
         to: Int64(toNode.nodeNum),
         operation: proto.Operation.REQUEST,
         interface: proto.Interface.HALOW,
-        sequence: index + 1,
-        userHigh: Int64(config.identity.userIdHigh),
-        userLow: Int64(config.identity.userIdLow),
-        mime: proto.Mime.MIME_VOICE,
-        maxHop: maxHop.clamp(0, 255),
-        payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
+        msg: proto.MessageBody(
+          messageIdHigh: Int64(messageId.$1),
+          messageIdLow: Int64(messageId.$2),
+          sequence: index + 1,
+          mime: proto.Mime.MIME_VOICE,
+          payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
+        ),
       );
-      await _methods.invokeMethod<void>('sendPacket', {
+      await _transport.invokeMethod<void>('sendPacket', {
         'label': 'Voice chunk ${index + 1}/$totalChunks',
         'packet': Uint8List.fromList(packet.writeToBuffer()),
       });
@@ -387,18 +496,17 @@ class EdgezMeshSdk {
     int maxHop = 0,
   }) {
     final packet = proto.NetworkPacket(
-      messageIdHigh: Int64(messageIdHigh),
-      messageIdLow: Int64(messageIdLow),
       from: Int64(fromNode),
       to: Int64(toNode),
       operation: proto.Operation.ACKNOWLEDGE,
       interface: proto.Interface.HALOW,
-      userHigh: Int64(config.identity.userIdHigh),
-      userLow: Int64(config.identity.userIdLow),
-      mime: proto.Mime.MIME_TEXT,
-      maxHop: maxHop.clamp(0, 255),
+      msg: proto.MessageBody(
+        messageIdHigh: Int64(messageIdHigh),
+        messageIdLow: Int64(messageIdLow),
+        mime: proto.Mime.MIME_TEXT,
+      ),
     );
-    return _methods.invokeMethod<void>('sendPacket', {
+    return _transport.invokeMethod<void>('sendPacket', {
       'label': 'Conversation ACK',
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
@@ -523,6 +631,25 @@ class EdgezMeshSdk {
   }
 
   Future<SecretKey> _conversationKey({
+    required EdgezUserIdentity identity,
+    required int localNode,
+    required int peerNode,
+    required List<int> peerPublicKey,
+  }) {
+    final cacheKey = '$localNode:$peerNode:'
+        '${base64Encode(identity.publicKey)}:${base64Encode(peerPublicKey)}';
+    return _conversationKeyCache.putIfAbsent(
+      cacheKey,
+      () => _deriveConversationKey(
+        identity: identity,
+        localNode: localNode,
+        peerNode: peerNode,
+        peerPublicKey: peerPublicKey,
+      ),
+    );
+  }
+
+  Future<SecretKey> _deriveConversationKey({
     required EdgezUserIdentity identity,
     required int localNode,
     required int peerNode,
@@ -686,8 +813,66 @@ class EdgezMeshSdk {
     return null;
   }
 
-  Future<void> sendDeviceSettings(Map<String, Object?> settings) {
-    return _methods.invokeMethod<void>('sendDeviceSettings', settings);
+  Future<void> sendDeviceSettings({
+    required EdgezDeviceSettings settings,
+    EdgezUserIdentity? identity,
+  }) {
+    final deviceSettings = proto.DeviceSettings(
+      action: proto.DeviceSettingsAction.DEVICE_SETTINGS_SET,
+      deviceModeEnabled: settings.deviceModeEnabled,
+      meshId: _take(settings.meshId, 32),
+      shareLocation: settings.shareLocation,
+      userName: _take(settings.userName, 64),
+      marker: _markerColor(settings.marker),
+      beaconIntervalSeconds: settings.beaconIntervalSeconds.clamp(5, 3600),
+      maxHop: settings.maxHop.clamp(0, 255),
+      latitude: settings.latitude,
+      longitude: settings.longitude,
+      geoIndex: settings.geoIndex,
+      uartI2cSensorType: _take(settings.uartI2cSensorType, 32),
+      rs485SensorType: _take(settings.rs485SensorType, 32),
+      passphrase: _take(settings.passphrase, 64),
+      upstreamWifiSsid: _take(settings.upstreamWifiSsid, 32),
+      upstreamWifiPassphrase: _take(settings.upstreamWifiPassphrase, 64),
+      beaconUnicast: Int64(settings.beaconUnicast & 0xffffffffffff),
+      deviceType: _deviceType(settings.deviceType),
+      sleepModeEnabled: settings.sleepModeEnabled,
+    );
+    if (identity != null) {
+      deviceSettings
+        ..userIdHigh = Int64(identity.userIdHigh)
+        ..userIdLow = Int64(identity.userIdLow)
+        ..userPublicKey = identity.publicKey.take(32).toList()
+        ..userPrivateKey = identity.privateKey.take(32).toList();
+    }
+    if (settings.geoFenceName.trim().isNotEmpty) {
+      deviceSettings.geoFence = proto.GeoFence(
+        name: _take(settings.geoFenceName.trim(), 64),
+        marker: _markerColor(settings.marker),
+        geoIndex: settings.geoIndex,
+      );
+    }
+
+    final packet = proto.NetworkPacket(
+      operation: proto.Operation.REQUEST,
+      interface: proto.Interface.HALOW,
+      deviceSettings: deviceSettings,
+    );
+    return _transport.invokeMethod<void>('sendPacket', {
+      'label': 'Device settings',
+      'packet': Uint8List.fromList(packet.writeToBuffer()),
+    });
+  }
+
+  proto.DeviceType _deviceType(String value) {
+    return switch (value.trim().toLowerCase()) {
+      'user' => proto.DeviceType.DEVICE_TYPE_USER,
+      'gateway' => proto.DeviceType.DEVICE_TYPE_GATEWAY,
+      'beacon' => proto.DeviceType.DEVICE_TYPE_BEACON,
+      'sensor' => proto.DeviceType.DEVICE_TYPE_SENSOR,
+      'unknown' => proto.DeviceType.DEVICE_TYPE_UNKNOWN,
+      _ => proto.DeviceType.DEVICE_TYPE_RELAY,
+    };
   }
 }
 

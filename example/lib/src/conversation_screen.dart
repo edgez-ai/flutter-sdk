@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
@@ -8,22 +10,32 @@ class ConversationScreen extends StatefulWidget {
     required this.activeConnection,
     required this.user,
     required this.messages,
+    required this.sensorSamples,
     required this.onBack,
     required this.onSendMessage,
     required this.onStartVoiceMessage,
     required this.onStopVoiceMessage,
     required this.onReplayVoiceMessage,
+    required this.callState,
+    required this.onStartCall,
+    required this.onAcceptCall,
+    required this.onEndCall,
     super.key,
   });
 
   final EdgezConnectionType activeConnection;
   final EdgezMeshNode user;
   final List<EdgezConversationMessage> messages;
+  final List<EdgezSensorSample> sensorSamples;
   final VoidCallback onBack;
   final ValueChanged<String> onSendMessage;
   final Future<bool> Function() onStartVoiceMessage;
   final Future<void> Function(bool send) onStopVoiceMessage;
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
+  final EdgezVoiceCallState callState;
+  final Future<void> Function() onStartCall;
+  final Future<void> Function() onAcceptCall;
+  final Future<void> Function() onEndCall;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
@@ -83,48 +95,169 @@ class _ConversationScreenState extends State<ConversationScreen> {
         widget.user.opensConversation &&
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
+    final callForThisUser = widget.callState.peerNodeNum == widget.user.nodeNum;
+    final displayName = widget.user.resolvedDisplayName.trim();
+    final avatarText = displayName.isEmpty ? '?' : displayName[0].toUpperCase();
+    EdgezSensorSample? latestLocation;
+    for (final sample in widget.sensorSamples) {
+      if (sample.data.latitude == null || sample.data.longitude == null) {
+        continue;
+      }
+      if (latestLocation == null ||
+          sample.timestampMs > latestLocation.timestampMs) {
+        latestLocation = sample;
+      }
+    }
+    final location = latestLocation;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: <Widget>[
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                TextButton(onPressed: widget.onBack, child: const Text('Back')),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    if (widget.user.hasLocation)
-                      Icon(Icons.location_on,
-                          color: widget.user.exampleMarker.color),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: <Widget>[
-                        Text(widget.user.resolvedDisplayName,
-                            style: Theme.of(context).textTheme.titleLarge),
-                        Text('Node ${widget.user.nodeId}',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        Text('User ${widget.user.exampleUserId}',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        Text('Marker ${widget.user.exampleMarker.label}',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        Text('Type ${widget.user.exampleDeviceType.label}',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        if (widget.user.exampleGeoFenceName.isNotEmpty)
-                          Text('Geofence ${widget.user.exampleGeoFenceName}',
-                              style: Theme.of(context).textTheme.bodySmall),
-                        if (widget.user.sleeping)
-                          Text('Sleeping',
-                              style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                  ],
+                IconButton(
+                  onPressed: widget.onBack,
+                  tooltip: 'Back',
+                  icon: const Icon(Icons.arrow_back),
+                ),
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: widget.user.exampleMarker.color,
+                  child: Text(
+                    avatarText,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        widget.user.resolvedDisplayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        '${widget.user.exampleDeviceType.label} · '
+                        '${widget.user.opensConversation ? 'Encrypted' : 'Waiting for key'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      Text(
+                        widget.user.nodeId,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: widget.callState.isIdle
+                      ? 'Start voice call'
+                      : callForThisUser
+                          ? 'End voice call'
+                          : 'Another call is active',
+                  onPressed: !canSendVoice
+                      ? null
+                      : widget.callState.isIdle
+                          ? () => unawaited(widget.onStartCall())
+                          : callForThisUser
+                              ? () => unawaited(widget.onEndCall())
+                              : null,
+                  icon: Icon(
+                    widget.callState.isIdle
+                        ? Icons.call_outlined
+                        : Icons.call_end,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      location != null ? Icons.gps_fixed : Icons.gps_off,
+                      color: location != null
+                          ? widget.user.exampleMarker.color
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Latest sensor location',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          if (location != null) ...<Widget>[
+                            SelectableText(
+                              '${_formatCoordinate(location.data.latitude)}, '
+                              '${_formatCoordinate(location.data.longitude)}',
+                            ),
+                            if (location.timestampMs > 0)
+                              Text(
+                                'Updated ${_formatLocationTime(location.timestampMs)}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                          ] else
+                            Text(
+                              'No GPS location received in sensor data',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (callForThisUser && !widget.callState.isIdle) ...<Widget>[
+              Card(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          switch (widget.callState.phase) {
+                            EdgezVoiceCallPhase.outgoing => 'Calling...',
+                            EdgezVoiceCallPhase.incoming =>
+                              'Incoming voice call',
+                            EdgezVoiceCallPhase.active => 'Voice call active',
+                            EdgezVoiceCallPhase.idle => '',
+                          },
+                        ),
+                      ),
+                      if (widget.callState.phase ==
+                          EdgezVoiceCallPhase.incoming)
+                        FilledButton(
+                          onPressed: () => unawaited(widget.onAcceptCall()),
+                          child: const Text('Accept'),
+                        ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () => unawaited(widget.onEndCall()),
+                        child: const Text('End'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -237,6 +370,16 @@ class _ConversationScreenState extends State<ConversationScreen> {
       ),
     );
   }
+}
+
+String _formatCoordinate(double? value) =>
+    value == null ? '—' : value.toStringAsFixed(6);
+
+String _formatLocationTime(int timestampMs) {
+  final value = DateTime.fromMillisecondsSinceEpoch(timestampMs).toLocal();
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)} '
+      '${twoDigits(value.hour)}:${twoDigits(value.minute)}:${twoDigits(value.second)}';
 }
 
 class ConversationBubble extends StatelessWidget {

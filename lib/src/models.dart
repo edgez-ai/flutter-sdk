@@ -18,6 +18,9 @@ enum EdgezMeshEventType {
   status,
   node,
   message,
+  voiceFrame,
+  voiceAudio,
+  otaProgress,
   log;
 
   static EdgezMeshEventType fromWire(String? value) {
@@ -37,6 +40,13 @@ class EdgezSensorData {
     this.humidity,
     this.pressure,
     this.vibrationAverage,
+    this.accelX,
+    this.accelY,
+    this.accelZ,
+    this.gyroX,
+    this.gyroY,
+    this.gyroZ,
+    this.binaryLengthBytes,
   });
 
   final double? latitude;
@@ -46,6 +56,13 @@ class EdgezSensorData {
   final double? humidity;
   final double? pressure;
   final double? vibrationAverage;
+  final double? accelX;
+  final double? accelY;
+  final double? accelZ;
+  final double? gyroX;
+  final double? gyroY;
+  final double? gyroZ;
+  final int? binaryLengthBytes;
 
   bool get hasAnyValue {
     return latitude != null ||
@@ -54,7 +71,14 @@ class EdgezSensorData {
         temperature != null ||
         humidity != null ||
         pressure != null ||
-        vibrationAverage != null;
+        vibrationAverage != null ||
+        accelX != null ||
+        accelY != null ||
+        accelZ != null ||
+        gyroX != null ||
+        gyroY != null ||
+        gyroZ != null ||
+        binaryLengthBytes != null;
   }
 }
 
@@ -68,6 +92,28 @@ class EdgezSensorSample {
   final int nodeNum;
   final int timestampMs;
   final EdgezSensorData data;
+}
+
+class EdgezTopologyLink {
+  const EdgezTopologyLink({
+    required this.reporterNodeNum,
+    required this.peerNodeNum,
+    required this.encodedRssi,
+    required this.lastSeenMs,
+  });
+
+  final int reporterNodeNum;
+  final int peerNodeNum;
+  final int encodedRssi;
+  final int lastSeenMs;
+
+  int? get rssiDbm => encodedRssi == 1000 ? null : encodedRssi - 1000;
+
+  String get undirectedKey {
+    final low = reporterNodeNum < peerNodeNum ? reporterNodeNum : peerNodeNum;
+    final high = reporterNodeNum < peerNodeNum ? peerNodeNum : reporterNodeNum;
+    return '$low:$high';
+  }
 }
 
 class EdgezBleDevice {
@@ -139,11 +185,13 @@ class EdgezUserIdentity {
 
 class EdgezMeshConfig {
   const EdgezMeshConfig({
-    required this.countryCode,
-    required this.meshId,
-    required this.passphrase,
-    required this.maxHop,
     required this.identity,
+    this.countryCode = 'US',
+    this.meshId = 'edgez',
+    this.passphrase = '',
+    this.maxHop = 4,
+    this.meshBandwidthMhz = 0,
+    this.meshFrequencyKhz = 0,
     this.beacon = const EdgezBeaconConfig(),
   });
 
@@ -151,6 +199,8 @@ class EdgezMeshConfig {
   final String meshId;
   final String passphrase;
   final int maxHop;
+  final int meshBandwidthMhz;
+  final int meshFrequencyKhz;
   final EdgezUserIdentity identity;
   final EdgezBeaconConfig beacon;
 
@@ -159,6 +209,8 @@ class EdgezMeshConfig {
         'meshId': meshId,
         'passphrase': passphrase,
         'maxHop': maxHop,
+        'meshBandwidthMhz': meshBandwidthMhz,
+        'meshFrequencyKhz': meshFrequencyKhz,
         'identity': identity.toMap(),
         'beacon': beacon.toMap(),
       };
@@ -193,6 +245,72 @@ class EdgezBeaconConfig {
       };
 }
 
+class EdgezDeviceSettings {
+  const EdgezDeviceSettings({
+    this.deviceModeEnabled = false,
+    this.meshId = '',
+    this.shareLocation = false,
+    this.userName = '',
+    this.marker = 'green',
+    this.beaconIntervalSeconds = 30,
+    this.maxHop = 0,
+    this.latitude,
+    this.longitude,
+    this.geoFenceName = '',
+    this.geoIndex = 0,
+    this.uartI2cSensorType = '',
+    this.rs485SensorType = '',
+    this.passphrase = '',
+    this.upstreamWifiSsid = '',
+    this.upstreamWifiPassphrase = '',
+    this.beaconUnicast = 0,
+    this.deviceType = 'relay',
+    this.sleepModeEnabled = false,
+  });
+
+  final bool deviceModeEnabled;
+  final String meshId;
+  final bool shareLocation;
+  final String userName;
+  final String marker;
+  final int beaconIntervalSeconds;
+  final int maxHop;
+  final double? latitude;
+  final double? longitude;
+  final String geoFenceName;
+  final int geoIndex;
+  final String uartI2cSensorType;
+  final String rs485SensorType;
+  final String passphrase;
+  final String upstreamWifiSsid;
+  final String upstreamWifiPassphrase;
+  final int beaconUnicast;
+  final String deviceType;
+  final bool sleepModeEnabled;
+
+  Map<String, Object?> toMap() => {
+        'deviceModeEnabled': deviceModeEnabled,
+        'meshId': meshId,
+        'shareLocation': shareLocation,
+        'userName': userName,
+        'marker': marker,
+        'beaconIntervalSeconds': beaconIntervalSeconds,
+        'maxHop': maxHop,
+        'latitude': latitude,
+        'longitude': longitude,
+        'geoFenceName': geoFenceName,
+        'geoIndex': geoIndex,
+        'uartI2cSensorType': uartI2cSensorType,
+        'rs485SensorType': rs485SensorType,
+        'passphrase': passphrase,
+        'upstreamWifiSsid': upstreamWifiSsid,
+        'upstreamWifiPassphrase': upstreamWifiPassphrase,
+        'beaconUnicast': beaconUnicast,
+        'deviceType': deviceType,
+        'sleepModeEnabled': sleepModeEnabled,
+      };
+}
+
 class EdgezMeshStatus {
   const EdgezMeshStatus({
     required this.supported,
@@ -205,6 +323,8 @@ class EdgezMeshStatus {
     required this.ipAddress,
     required this.gateway,
     required this.macAddress,
+    this.licensed = false,
+    this.firmwareVersion = '',
   });
 
   final bool supported;
@@ -217,6 +337,8 @@ class EdgezMeshStatus {
   final String ipAddress;
   final String gateway;
   final int macAddress;
+  final bool licensed;
+  final String firmwareVersion;
 
   bool get isUsable => supported && stackInitialized && linkUp && routeReady;
 
@@ -232,6 +354,8 @@ class EdgezMeshStatus {
       ipAddress: map['ipAddress'] as String? ?? '',
       gateway: map['gateway'] as String? ?? '',
       macAddress: map['macAddress'] as int? ?? 0,
+      licensed: map['licensed'] == true,
+      firmwareVersion: map['firmwareVersion'] as String? ?? '',
     );
   }
 }
@@ -409,6 +533,35 @@ class EdgezVoiceRecording {
   final int codec;
 }
 
+enum EdgezVoiceCallPhase { idle, outgoing, incoming, active }
+
+class EdgezVoiceCallState {
+  const EdgezVoiceCallState({
+    this.peerNodeNum,
+    this.callId = 0,
+    this.phase = EdgezVoiceCallPhase.idle,
+  });
+
+  final int? peerNodeNum;
+  final int callId;
+  final EdgezVoiceCallPhase phase;
+
+  bool get isIdle => phase == EdgezVoiceCallPhase.idle;
+  bool get isActive => phase == EdgezVoiceCallPhase.active;
+}
+
+class EdgezVoiceCallEnvelope {
+  const EdgezVoiceCallEnvelope({
+    required this.fromNode,
+    required this.sequence,
+    required this.plaintext,
+  });
+
+  final int fromNode;
+  final int sequence;
+  final List<int> plaintext;
+}
+
 class EdgezMeshEvent {
   const EdgezMeshEvent({
     required this.type,
@@ -418,6 +571,8 @@ class EdgezMeshEvent {
     this.status,
     this.node,
     this.message,
+    this.sentBytes = 0,
+    this.totalBytes = 0,
     this.log = '',
   });
 
@@ -428,7 +583,11 @@ class EdgezMeshEvent {
   final EdgezMeshStatus? status;
   final EdgezMeshNode? node;
   final EdgezConversationMessage? message;
+  final int sentBytes;
+  final int totalBytes;
   final String log;
+
+  double get progress => totalBytes <= 0 ? 0 : sentBytes / totalBytes;
 
   factory EdgezMeshEvent.fromMap(Map<Object?, Object?> map) {
     final type = EdgezMeshEventType.fromWire(map['type'] as String?);
@@ -453,6 +612,8 @@ class EdgezMeshEvent {
           ? EdgezConversationMessage.fromMap(
               map['message'] as Map<Object?, Object?>)
           : null,
+      sentBytes: map['sentBytes'] as int? ?? 0,
+      totalBytes: map['totalBytes'] as int? ?? 0,
       log: map['log'] as String? ?? '',
     );
   }

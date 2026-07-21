@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -14,11 +14,17 @@ class EdgezMeshState {
     required Map<String, EdgezBleDevice> bleDevices,
     required Map<int, EdgezMeshNode> nodes,
     required Map<int, List<EdgezSensorSample>> sensorSamples,
+    required List<EdgezTopologyLink> topologyLinks,
     required Map<int, List<EdgezConversationMessage>> conversations,
+    required this.otaInProgress,
+    required this.otaSentBytes,
+    required this.otaTotalBytes,
+    required this.voiceCall,
     required this.statusLine,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         sensorSamples = _freezeSensorSamples(sensorSamples),
+        topologyLinks = List<EdgezTopologyLink>.unmodifiable(topologyLinks),
         conversations = _freezeConversations(conversations);
 
   factory EdgezMeshState.initial() {
@@ -28,7 +34,12 @@ class EdgezMeshState {
       bleDevices: const <String, EdgezBleDevice>{},
       nodes: const <int, EdgezMeshNode>{},
       sensorSamples: const <int, List<EdgezSensorSample>>{},
+      topologyLinks: const <EdgezTopologyLink>[],
       conversations: const <int, List<EdgezConversationMessage>>{},
+      otaInProgress: false,
+      otaSentBytes: 0,
+      otaTotalBytes: 0,
+      voiceCall: const EdgezVoiceCallState(),
       statusLine: 'Connect with BLE, then save mesh settings.',
     );
   }
@@ -38,8 +49,16 @@ class EdgezMeshState {
   final Map<String, EdgezBleDevice> bleDevices;
   final Map<int, EdgezMeshNode> nodes;
   final Map<int, List<EdgezSensorSample>> sensorSamples;
+  final List<EdgezTopologyLink> topologyLinks;
   final Map<int, List<EdgezConversationMessage>> conversations;
+  final bool otaInProgress;
+  final int otaSentBytes;
+  final int otaTotalBytes;
+  final EdgezVoiceCallState voiceCall;
   final String statusLine;
+
+  double get otaProgress =>
+      otaTotalBytes <= 0 ? 0 : otaSentBytes / otaTotalBytes;
 
   List<EdgezMeshNode> get sortedNodes {
     final sorted = nodes.values.toList()
@@ -62,7 +81,12 @@ class EdgezMeshState {
     Map<String, EdgezBleDevice>? bleDevices,
     Map<int, EdgezMeshNode>? nodes,
     Map<int, List<EdgezSensorSample>>? sensorSamples,
+    List<EdgezTopologyLink>? topologyLinks,
     Map<int, List<EdgezConversationMessage>>? conversations,
+    bool? otaInProgress,
+    int? otaSentBytes,
+    int? otaTotalBytes,
+    EdgezVoiceCallState? voiceCall,
     String? statusLine,
   }) {
     return EdgezMeshState(
@@ -71,7 +95,12 @@ class EdgezMeshState {
       bleDevices: bleDevices ?? this.bleDevices,
       nodes: nodes ?? this.nodes,
       sensorSamples: sensorSamples ?? this.sensorSamples,
+      topologyLinks: topologyLinks ?? this.topologyLinks,
       conversations: conversations ?? this.conversations,
+      otaInProgress: otaInProgress ?? this.otaInProgress,
+      otaSentBytes: otaSentBytes ?? this.otaSentBytes,
+      otaTotalBytes: otaTotalBytes ?? this.otaTotalBytes,
+      voiceCall: voiceCall ?? this.voiceCall,
       statusLine: statusLine ?? this.statusLine,
     );
   }
@@ -114,13 +143,40 @@ class EdgezMeshSession extends ChangeNotifier {
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
   var _initInFlight = false;
-  var _beaconSendInFlight = false;
   String? _lastInitKey;
-  Timer? _beaconTimer;
+  var _voiceCallSequence = 1;
+  Future<void> _voiceFramePipeline = Future<void>.value();
+  var _voiceAudioSendInFlight = false;
+  List<int>? _pendingVoiceAudio;
   final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
       <String, _PendingVoiceMessage>{};
+  static const Set<String> _knownMarkerIds = <String>{
+    'default',
+    'red',
+    'blue',
+    'purple',
+    'yellow',
+    'pink',
+    'brown',
+    'green',
+    'orange',
+    'deep_purple',
+    'light_blue',
+    'cyan',
+    'teal',
+    'lime',
+    'deep_orange',
+    'gray',
+    'blue_gray',
+  };
 
   EdgezMeshState get state => _state;
+
+  static const _callMagic = <int>[0x45, 0x56, 0x43, 0x32];
+  static const _callInvite = 1;
+  static const _callAccept = 2;
+  static const _callEnd = 3;
+  static const _callAudio = 4;
 
   void restoreCachedMeshData({
     required Map<int, EdgezMeshNode> nodes,
@@ -163,6 +219,176 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<bool> get isOtaReady => sdk.isOtaReady();
+
+  Future<void> performOta(List<int> firmwareImage) async {
+    _setState(
+      _state.copyWith(
+        otaInProgress: true,
+        otaSentBytes: 0,
+        otaTotalBytes: firmwareImage.length,
+        statusLine: 'Starting firmware update',
+      ),
+    );
+    try {
+      final message = await sdk.performOta(firmwareImage);
+      _setState(
+        _state.copyWith(
+          otaInProgress: false,
+          otaSentBytes: firmwareImage.length,
+          otaTotalBytes: firmwareImage.length,
+          statusLine: message,
+        ),
+      );
+    } catch (error) {
+      _setState(
+        _state.copyWith(
+          otaInProgress: false,
+          statusLine: 'Firmware update failed: $error',
+        ),
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> abortOta() async {
+    await sdk.abortOta();
+    _setState(
+      _state.copyWith(
+        otaInProgress: false,
+        statusLine: 'Firmware update cancelled',
+      ),
+    );
+  }
+
+  Future<void> startVoiceCall(int peerNodeNum) async {
+    if (!_state.voiceCall.isIdle) {
+      throw StateError('A voice call is already in progress');
+    }
+    final peer = _state.nodes[peerNodeNum];
+    if (peer == null || !peer.opensConversation) {
+      throw StateError('Voice-call peer is unavailable');
+    }
+    if (!await sdk.requestMicrophonePermission()) {
+      throw StateError('Microphone permission denied');
+    }
+    final callId = Random.secure().nextInt(0x7fffffff) |
+        (Random.secure().nextInt(0x7fffffff) << 31);
+    _voiceCallSequence = 1;
+    _setState(
+      _state.copyWith(
+        voiceCall: EdgezVoiceCallState(
+          peerNodeNum: peerNodeNum,
+          callId: callId,
+          phase: EdgezVoiceCallPhase.outgoing,
+        ),
+        statusLine: 'Calling ${peer.resolvedDisplayName}',
+      ),
+    );
+    try {
+      await _sendVoiceCallPacket(_callInvite);
+    } catch (_) {
+      await _resetVoiceCall();
+      rethrow;
+    }
+  }
+
+  Future<void> acceptVoiceCall() async {
+    if (_state.voiceCall.phase != EdgezVoiceCallPhase.incoming) {
+      throw StateError('No incoming voice call');
+    }
+    await _sendVoiceCallPacket(_callAccept);
+    _setState(
+      _state.copyWith(
+        voiceCall: EdgezVoiceCallState(
+          peerNodeNum: _state.voiceCall.peerNodeNum,
+          callId: _state.voiceCall.callId,
+          phase: EdgezVoiceCallPhase.active,
+        ),
+        statusLine: 'Voice call active',
+      ),
+    );
+    try {
+      await sdk.startLiveVoiceAudio();
+    } catch (_) {
+      await _resetVoiceCall();
+      rethrow;
+    }
+  }
+
+  Future<void> endVoiceCall() async {
+    Future<void>? endFrame;
+    if (!_state.voiceCall.isIdle) {
+      endFrame = _sendVoiceCallPacket(_callEnd);
+    }
+    await _resetVoiceCall();
+    if (endFrame != null) {
+      unawaited(endFrame.catchError((_) {}));
+    }
+  }
+
+  Future<void> _resetVoiceCall() async {
+    _pendingVoiceAudio = null;
+    await sdk.stopLiveVoiceAudio();
+    _setState(
+      _state.copyWith(
+        voiceCall: const EdgezVoiceCallState(),
+        statusLine: 'Voice call ended',
+      ),
+    );
+  }
+
+  Future<void> _sendVoiceCallPacket(int type,
+      [List<int> audio = const []]) async {
+    final call = _state.voiceCall;
+    final config = _lastMeshConfig;
+    final peer =
+        call.peerNodeNum == null ? null : _state.nodes[call.peerNodeNum!];
+    final fromNode = _state.status?.macAddress ?? 0;
+    if (config == null || peer == null || fromNode == 0) {
+      throw StateError('Voice-call mesh identity is unavailable');
+    }
+    final sequence = _voiceCallSequence++;
+    final packet = _encodeVoiceCallPacket(
+      type: type,
+      callId: call.callId,
+      sequence: sequence,
+      audio: audio,
+    );
+    await sdk.sendVoiceCallFrame(
+      config: config,
+      toNode: peer,
+      fromNode: fromNode,
+      plaintext: packet,
+      sequence: sequence,
+      maxHop: config.maxHop,
+    );
+  }
+
+  void _queueVoiceAudio(List<int> audio) {
+    _pendingVoiceAudio = List<int>.from(audio);
+    if (_voiceAudioSendInFlight) return;
+    _voiceAudioSendInFlight = true;
+    unawaited(_drainVoiceAudio());
+  }
+
+  Future<void> _drainVoiceAudio() async {
+    try {
+      while (_state.voiceCall.isActive && _pendingVoiceAudio != null) {
+        final audio = _pendingVoiceAudio!;
+        _pendingVoiceAudio = null;
+        await _sendVoiceCallPacket(_callAudio, audio);
+      }
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Voice audio send failed: $error'));
+    } finally {
+      _voiceAudioSendInFlight = false;
+      if (_state.voiceCall.isActive && _pendingVoiceAudio != null) {
+        _queueVoiceAudio(_pendingVoiceAudio!);
+      }
+    }
+  }
+
   Future<void> connectBle(String deviceId) async {
     try {
       await sdk.connectBle(deviceId);
@@ -183,7 +409,6 @@ class EdgezMeshSession extends ChangeNotifier {
     await sdk.disconnect();
     _bleReady = false;
     _lastInitKey = null;
-    _stopBeaconLoop();
     _setState(
       EdgezMeshState.initial().copyWith(statusLine: 'Disconnected'),
     );
@@ -194,9 +419,14 @@ class EdgezMeshSession extends ChangeNotifier {
     await _sendInitIfReady(force: true);
   }
 
-  Future<void> sendDeviceSettings(Map<String, Object?> settings) async {
-    _setState(_state.copyWith(statusLine: 'Device settings saved'));
-    await sdk.sendDeviceSettings(settings);
+  Future<void> sendDeviceSettings(EdgezDeviceSettings settings) async {
+    final identity = _lastMeshConfig?.identity;
+    try {
+      await sdk.sendDeviceSettings(settings: settings, identity: identity);
+      _setState(_state.copyWith(statusLine: 'Device settings sent'));
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Device settings failed: $error'));
+    }
   }
 
   Future<void> sendTextMessage({
@@ -327,7 +557,12 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  @Deprecated('Use startVoiceMessage instead.')
   Future<bool> startVoiceRecording() async {
+    return startVoiceMessage();
+  }
+
+  Future<bool> startVoiceMessage() async {
     try {
       await sdk.startVoiceRecording();
       _setState(_state.copyWith(statusLine: 'Recording voice message'));
@@ -338,7 +573,12 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  @Deprecated('Use cancelVoiceMessage instead.')
   Future<void> cancelVoiceRecording() async {
+    return cancelVoiceMessage();
+  }
+
+  Future<void> cancelVoiceMessage() async {
     try {
       await sdk.stopVoiceRecording(send: false);
       _setState(_state.copyWith(statusLine: 'Voice recording cancelled'));
@@ -348,10 +588,23 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  @Deprecated('Use finishVoiceMessage instead.')
   Future<void> stopAndSendVoiceMessage({
     required int toNode,
     int maxHop = 0,
   }) async {
+    return finishVoiceMessage(toNode: toNode, send: true, maxHop: maxHop);
+  }
+
+  Future<void> finishVoiceMessage({
+    required int toNode,
+    bool send = true,
+    int maxHop = 0,
+  }) async {
+    if (!send) {
+      await cancelVoiceMessage();
+      return;
+    }
     final recording = await sdk.stopVoiceRecording();
     if (recording == null || recording.bytes.isEmpty) {
       _setState(_state.copyWith(statusLine: 'Voice recording was too short'));
@@ -364,15 +617,6 @@ class EdgezMeshSession extends ChangeNotifier {
       codec: recording.codec,
       maxHop: maxHop,
     );
-  }
-
-  Future<void> addVoicePlaceholder({required int toNode}) async {
-    final started = await startVoiceRecording();
-    if (!started) {
-      _setState(_state.copyWith(statusLine: 'Microphone permission denied'));
-      return;
-    }
-    await cancelVoiceRecording();
   }
 
   Future<void> playVoiceMessage(EdgezConversationMessage message) async {
@@ -407,8 +651,18 @@ class EdgezMeshSession extends ChangeNotifier {
         if (event.connection == EdgezConnectionType.none) {
           _bleReady = false;
           _lastInitKey = null;
+          if (!_state.voiceCall.isIdle) {
+            unawaited(sdk.stopLiveVoiceAudio());
+          }
         }
-        _setState(_state.copyWith(connection: event.connection));
+        _setState(
+          _state.copyWith(
+            connection: event.connection,
+            voiceCall: event.connection == EdgezConnectionType.none
+                ? const EdgezVoiceCallState()
+                : _state.voiceCall,
+          ),
+        );
       case EdgezMeshEventType.bleDevice:
         final device = event.bleDevice;
         if (device == null || device.id.isEmpty) return;
@@ -461,6 +715,29 @@ class EdgezMeshSession extends ChangeNotifier {
           nodes: nodes,
           statusLine: 'Conversation message received',
         );
+      case EdgezMeshEventType.voiceFrame:
+        // BLE notifications are ordered. Keep decrypt + playback ordered too:
+        // allowing asynchronous decryptions to overtake one another turns valid
+        // 40 ms ADPCM frames into audible clicks and noise.
+        _voiceFramePipeline = _voiceFramePipeline.then(
+          (_) => _handleVoiceCallFrame(event.packet),
+        );
+      case EdgezMeshEventType.voiceAudio:
+        if (_state.voiceCall.isActive && event.packet.isNotEmpty) {
+          _queueVoiceAudio(event.packet);
+        }
+      case EdgezMeshEventType.otaProgress:
+        _setState(
+          _state.copyWith(
+            otaInProgress: true,
+            otaSentBytes: event.sentBytes,
+            otaTotalBytes: event.totalBytes,
+            statusLine: event.totalBytes <= 0
+                ? 'Installing firmware'
+                : 'Installing firmware: '
+                    '${(event.progress * 100).floor()}%',
+          ),
+        );
       case EdgezMeshEventType.log:
         _setState(_state.copyWith(statusLine: event.log));
     }
@@ -485,6 +762,8 @@ class EdgezMeshSession extends ChangeNotifier {
             ipAddress: packet.status.ipAddr,
             gateway: packet.status.gateway,
             macAddress: packet.status.macAddress.toInt(),
+            licensed: packet.status.licensed,
+            firmwareVersion: packet.status.firmwareVersion,
           ),
         ),
       );
@@ -494,42 +773,138 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'Device settings received'));
     }
 
-    if (packet.hasPayload() ||
-        packet.operation == proto.Operation.ACKNOWLEDGE) {
+    if (packet.hasReport()) {
+      _handleTopologyReport(packet);
+    }
+
+    if (packet.hasMsg() || packet.operation == proto.Operation.ACKNOWLEDGE) {
       unawaited(_handleConversationPacket(packet));
     }
 
-    if (!packet.hasBeacon()) return;
-    final beacon = _parseBeacon(packet.beacon);
-    if (beacon == null) return;
+    if (packet.hasBeacon()) {
+      _handleBeacon(packet, packet.beacon);
+    } else if (packet.hasPayload()) {
+      unawaited(_handleLegacyBeaconPacket(packet));
+    }
+  }
+
+  void _handleTopologyReport(proto.NetworkPacket packet) {
+    final reporter = packet.from.toInt();
+    if (reporter == 0) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const windowMs = 5 * 60 * 1000;
+    final latestByPair = <String, EdgezTopologyLink>{};
+    for (final link in _state.topologyLinks) {
+      if (link.lastSeenMs >= now - windowMs) {
+        latestByPair[link.undirectedKey] = link;
+      }
+    }
+    for (final peer in packet.report.peers) {
+      final peerNode = peer.id.toInt();
+      if (peerNode == 0 || peerNode == reporter) continue;
+      final link = EdgezTopologyLink(
+        reporterNodeNum: reporter,
+        peerNodeNum: peerNode,
+        encodedRssi: peer.rssi > 0 ? peer.rssi : 1000,
+        lastSeenMs: now,
+      );
+      latestByPair[link.undirectedKey] = link;
+    }
+    final links = latestByPair.values.toList()
+      ..sort((left, right) => right.lastSeenMs.compareTo(left.lastSeenMs));
+    _setState(
+      _state.copyWith(
+        topologyLinks: links,
+        statusLine: 'Topology report received',
+      ),
+    );
+  }
+
+  Future<void> _handleLegacyBeaconPacket(proto.NetworkPacket packet) async {
+    final beacon = await sdk.decodeBeaconPayload(
+      packet.payload,
+      passphrase: _lastMeshConfig?.passphrase ?? '',
+    );
+    if (beacon != null) _handleBeacon(packet, beacon);
+  }
+
+  void _handleBeacon(proto.NetworkPacket packet, proto.Beacon beacon) {
     final nodeNum = packet.from.toInt();
     if (nodeNum == 0) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final previous = _state.nodes[nodeNum];
+    final decodedUser = _decodeBeaconUserName(
+      beacon.userName,
+      _markerId(beacon.marker),
+    );
+    if (beacon.userIdHigh.toInt() == 0 &&
+        beacon.userIdLow.toInt() == 0 &&
+        decodedUser.name.trim().isEmpty &&
+        beacon.userPublicKey.isEmpty) {
+      return;
+    }
+    final userUuid =
+        _formatUuid(beacon.userIdHigh.toInt(), beacon.userIdLow.toInt());
+    final localIdentity = _lastMeshConfig?.identity;
+    final localNode = _state.status?.macAddress;
+    final isLocalIdentity = localIdentity != null &&
+        ((localIdentity.userUuid.isNotEmpty &&
+                localIdentity.userUuid == userUuid) ||
+            ((localIdentity.userIdHigh != 0 || localIdentity.userIdLow != 0) &&
+                localIdentity.userIdHigh == beacon.userIdHigh.toInt() &&
+                localIdentity.userIdLow == beacon.userIdLow.toInt()));
+    if ((localNode != null && localNode != 0 && localNode == nodeNum) ||
+        isLocalIdentity) {
+      return;
+    }
+
+    MapEntry<int, EdgezMeshNode>? previousEntry;
+    for (final entry in _state.nodes.entries) {
+      if (entry.key == nodeNum ||
+          (userUuid.isNotEmpty && entry.value.userUuid == userUuid)) {
+        previousEntry = entry;
+        break;
+      }
+    }
+    final previous = previousEntry?.value;
+    final nextDeviceType = _deviceTypeLabel(beacon.deviceType);
+    final hasGeoFence = beacon.hasGeoFence();
     final node = EdgezMeshNode(
       nodeNum: nodeNum,
-      userUuid:
-          _formatUuid(beacon.userIdHigh.toInt(), beacon.userIdLow.toInt()),
-      displayName: _decodeBeaconUserName(beacon.userName),
+      userUuid: userUuid,
+      displayName: decodedUser.name,
       route: _state.connection.name.toUpperCase(),
       lastSeenMs: now,
-      marker: _markerId(beacon.marker),
+      marker: decodedUser.marker,
       publicKey: beacon.userPublicKey,
       latitude:
-          beacon.hasAttitude() && beacon.attitude != 0 ? beacon.attitude : null,
+          beacon.hasLatitude() && beacon.latitude != 0 ? beacon.latitude : null,
       longitude: beacon.hasLongitude() && beacon.longitude != 0
           ? beacon.longitude
           : null,
-      deviceType: _deviceTypeLabel(beacon.deviceType),
-      geoFenceName: beacon.hasGeoFence() ? beacon.geoFence.name : '',
-      geoIndex: beacon.hasGeoFence() ? beacon.geoFence.geoIndex : 0,
+      deviceType: nextDeviceType == 'Unspecified'
+          ? previous?.deviceType ?? nextDeviceType
+          : nextDeviceType,
+      geoFenceName:
+          hasGeoFence ? beacon.geoFence.name : previous?.geoFenceName ?? '',
+      geoIndex:
+          hasGeoFence ? beacon.geoFence.geoIndex : previous?.geoIndex ?? 0,
       sleeping: beacon.sleeping,
     ).mergeDiscovery(previous);
 
-    final nodes = Map<int, EdgezMeshNode>.of(_state.nodes)..[nodeNum] = node;
+    final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
+    if (previousEntry != null && previousEntry.key != nodeNum) {
+      nodes.remove(previousEntry.key);
+    }
+    nodes[nodeNum] = node;
     final sensorSamples =
         Map<int, List<EdgezSensorSample>>.of(_state.sensorSamples);
+    if (previousEntry != null && previousEntry.key != nodeNum) {
+      final previousSamples = sensorSamples.remove(previousEntry.key);
+      if (previousSamples != null && sensorSamples[nodeNum] == null) {
+        sensorSamples[nodeNum] = previousSamples;
+      }
+    }
     final sensorData = _sensorData(beacon);
     if (sensorData != null) {
       sensorSamples[nodeNum] = <EdgezSensorSample>[
@@ -549,14 +924,19 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> _handleConversationPacket(proto.NetworkPacket packet) async {
     if (packet.operation == proto.Operation.ACKNOWLEDGE) {
+      if (!packet.hasMsg()) return;
       _markMessageDelivered(
-        _formatUuid(packet.messageIdHigh.toInt(), packet.messageIdLow.toInt()),
+        _formatUuid(
+          packet.msg.messageIdHigh.toInt(),
+          packet.msg.messageIdLow.toInt(),
+        ),
       );
       return;
     }
-    if (!packet.hasPayload()) return;
-    if (packet.mime != proto.Mime.MIME_TEXT &&
-        packet.mime != proto.Mime.MIME_VOICE) {
+    if (!packet.hasMsg()) return;
+    final message = packet.msg;
+    if (message.mime != proto.Mime.MIME_TEXT &&
+        message.mime != proto.Mime.MIME_VOICE) {
       return;
     }
     final config = _lastMeshConfig;
@@ -566,22 +946,22 @@ class EdgezMeshSession extends ChangeNotifier {
 
     final sender = _state.nodes[fromNode];
     final now = DateTime.now().millisecondsSinceEpoch;
-    final messageUuid =
-        _formatUuid(packet.messageIdHigh.toInt(), packet.messageIdLow.toInt());
+    final messageUuid = _formatUuid(
+        message.messageIdHigh.toInt(), message.messageIdLow.toInt());
     String? text;
     String status = '';
     _CompletedVoiceMessage? completedVoice;
     if (sender == null) {
       text = 'Unable to decrypt message';
       status = 'Sender public key is missing';
-    } else if (packet.mime == proto.Mime.MIME_TEXT) {
+    } else if (message.mime == proto.Mime.MIME_TEXT) {
       try {
         text = await sdk.decryptTextMessage(
           config: config,
           sender: sender,
           fromNode: fromNode,
           toNode: toNode,
-          payload: packet.payload,
+          payload: message.payload,
         );
       } catch (error) {
         status = error.toString();
@@ -595,7 +975,7 @@ class EdgezMeshSession extends ChangeNotifier {
           sender: sender,
           fromNode: fromNode,
           toNode: toNode,
-          payload: packet.payload,
+          payload: message.payload,
         );
       } catch (error) {
         status = error.toString();
@@ -614,7 +994,7 @@ class EdgezMeshSession extends ChangeNotifier {
       fromNode,
       () => EdgezMeshNode(
         nodeNum: fromNode,
-        userUuid: _formatUuid(packet.userHigh.toInt(), packet.userLow.toInt()),
+        userUuid: '',
         displayName: 'Node ${fromNode.toRadixString(16)}',
         route: _state.connection.name.toUpperCase(),
         lastSeenMs: now,
@@ -625,7 +1005,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _appendMessage(
       EdgezConversationMessage(
         nodeNum: fromNode,
-        text: text ?? 'Voice message',
+        text: text,
         mine: false,
         timestampMs: now,
         messageUuid: messageUuid,
@@ -640,15 +1020,15 @@ class EdgezMeshSession extends ChangeNotifier {
 
     final localNode = _state.status?.macAddress ?? 0;
     if (localNode != 0 &&
-        (packet.messageIdHigh.toInt() != 0 ||
-            packet.messageIdLow.toInt() != 0)) {
+        (message.messageIdHigh.toInt() != 0 ||
+            message.messageIdLow.toInt() != 0)) {
       unawaited(
         sdk.sendConversationAck(
           config: config,
           fromNode: localNode,
           toNode: fromNode,
-          messageIdHigh: packet.messageIdHigh.toInt(),
-          messageIdLow: packet.messageIdLow.toInt(),
+          messageIdHigh: message.messageIdHigh.toInt(),
+          messageIdLow: message.messageIdLow.toInt(),
           maxHop: config.maxHop,
         ),
       );
@@ -751,49 +1131,10 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'User mesh settings sent'));
       await sdk.requestDeviceSettings(identity: config.identity);
       _setState(_state.copyWith(statusLine: 'Device settings requested'));
-      _startBeaconLoop();
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
     } finally {
       _initInFlight = false;
-    }
-  }
-
-  void _startBeaconLoop() {
-    _stopBeaconLoop();
-    final config = _lastMeshConfig;
-    if (config == null || !_bleReady) return;
-    unawaited(_sendBeaconIfReady());
-    _beaconTimer = Timer.periodic(
-      Duration(seconds: config.beacon.normalizedIntervalSeconds),
-      (_) => unawaited(_sendBeaconIfReady()),
-    );
-  }
-
-  void _stopBeaconLoop() {
-    _beaconTimer?.cancel();
-    _beaconTimer = null;
-    _beaconSendInFlight = false;
-  }
-
-  Future<void> _sendBeaconIfReady() async {
-    final config = _lastMeshConfig;
-    if (config == null || !_bleReady || _beaconSendInFlight) return;
-    if (_state.connection != EdgezConnectionType.ble) return;
-    final status = _state.status;
-    if (status != null &&
-        (!status.supported || !status.stackInitialized || !status.meshMode)) {
-      return;
-    }
-
-    _beaconSendInFlight = true;
-    try {
-      await sdk.sendBeacon(config);
-      _setState(_state.copyWith(statusLine: 'Beacon sent'));
-    } catch (error) {
-      _setState(_state.copyWith(statusLine: 'Beacon send failed: $error'));
-    } finally {
-      _beaconSendInFlight = false;
     }
   }
 
@@ -811,46 +1152,153 @@ class EdgezMeshSession extends ChangeNotifier {
     ].join('|');
   }
 
+  List<int> _encodeVoiceCallPacket({
+    required int type,
+    required int callId,
+    required int sequence,
+    required List<int> audio,
+  }) {
+    final bytes = Uint8List(_callMagic.length + 1 + 8 + 4 + audio.length);
+    bytes.setRange(0, _callMagic.length, _callMagic);
+    final data = ByteData.sublistView(bytes);
+    data.setUint8(4, type);
+    data.setInt64(5, callId, Endian.little);
+    data.setInt32(13, sequence, Endian.little);
+    bytes.setRange(17, bytes.length, audio);
+    return bytes;
+  }
+
+  _DecodedVoiceCallPacket? _decodeVoiceCallPacket(List<int> payload) {
+    if (payload.length < 17) return null;
+    for (var index = 0; index < _callMagic.length; index++) {
+      if (payload[index] != _callMagic[index]) return null;
+    }
+    final bytes = Uint8List.fromList(payload);
+    final data = ByteData.sublistView(bytes);
+    return _DecodedVoiceCallPacket(
+      type: data.getUint8(4),
+      callId: data.getInt64(5, Endian.little),
+      sequence: data.getInt32(13, Endian.little),
+      audio: bytes.sublist(17),
+    );
+  }
+
+  Future<void> _handleVoiceCallFrame(List<int> payload) async {
+    final config = _lastMeshConfig;
+    final localNode = _state.status?.macAddress ?? 0;
+    if (config == null || localNode == 0 || payload.length < 6) return;
+    var fromNode = 0;
+    for (var index = 0; index < 6; index++) {
+      fromNode = (fromNode << 8) | payload[index];
+    }
+    final sender = _state.nodes[fromNode];
+    if (sender == null) return;
+    try {
+      final envelope = await sdk.decryptVoiceCallFrame(
+        config: config,
+        sender: sender,
+        localNode: localNode,
+        payload: payload,
+      );
+      final packet = _decodeVoiceCallPacket(envelope.plaintext);
+      if (packet == null || packet.sequence != envelope.sequence) return;
+      final call = _state.voiceCall;
+      switch (packet.type) {
+        case _callInvite:
+          if (call.isIdle) {
+            _voiceCallSequence = 1;
+            _setState(
+              _state.copyWith(
+                voiceCall: EdgezVoiceCallState(
+                  peerNodeNum: fromNode,
+                  callId: packet.callId,
+                  phase: EdgezVoiceCallPhase.incoming,
+                ),
+                statusLine: 'Incoming call from ${sender.resolvedDisplayName}',
+              ),
+            );
+          }
+        case _callAccept:
+          if (call.phase == EdgezVoiceCallPhase.outgoing &&
+              call.callId == packet.callId &&
+              call.peerNodeNum == fromNode) {
+            _setState(
+              _state.copyWith(
+                voiceCall: EdgezVoiceCallState(
+                  peerNodeNum: fromNode,
+                  callId: packet.callId,
+                  phase: EdgezVoiceCallPhase.active,
+                ),
+                statusLine: 'Voice call active',
+              ),
+            );
+            try {
+              await sdk.startLiveVoiceAudio();
+            } catch (_) {
+              await _resetVoiceCall();
+              rethrow;
+            }
+          }
+        case _callEnd:
+          if (call.callId == packet.callId) await _resetVoiceCall();
+        case _callAudio:
+          if (call.isActive &&
+              call.callId == packet.callId &&
+              call.peerNodeNum == fromNode &&
+              packet.audio.isNotEmpty) {
+            await sdk.playLiveVoiceAudio(packet.audio);
+          }
+      }
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Voice call frame failed: $error'));
+    }
+  }
+
   proto.NetworkPacket? _parseNetworkPacket(List<int> bytes) {
     try {
-      return proto.NetworkPacket.fromBuffer(bytes);
+      var payload = bytes;
+      if (bytes.length >= 4 && bytes[0] == 0x45 && bytes[1] == 0x5a) {
+        final payloadLength = bytes[2] | (bytes[3] << 8);
+        if (payloadLength <= 512 && bytes.length >= payloadLength + 4) {
+          payload = bytes.sublist(4, payloadLength + 4);
+        }
+      }
+      return proto.NetworkPacket.fromBuffer(payload);
     } catch (_) {
       return null;
     }
   }
 
-  proto.Beacon? _parseBeacon(String value) {
-    if (value.isEmpty) return null;
-    try {
-      return proto.Beacon.fromBuffer(base64Decode(value));
-    } catch (_) {
-      try {
-        return proto.Beacon.fromBuffer(utf8.encode(value));
-      } catch (_) {
-        return null;
-      }
-    }
-  }
-
   EdgezSensorData? _sensorData(proto.Beacon beacon) {
-    if (!beacon.hasSensorData()) return null;
+    if (beacon.sensorData.isEmpty) return null;
+    double? floatValue(proto.SensorType type) {
+      for (final value in beacon.sensorData) {
+        if (value.type == type && value.hasFloatValue()) {
+          return value.floatValue;
+        }
+      }
+      return null;
+    }
+
+    int? intValue(proto.SensorType type) {
+      for (final value in beacon.sensorData) {
+        if (value.type == type && value.hasIntValue()) return value.intValue;
+      }
+      return null;
+    }
+
     final data = EdgezSensorData(
-      latitude:
-          beacon.sensorData.latitude == 0 ? null : beacon.sensorData.latitude,
-      longitude:
-          beacon.sensorData.longitude == 0 ? null : beacon.sensorData.longitude,
-      altitude:
-          beacon.sensorData.altitude == 0 ? null : beacon.sensorData.altitude,
-      temperature: beacon.sensorData.temperature == 0
-          ? null
-          : beacon.sensorData.temperature,
-      humidity:
-          beacon.sensorData.humidity == 0 ? null : beacon.sensorData.humidity,
-      pressure:
-          beacon.sensorData.pressure == 0 ? null : beacon.sensorData.pressure,
-      vibrationAverage: beacon.sensorData.vibrationAverage == 0
-          ? null
-          : beacon.sensorData.vibrationAverage,
+      latitude: floatValue(proto.SensorType.SENSOR_LATITUDE),
+      longitude: floatValue(proto.SensorType.SENSOR_LONGITUDE),
+      temperature: floatValue(proto.SensorType.SENSOR_TEMPERATURE),
+      humidity: floatValue(proto.SensorType.SENSOR_HUMIDITY),
+      accelX: floatValue(proto.SensorType.SENSOR_ACCEL_X),
+      accelY: floatValue(proto.SensorType.SENSOR_ACCEL_Y),
+      accelZ: floatValue(proto.SensorType.SENSOR_ACCEL_Z),
+      gyroX: floatValue(proto.SensorType.SENSOR_GYRO_X),
+      gyroY: floatValue(proto.SensorType.SENSOR_GYRO_Y),
+      gyroZ: floatValue(proto.SensorType.SENSOR_GYRO_Z),
+      binaryLengthBytes: intValue(proto.SensorType.SENSOR_LENGTH),
     );
     return data.hasAnyValue ? data : null;
   }
@@ -869,26 +1317,44 @@ class EdgezMeshSession extends ChangeNotifier {
     return unsigned.toRadixString(16).padLeft(16, '0');
   }
 
-  String _decodeBeaconUserName(String userName) {
+  _DecodedBeaconUserName _decodeBeaconUserName(
+    String userName,
+    String protoMarker,
+  ) {
     const separator = '|m=';
     final separatorIndex = userName.lastIndexOf(separator);
-    if (separatorIndex < 0) return userName;
-    return userName.substring(0, separatorIndex);
+    if (separatorIndex < 0) {
+      return _DecodedBeaconUserName(userName, protoMarker);
+    }
+    final suffixMarker = userName.substring(separatorIndex + separator.length);
+    if (!_knownMarkerIds.contains(suffixMarker) || suffixMarker == 'default') {
+      return _DecodedBeaconUserName(userName, protoMarker);
+    }
+    return _DecodedBeaconUserName(
+      userName.substring(0, separatorIndex),
+      protoMarker == 'default' ? suffixMarker : protoMarker,
+    );
   }
 
   String _markerId(proto.MarkerColor marker) {
     return switch (marker) {
       proto.MarkerColor.MARKER_RED => 'red',
+      proto.MarkerColor.MARKER_BLUE => 'blue',
+      proto.MarkerColor.MARKER_PURPLE => 'purple',
+      proto.MarkerColor.MARKER_YELLOW => 'yellow',
+      proto.MarkerColor.MARKER_PINK => 'pink',
+      proto.MarkerColor.MARKER_BROWN => 'brown',
       proto.MarkerColor.MARKER_GREEN => 'green',
       proto.MarkerColor.MARKER_ORANGE => 'orange',
-      proto.MarkerColor.MARKER_PURPLE ||
-      proto.MarkerColor.MARKER_DEEP_PURPLE =>
-        'purple',
-      proto.MarkerColor.MARKER_GRAY ||
-      proto.MarkerColor.MARKER_BLUE_GRAY =>
-        'gray',
+      proto.MarkerColor.MARKER_DEEP_PURPLE => 'deep_purple',
+      proto.MarkerColor.MARKER_LIGHT_BLUE => 'light_blue',
+      proto.MarkerColor.MARKER_CYAN => 'cyan',
       proto.MarkerColor.MARKER_TEAL => 'teal',
-      _ => 'blue',
+      proto.MarkerColor.MARKER_LIME => 'lime',
+      proto.MarkerColor.MARKER_DEEP_ORANGE => 'deep_orange',
+      proto.MarkerColor.MARKER_GRAY => 'gray',
+      proto.MarkerColor.MARKER_BLUE_GRAY => 'blue_gray',
+      _ => 'default',
     };
   }
 
@@ -898,6 +1364,7 @@ class EdgezMeshSession extends ChangeNotifier {
       proto.DeviceType.DEVICE_TYPE_GATEWAY => 'Gateway',
       proto.DeviceType.DEVICE_TYPE_BEACON => 'Beacon',
       proto.DeviceType.DEVICE_TYPE_SENSOR => 'Sensor',
+      proto.DeviceType.DEVICE_TYPE_RELAY => 'Relay',
       proto.DeviceType.DEVICE_TYPE_UNKNOWN => 'Unknown',
       _ => 'Unspecified',
     };
@@ -930,11 +1397,17 @@ class EdgezMeshSession extends ChangeNotifier {
 
   @override
   void dispose() {
-    _stopBeaconLoop();
     _pendingVoiceMessages.clear();
     _subscription.cancel();
     super.dispose();
   }
+}
+
+class _DecodedBeaconUserName {
+  const _DecodedBeaconUserName(this.name, this.marker);
+
+  final String name;
+  final String marker;
 }
 
 class _PendingVoiceMessage {
@@ -965,6 +1438,20 @@ class _PendingVoiceMessage {
       durationMs: durationMs,
     );
   }
+}
+
+class _DecodedVoiceCallPacket {
+  const _DecodedVoiceCallPacket({
+    required this.type,
+    required this.callId,
+    required this.sequence,
+    required this.audio,
+  });
+
+  final int type;
+  final int callId;
+  final int sequence;
+  final List<int> audio;
 }
 
 class _CompletedVoiceMessage {
