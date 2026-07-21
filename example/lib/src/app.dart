@@ -364,10 +364,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       otaCheckInProgress = true;
       otaMessage = 'Checking for firmware updates...';
     });
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final request = await client.getUrl(Uri.parse(_otaManifestUrl));
-      final response = await request.close().timeout(const Duration(seconds: 15));
+      final response =
+          await request.close().timeout(const Duration(seconds: 15));
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw StateError('Firmware check failed: HTTP ${response.statusCode}');
       }
@@ -404,12 +406,15 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       return;
     }
     setState(() => otaMessage = 'Downloading ${release.version}...');
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15);
     try {
       final request = await client.getUrl(Uri.parse(release.url));
-      final response = await request.close().timeout(const Duration(seconds: 30));
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError('Firmware download failed: HTTP ${response.statusCode}');
+        throw StateError(
+            'Firmware download failed: HTTP ${response.statusCode}');
       }
       final image = await response.fold<List<int>>(
         <int>[],
@@ -422,7 +427,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       }
       await session.performOta(image);
       if (mounted) {
-        setState(() => otaMessage = 'Firmware uploaded. The device is restarting.');
+        setState(
+            () => otaMessage = 'Firmware uploaded. The device is restarting.');
       }
     } catch (error) {
       if (mounted) setState(() => otaMessage = '$error');
