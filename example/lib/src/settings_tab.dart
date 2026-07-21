@@ -290,38 +290,30 @@ class SettingsScreen extends StatefulWidget {
                             'Firmware: ${meshStatus!.firmwareVersion}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
-                        if (activeConnection == EdgezConnectionType.ble &&
-                            meshStatus != null)
-                          Row(
-                            children: <Widget>[
-                              Icon(
-                                meshStatus!.licensed
-                                    ? Icons.verified
-                                    : Icons.gpp_bad_outlined,
-                                size: 16,
-                                color: meshStatus!.licensed
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context).colorScheme.error,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                switch (meshStatus!.licenseStatus) {
-                                  EdgezLicenseStatus.authorized => 'Licensed',
-                                  EdgezLicenseStatus.deviceNotLicensed =>
-                                    'Device not licensed',
-                                  EdgezLicenseStatus.sdkReleaseRequired =>
-                                    'SDK release required',
-                                  EdgezLicenseStatus.sdkVersionIncompatible =>
-                                    'SDK version incompatible',
-                                  EdgezLicenseStatus.sdkReleaseInvalid =>
-                                    'SDK release invalid',
-                                  EdgezLicenseStatus.unspecified =>
-                                    'License status unknown',
-                                },
+                        Row(
+                          children: <Widget>[
+                            Icon(
+                              meshStatus?.licensed == true
+                                  ? Icons.verified
+                                  : meshStatus == null
+                                      ? Icons.help_outline
+                                      : Icons.gpp_bad_outlined,
+                              size: 16,
+                              color: meshStatus?.licensed == true
+                                  ? Theme.of(context).colorScheme.primary
+                                  : meshStatus == null
+                                      ? Theme.of(context).colorScheme.outline
+                                      : Theme.of(context).colorScheme.error,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'License: ${meshStatus?.licenseStatus.label ?? 'Waiting for device status'}',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

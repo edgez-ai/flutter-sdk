@@ -319,6 +319,17 @@ enum EdgezLicenseStatus {
   sdkVersionIncompatible,
   sdkReleaseInvalid;
 
+  bool get isAuthorized => this == EdgezLicenseStatus.authorized;
+
+  String get label => switch (this) {
+        EdgezLicenseStatus.unspecified => 'License status unknown',
+        EdgezLicenseStatus.authorized => 'Licensed',
+        EdgezLicenseStatus.deviceNotLicensed => 'Device not licensed',
+        EdgezLicenseStatus.sdkReleaseRequired => 'SDK release required',
+        EdgezLicenseStatus.sdkVersionIncompatible => 'SDK version incompatible',
+        EdgezLicenseStatus.sdkReleaseInvalid => 'SDK release invalid',
+      };
+
   static EdgezLicenseStatus fromWire(Object? value) {
     if (value is int && value >= 0 && value < values.length) {
       return values[value];
@@ -362,7 +373,7 @@ class EdgezMeshStatus {
   final EdgezLicenseStatus licenseStatus;
   final String firmwareVersion;
 
-  bool get licensed => licenseStatus == EdgezLicenseStatus.authorized;
+  bool get licensed => licenseStatus.isAuthorized;
 
   bool get isUsable => supported && stackInitialized && linkUp && routeReady;
 

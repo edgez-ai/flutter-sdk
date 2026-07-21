@@ -87,6 +87,8 @@ class DebugScreen extends StatelessWidget {
                         label: 'Ready for report',
                         value: status.readyForReport.toString()),
                     DebugValue(
+                        label: 'License', value: status.licenseStatus.label),
+                    DebugValue(
                         label: 'Mesh ID',
                         value: status.meshId.isEmpty ? 'none' : status.meshId),
                     DebugValue(

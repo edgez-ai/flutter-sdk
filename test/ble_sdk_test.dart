@@ -121,6 +121,7 @@ void main() {
           session.state.status?.licensed,
           entry.value == EdgezLicenseStatus.authorized,
         );
+        expect(session.state.status?.licenseStatus.label, isNotEmpty);
       }
 
       session.dispose();
