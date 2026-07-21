@@ -55,7 +55,12 @@ private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_RX_UUID: UUID = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_TX_UUID: UUID = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_FORWARD_RX_UUID: UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_FORWARD_TX_UUID: UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_OTA_UUID: UUID = UUID.fromString("0000fff5-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_OTA_STATUS_UUID: UUID = UUID.fromString("0000fff6-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_VOICE_RX_UUID: UUID = UUID.fromString("0000fff7-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_VOICE_TX_UUID: UUID = UUID.fromString("0000fff8-0000-1000-8000-00805f9b34fb")
 private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
 class EdgezFlutterSdkPlugin :
@@ -75,7 +80,13 @@ class EdgezFlutterSdkPlugin :
     private var pendingBondDevice: BluetoothDevice? = null
     private var bondReceiverRegistered = false
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
+    private var txCharacteristic: BluetoothGattCharacteristic? = null
+    private var forwardRxCharacteristic: BluetoothGattCharacteristic? = null
     private var forwardTxCharacteristic: BluetoothGattCharacteristic? = null
+    private var otaCharacteristic: BluetoothGattCharacteristic? = null
+    private var otaStatusCharacteristic: BluetoothGattCharacteristic? = null
+    private var voiceRxCharacteristic: BluetoothGattCharacteristic? = null
+    private var voiceTxCharacteristic: BluetoothGattCharacteristic? = null
     private val notificationDescriptors = ArrayDeque<BluetoothGattDescriptor>()
     private var notificationDescriptorWriteInFlight = false
     private var serviceReadyPending = false
@@ -630,7 +641,13 @@ class EdgezFlutterSdkPlugin :
     private fun closeGatt() {
         pendingBondDevice = null
         rxCharacteristic = null
+        txCharacteristic = null
+        forwardRxCharacteristic = null
         forwardTxCharacteristic = null
+        otaCharacteristic = null
+        otaStatusCharacteristic = null
+        voiceRxCharacteristic = null
+        voiceTxCharacteristic = null
         notificationDescriptors.clear()
         notificationDescriptorWriteInFlight = false
         serviceReadyPending = false
@@ -708,11 +725,21 @@ class EdgezFlutterSdkPlugin :
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             emit(mapOf("type" to "log", "log" to "BLE connection status=$status state=$newState"))
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                val highPriorityRequested = gatt.requestConnectionPriority(
+                    BluetoothGatt.CONNECTION_PRIORITY_HIGH,
+                )
+                emit(mapOf("type" to "log", "log" to "BLE high priority requested=$highPriorityRequested"))
                 emit(mapOf("type" to "connection", "connection" to "ble"))
                 gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
+                txCharacteristic = null
+                forwardRxCharacteristic = null
                 forwardTxCharacteristic = null
+                otaCharacteristic = null
+                otaStatusCharacteristic = null
+                voiceRxCharacteristic = null
+                voiceTxCharacteristic = null
                 notificationDescriptors.clear()
                 notificationDescriptorWriteInFlight = false
                 serviceReadyPending = false
@@ -741,7 +768,22 @@ class EdgezFlutterSdkPlugin :
             }
 
             rxCharacteristic = rx
+            txCharacteristic = tx
+            forwardRxCharacteristic = service.getCharacteristic(EDGEZ_FORWARD_RX_UUID)
             forwardTxCharacteristic = service.getCharacteristic(EDGEZ_FORWARD_TX_UUID)
+            otaCharacteristic = service.getCharacteristic(EDGEZ_OTA_UUID)
+            otaStatusCharacteristic = service.getCharacteristic(EDGEZ_OTA_STATUS_UUID)
+            voiceRxCharacteristic = service.getCharacteristic(EDGEZ_VOICE_RX_UUID)
+            voiceTxCharacteristic = service.getCharacteristic(EDGEZ_VOICE_TX_UUID)
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "BLE characteristics control=true " +
+                        "forwardRx=${forwardRxCharacteristic != null} forwardTx=${forwardTxCharacteristic != null} " +
+                        "ota=${otaCharacteristic != null} otaStatus=${otaStatusCharacteristic != null} " +
+                        "voiceRx=${voiceRxCharacteristic != null} voiceTx=${voiceTxCharacteristic != null}",
+                ),
+            )
             notificationDescriptors.clear()
             notificationDescriptorWriteInFlight = false
             queueNotification(gatt, tx)
@@ -749,6 +791,8 @@ class EdgezFlutterSdkPlugin :
                 queueNotification(gatt, it)
                 emit(mapOf("type" to "log", "log" to "BLE forwarded-mesh channel available"))
             }
+            otaStatusCharacteristic?.let { queueNotification(gatt, it) }
+            voiceTxCharacteristic?.let { queueNotification(gatt, it) }
             serviceReadyPending = true
             writeNextNotificationDescriptor(gatt)
             maybeMarkControlServiceReady(gatt)
@@ -827,10 +871,18 @@ class EdgezFlutterSdkPlugin :
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray,
         ) {
-            if (characteristic.uuid == forwardTxCharacteristic?.uuid) {
-                handleForwardBytes(value)
-            } else {
-                handleBytes(value)
+            when (characteristic.uuid) {
+                txCharacteristic?.uuid -> handleBytes(value)
+                forwardTxCharacteristic?.uuid -> handleForwardBytes(value)
+                otaStatusCharacteristic?.uuid -> emit(
+                    mapOf("type" to "log", "log" to "BLE OTA status=${value.toHexString()}"),
+                )
+                voiceTxCharacteristic?.uuid -> emit(
+                    mapOf("type" to "voiceFrame", "packet" to value),
+                )
+                else -> emit(
+                    mapOf("type" to "log", "log" to "BLE notification from unknown characteristic ${characteristic.uuid}"),
+                )
             }
         }
 
@@ -840,10 +892,18 @@ class EdgezFlutterSdkPlugin :
             characteristic: BluetoothGattCharacteristic,
         ) {
             val value = characteristic.value ?: return
-            if (characteristic.uuid == forwardTxCharacteristic?.uuid) {
-                handleForwardBytes(value)
-            } else {
-                handleBytes(value)
+            when (characteristic.uuid) {
+                txCharacteristic?.uuid -> handleBytes(value)
+                forwardTxCharacteristic?.uuid -> handleForwardBytes(value)
+                otaStatusCharacteristic?.uuid -> emit(
+                    mapOf("type" to "log", "log" to "BLE OTA status=${value.toHexString()}"),
+                )
+                voiceTxCharacteristic?.uuid -> emit(
+                    mapOf("type" to "voiceFrame", "packet" to value),
+                )
+                else -> emit(
+                    mapOf("type" to "log", "log" to "BLE notification from unknown characteristic ${characteristic.uuid}"),
+                )
             }
         }
     }
@@ -927,6 +987,8 @@ class EdgezFlutterSdkPlugin :
         }
         return -1
     }
+
+    private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
 
     private fun emit(event: Map<String, Any?>) {
         mainHandler.post {

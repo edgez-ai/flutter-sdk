@@ -18,6 +18,7 @@ enum EdgezMeshEventType {
   status,
   node,
   message,
+  voiceFrame,
   log;
 
   static EdgezMeshEventType fromWire(String? value) {

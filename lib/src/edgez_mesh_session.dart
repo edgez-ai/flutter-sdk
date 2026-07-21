@@ -501,6 +501,8 @@ class EdgezMeshSession extends ChangeNotifier {
           nodes: nodes,
           statusLine: 'Conversation message received',
         );
+      case EdgezMeshEventType.voiceFrame:
+        _setState(_state.copyWith(statusLine: 'BLE voice frame received'));
       case EdgezMeshEventType.log:
         _setState(_state.copyWith(statusLine: event.log));
     }
