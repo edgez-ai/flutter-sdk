@@ -578,6 +578,21 @@ const HaLowInitConfig$json = {
       '5': 13,
       '10': 'meshFrequencyKhz'
     },
+    {
+      '1': 'sdk_compatibility',
+      '3': 15,
+      '4': 1,
+      '5': 9,
+      '10': 'sdkCompatibility'
+    },
+    {'1': 'sdk_release_id', '3': 16, '4': 1, '5': 9, '10': 'sdkReleaseId'},
+    {
+      '1': 'sdk_release_signature',
+      '3': 17,
+      '4': 1,
+      '5': 12,
+      '10': 'sdkReleaseSignature'
+    },
   ],
 };
 
@@ -591,7 +606,10 @@ final $typed_data.Uint8List haLowInitConfigDescriptor = $convert.base64Decode(
     'VyGAkgASgJUgZtYXJrZXISIQoMaGFzX2xvY2F0aW9uGAogASgIUgtoYXNMb2NhdGlvbhIaCghs'
     'YXRpdHVkZRgLIAEoAlIIbGF0aXR1ZGUSHAoJbG9uZ2l0dWRlGAwgASgCUglsb25naXR1ZGUSLA'
     'oSbWVzaF9iYW5kd2lkdGhfbWh6GA0gASgNUhBtZXNoQmFuZHdpZHRoTWh6EiwKEm1lc2hfZnJl'
-    'cXVlbmN5X2toehgOIAEoDVIQbWVzaEZyZXF1ZW5jeUtoeg==');
+    'cXVlbmN5X2toehgOIAEoDVIQbWVzaEZyZXF1ZW5jeUtoehIrChFzZGtfY29tcGF0aWJpbGl0eR'
+    'gPIAEoCVIQc2RrQ29tcGF0aWJpbGl0eRIkCg5zZGtfcmVsZWFzZV9pZBgQIAEoCVIMc2RrUmVs'
+    'ZWFzZUlkEjIKFXNka19yZWxlYXNlX3NpZ25hdHVyZRgRIAEoDFITc2RrUmVsZWFzZVNpZ25hdH'
+    'VyZQ==');
 
 @$core.Deprecated('Use deviceSettingsDescriptor instead')
 const DeviceSettings$json = {

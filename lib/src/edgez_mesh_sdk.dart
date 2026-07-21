@@ -8,6 +8,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:flutter/services.dart';
 
 import 'models.dart';
+import 'edgez_sdk_release.dart';
 import 'proto/edgez_mesh.pb.dart' as proto;
 
 abstract interface class EdgezPlatformTransport {
@@ -42,13 +43,17 @@ class EdgezMeshSdk {
     MethodChannel? methodChannel,
     EventChannel? eventChannel,
     EdgezPlatformTransport? transport,
-  }) : _transport = transport ??
+    EdgezSdkReleaseCredential releaseCredential =
+        EdgezSdkReleaseCredential.current,
+  })  : _releaseCredential = releaseCredential,
+        _transport = transport ??
             EdgezChannelTransport(
               methodChannel: methodChannel,
               eventChannel: eventChannel,
             );
 
   final EdgezPlatformTransport _transport;
+  final EdgezSdkReleaseCredential _releaseCredential;
   static const _voiceChunkAudioBytes = 290;
   final Map<String, Future<SecretKey>> _conversationKeyCache =
       <String, Future<SecretKey>>{};
@@ -206,6 +211,7 @@ class EdgezMeshSdk {
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) {
+    final releaseSignature = _releaseCredential.signature;
     final packet = proto.NetworkPacket(
       operation: proto.Operation.REQUEST,
       interface: proto.Interface.HALOW,
@@ -226,6 +232,9 @@ class EdgezMeshSdk {
         longitude: config.beacon.shareLocation ? config.beacon.longitude : null,
         meshBandwidthMhz: config.meshBandwidthMhz.clamp(0, 8),
         meshFrequencyKhz: max(0, config.meshFrequencyKhz),
+        sdkCompatibility: _releaseCredential.compatibility,
+        sdkReleaseId: _releaseCredential.releaseId,
+        sdkReleaseSignature: releaseSignature,
       ),
     );
     return _transport.invokeMethod<void>('initializeMesh', {

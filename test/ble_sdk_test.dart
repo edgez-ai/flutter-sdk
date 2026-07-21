@@ -38,7 +38,10 @@ void main() {
 
     setUp(() {
       ble = MockBleTransport();
-      sdk = EdgezMeshSdk(transport: ble);
+      sdk = EdgezMeshSdk(
+        transport: ble,
+        releaseCredential: _testReleaseCredential,
+      );
     });
 
     tearDown(() async {
@@ -477,6 +480,15 @@ void main() {
     });
   });
 }
+
+const _testReleaseCredential = EdgezSdkReleaseCredential(
+  compatibility: '^0.5.0',
+  releaseId: 'edgez_flutter_sdk@test',
+  signatureHex: '000102030405060708090a0b0c0d0e0f'
+      '101112131415161718191a1b1c1d1e1f'
+      '202122232425262728292a2b2c2d2e2f'
+      '303132333435363738393a3b3c3d3e3f',
+);
 
 Uint8List _voicePacket(int type, int callId, int sequence,
     [List<int> audio = const <int>[]]) {

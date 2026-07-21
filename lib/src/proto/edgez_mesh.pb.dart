@@ -1161,6 +1161,9 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
     $core.double? longitude,
     $core.int? meshBandwidthMhz,
     $core.int? meshFrequencyKhz,
+    $core.String? sdkCompatibility,
+    $core.String? sdkReleaseId,
+    $core.List<$core.int>? sdkReleaseSignature,
   }) {
     final result = create();
     if (countryCode != null) result.countryCode = countryCode;
@@ -1177,6 +1180,10 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
     if (longitude != null) result.longitude = longitude;
     if (meshBandwidthMhz != null) result.meshBandwidthMhz = meshBandwidthMhz;
     if (meshFrequencyKhz != null) result.meshFrequencyKhz = meshFrequencyKhz;
+    if (sdkCompatibility != null) result.sdkCompatibility = sdkCompatibility;
+    if (sdkReleaseId != null) result.sdkReleaseId = sdkReleaseId;
+    if (sdkReleaseSignature != null)
+      result.sdkReleaseSignature = sdkReleaseSignature;
     return result;
   }
 
@@ -1214,6 +1221,10 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
         fieldType: $pb.PbFieldType.OU3)
     ..aI(14, _omitFieldNames ? '' : 'meshFrequencyKhz',
         fieldType: $pb.PbFieldType.OU3)
+    ..aOS(15, _omitFieldNames ? '' : 'sdkCompatibility')
+    ..aOS(16, _omitFieldNames ? '' : 'sdkReleaseId')
+    ..a<$core.List<$core.int>>(
+        17, _omitFieldNames ? '' : 'sdkReleaseSignature', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1362,6 +1373,33 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
   $core.bool hasMeshFrequencyKhz() => $_has(13);
   @$pb.TagNumber(14)
   void clearMeshFrequencyKhz() => $_clearField(14);
+
+  @$pb.TagNumber(15)
+  $core.String get sdkCompatibility => $_getSZ(14);
+  @$pb.TagNumber(15)
+  set sdkCompatibility($core.String value) => $_setString(14, value);
+  @$pb.TagNumber(15)
+  $core.bool hasSdkCompatibility() => $_has(14);
+  @$pb.TagNumber(15)
+  void clearSdkCompatibility() => $_clearField(15);
+
+  @$pb.TagNumber(16)
+  $core.String get sdkReleaseId => $_getSZ(15);
+  @$pb.TagNumber(16)
+  set sdkReleaseId($core.String value) => $_setString(15, value);
+  @$pb.TagNumber(16)
+  $core.bool hasSdkReleaseId() => $_has(15);
+  @$pb.TagNumber(16)
+  void clearSdkReleaseId() => $_clearField(16);
+
+  @$pb.TagNumber(17)
+  $core.List<$core.int> get sdkReleaseSignature => $_getN(16);
+  @$pb.TagNumber(17)
+  set sdkReleaseSignature($core.List<$core.int> value) => $_setBytes(16, value);
+  @$pb.TagNumber(17)
+  $core.bool hasSdkReleaseSignature() => $_has(16);
+  @$pb.TagNumber(17)
+  void clearSdkReleaseSignature() => $_clearField(17);
 }
 
 class DeviceSettings extends $pb.GeneratedMessage {

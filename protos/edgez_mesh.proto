@@ -203,6 +203,9 @@ message HaLowInitConfig {
   float longitude = 12;
   uint32 mesh_bandwidth_mhz = 13;
   uint32 mesh_frequency_khz = 14;
+  string sdk_compatibility = 15;
+  string sdk_release_id = 16;
+  bytes sdk_release_signature = 17;
 }
 
 message DeviceSettings {

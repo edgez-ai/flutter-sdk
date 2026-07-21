@@ -26,7 +26,10 @@ void main() {
       calls.add(call);
       return null;
     });
-    sdk = EdgezMeshSdk(methodChannel: channel);
+    sdk = EdgezMeshSdk(
+      methodChannel: channel,
+      releaseCredential: _testReleaseCredential,
+    );
   });
 
   tearDown(() {
@@ -62,6 +65,28 @@ void main() {
     expect(packet.init.longitude, closeTo(18.06, 0.001));
     expect(packet.init.meshBandwidthMhz, 4);
     expect(packet.init.meshFrequencyKhz, 915000);
+    expect(packet.init.sdkCompatibility, '^0.5.0');
+    expect(packet.init.sdkReleaseId, 'edgez_flutter_sdk@test');
+    expect(packet.init.sdkReleaseSignature, hasLength(64));
+  });
+
+  test('unsigned source checkout fails closed before transport', () async {
+    final unsignedSdk = EdgezMeshSdk(methodChannel: channel);
+
+    expect(
+      () =>
+          unsignedSdk.initializeMesh(const EdgezMeshConfig(identity: identity)),
+      throwsStateError,
+    );
+    expect(calls, isEmpty);
+  });
+
+  test('release credential signs compatibility and release identity', () {
+    expect(
+      _testReleaseCredential.signingPayload,
+      'EDGEZ-FLUTTER-SDK-RELEASE-V1:'
+      '^0.5.0:edgez_flutter_sdk@test',
+    );
   });
 
   test('device settings carry the added provisioning fields', () async {
@@ -124,6 +149,15 @@ void main() {
     await fakeSdk.close();
   });
 }
+
+const _testReleaseCredential = EdgezSdkReleaseCredential(
+  compatibility: '^0.5.0',
+  releaseId: 'edgez_flutter_sdk@test',
+  signatureHex: '000102030405060708090a0b0c0d0e0f'
+      '101112131415161718191a1b1c1d1e1f'
+      '202122232425262728292a2b2c2d2e2f'
+      '303132333435363738393a3b3c3d3e3f',
+);
 
 NetworkPacket _packetFrom(MethodCall call) {
   final arguments = (call.arguments as Map).cast<Object?, Object?>();
