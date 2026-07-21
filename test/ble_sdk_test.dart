@@ -2,11 +2,32 @@ import 'package:cryptography/cryptography.dart';
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/mock_ble_transport.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('BLE configuration persists through the SDK store', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final store = EdgezBleConfigurationStore();
+    const device = EdgezBleDevice(
+      id: '11:22:33:44:55:66',
+      name: 'EdgeZ Mock',
+      rssi: -42,
+      lastSeenMs: 100,
+    );
+
+    await store.saveSelectedDevice(device);
+    await store.setAutoConnect(true);
+
+    final restored = await EdgezBleConfigurationStore().load();
+    expect(restored.deviceId, device.id);
+    expect(restored.deviceName, device.name);
+    expect(restored.autoConnect, isTrue);
+    expect(restored.selectedDevice?.label, device.label);
+  });
 
   group('EdgezMeshSdk with mocked BLE', () {
     late MockBleTransport ble;
@@ -147,6 +168,114 @@ void main() {
       expect(sample.accelX, closeTo(9.81, 0.001));
       expect(sample.binaryLengthBytes, 4096);
 
+      session.dispose();
+    });
+
+    test('session accepts Android-style complete EZ beacon frames', () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final packet = NetworkPacket(
+        from: Int64(0x223344556677),
+        operation: Operation.BROADCAST,
+        interface: Interface.HALOW,
+        beacon: Beacon(
+          userIdHigh: Int64(50),
+          userIdLow: Int64(60),
+          userName: 'Forwarded beacon',
+          marker: MarkerColor.MARKER_GREEN,
+        ),
+      );
+
+      ble.emitRawPacketBytes(ble.encodeFrame(packet.writeToBuffer()));
+      await ble.flushEvents();
+
+      final node = session.state.nodes[0x223344556677];
+      expect(node?.displayName, 'Forwarded beacon');
+      expect(node?.marker, 'green');
+
+      session.dispose();
+    });
+
+    test('session merges firmware beacons by identity like Android', () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final first = NetworkPacket(
+        from: Int64(0x111111111111),
+        operation: Operation.BROADCAST,
+        interface: Interface.HALOW,
+        beacon: Beacon(
+          userIdHigh: Int64(30),
+          userIdLow: Int64(40),
+          userName: 'Moving sensor|m=orange',
+          marker: MarkerColor.MARKER_DEFAULT,
+          latitude: 59.33,
+          longitude: 18.06,
+          deviceType: DeviceType.DEVICE_TYPE_SENSOR,
+          geoFence: GeoFence(name: 'Warehouse', geoIndex: 0),
+        ),
+      );
+      final moved = NetworkPacket(
+        from: Int64(0x222222222222),
+        operation: Operation.BROADCAST,
+        interface: Interface.HALOW,
+        beacon: Beacon(
+          userIdHigh: Int64(30),
+          userIdLow: Int64(40),
+          userName: 'Moving sensor',
+          marker: MarkerColor.MARKER_TEAL,
+        ),
+      );
+
+      ble.emitPacket(first);
+      await ble.flushEvents();
+      final firstNode = session.state.nodes[0x111111111111];
+      expect(firstNode?.displayName, 'Moving sensor');
+      expect(firstNode?.marker, 'orange');
+      ble.emitPacket(moved);
+      await ble.flushEvents();
+
+      expect(session.state.nodes, hasLength(1));
+      expect(session.state.nodes.containsKey(0x111111111111), isFalse);
+      final node = session.state.nodes[0x222222222222];
+      expect(node, isNotNull);
+      expect(node!.displayName, 'Moving sensor');
+      expect(node.marker, 'teal');
+      expect(node.deviceType, 'Sensor');
+      expect(node.latitude, closeTo(59.33, 0.001));
+      expect(node.longitude, closeTo(18.06, 0.001));
+      expect(node.geoFenceName, 'Warehouse');
+      expect(node.geoIndex, 0);
+
+      session.dispose();
+    });
+
+    test('session ignores self and identity-empty firmware beacons', () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final identity = await _newIdentity('Local user', 10, 20);
+      await session.initializeMesh(EdgezMeshConfig(identity: identity));
+
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(0x111111111111),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(identity.userIdHigh),
+            userIdLow: Int64(identity.userIdLow),
+            userName: identity.name,
+            userPublicKey: identity.publicKey,
+          ),
+        ),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(0x222222222222),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(),
+        ),
+      );
+      await ble.flushEvents();
+
+      expect(session.state.nodes, isEmpty);
       session.dispose();
     });
 

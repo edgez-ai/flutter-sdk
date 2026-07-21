@@ -36,6 +36,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   late final EdgezMeshSession session;
   late final ExampleDatabase database;
   late final EdgezIdentityStore identityStore;
+  late final EdgezBleConfigurationStore bleConfigurationStore;
   AppDestination destination = AppDestination.nodes;
   int? selectedNodeNum;
   bool showTopology = false;
@@ -89,18 +90,25 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     session = EdgezMeshSession();
     database = ExampleDatabase();
     identityStore = EdgezIdentityStore();
+    bleConfigurationStore = EdgezBleConfigurationStore();
     session.addListener(_persistSessionSnapshot);
-    unawaited(_loadIdentity());
+    unawaited(_loadIdentityAndBleConfiguration());
     unawaited(_hydrateFromDatabase());
   }
 
-  Future<void> _loadIdentity() async {
+  Future<void> _loadIdentityAndBleConfiguration() async {
     final identity = await identityStore.getOrCreate();
+    final bleConfiguration = await bleConfigurationStore.load();
     if (!mounted) return;
     setState(() {
       userIdentity = identity;
       userName = identity.name;
+      selectedBleDevice = bleConfiguration.selectedDevice;
+      bleAutoConnect = bleConfiguration.autoConnect;
     });
+    if (bleConfiguration.autoConnect && bleConfiguration.hasSelectedDevice) {
+      await _connectBleDevice(bleConfiguration.deviceId);
+    }
   }
 
   @override
@@ -476,10 +484,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               onConnectBle: _connectBle,
               onStopBleScan: _stopBleScan,
               onConnectBleDevice: _connectBleDevice,
-              onSelectBleDevice: (device) =>
-                  setState(() => selectedBleDevice = device),
-              onBleAutoConnectChanged: (value) =>
-                  setState(() => bleAutoConnect = value),
+              onSelectBleDevice: (device) {
+                setState(() => selectedBleDevice = device);
+                unawaited(bleConfigurationStore.saveSelectedDevice(device));
+              },
+              onBleAutoConnectChanged: (value) {
+                setState(() => bleAutoConnect = value);
+                unawaited(bleConfigurationStore.setAutoConnect(value));
+              },
               onDisconnect: _disconnect,
               onSaveAppSettings: _saveAppSettings,
               onRegenerateUserKeyPair: _regenerateUserKeyPair,

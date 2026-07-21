@@ -84,6 +84,13 @@ class MockBleTransport implements EdgezPlatformTransport {
     emitFrame(encodeFrame(packet.writeToBuffer()));
   }
 
+  void emitRawPacketBytes(List<int> bytes) {
+    _events.add(<Object?, Object?>{
+      'type': 'packet',
+      'packet': Uint8List.fromList(bytes),
+    });
+  }
+
   void emitFrame(List<int> frame) {
     final packet = decodeFrame(frame);
     _events.add(<Object?, Object?>{

@@ -122,6 +122,25 @@ class EdgezMeshSession extends ChangeNotifier {
   String? _lastInitKey;
   final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
       <String, _PendingVoiceMessage>{};
+  static const Set<String> _knownMarkerIds = <String>{
+    'default',
+    'red',
+    'blue',
+    'purple',
+    'yellow',
+    'pink',
+    'brown',
+    'green',
+    'orange',
+    'deep_purple',
+    'light_blue',
+    'cyan',
+    'teal',
+    'lime',
+    'deep_orange',
+    'gray',
+    'blue_gray',
+  };
 
   EdgezMeshState get state => _state;
 
@@ -577,30 +596,78 @@ class EdgezMeshSession extends ChangeNotifier {
     if (nodeNum == 0) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final previous = _state.nodes[nodeNum];
+    final decodedUser = _decodeBeaconUserName(
+      beacon.userName,
+      _markerId(beacon.marker),
+    );
+    if (beacon.userIdHigh.toInt() == 0 &&
+        beacon.userIdLow.toInt() == 0 &&
+        decodedUser.name.trim().isEmpty &&
+        beacon.userPublicKey.isEmpty) {
+      return;
+    }
+    final userUuid =
+        _formatUuid(beacon.userIdHigh.toInt(), beacon.userIdLow.toInt());
+    final localIdentity = _lastMeshConfig?.identity;
+    final localNode = _state.status?.macAddress;
+    final isLocalIdentity = localIdentity != null &&
+        ((localIdentity.userUuid.isNotEmpty &&
+                localIdentity.userUuid == userUuid) ||
+            ((localIdentity.userIdHigh != 0 || localIdentity.userIdLow != 0) &&
+                localIdentity.userIdHigh == beacon.userIdHigh.toInt() &&
+                localIdentity.userIdLow == beacon.userIdLow.toInt()));
+    if ((localNode != null && localNode != 0 && localNode == nodeNum) ||
+        isLocalIdentity) {
+      return;
+    }
+
+    MapEntry<int, EdgezMeshNode>? previousEntry;
+    for (final entry in _state.nodes.entries) {
+      if (entry.key == nodeNum ||
+          (userUuid.isNotEmpty && entry.value.userUuid == userUuid)) {
+        previousEntry = entry;
+        break;
+      }
+    }
+    final previous = previousEntry?.value;
+    final nextDeviceType = _deviceTypeLabel(beacon.deviceType);
+    final hasGeoFence = beacon.hasGeoFence();
     final node = EdgezMeshNode(
       nodeNum: nodeNum,
-      userUuid:
-          _formatUuid(beacon.userIdHigh.toInt(), beacon.userIdLow.toInt()),
-      displayName: _decodeBeaconUserName(beacon.userName),
+      userUuid: userUuid,
+      displayName: decodedUser.name,
       route: _state.connection.name.toUpperCase(),
       lastSeenMs: now,
-      marker: _markerId(beacon.marker),
+      marker: decodedUser.marker,
       publicKey: beacon.userPublicKey,
       latitude:
           beacon.hasLatitude() && beacon.latitude != 0 ? beacon.latitude : null,
       longitude: beacon.hasLongitude() && beacon.longitude != 0
           ? beacon.longitude
           : null,
-      deviceType: _deviceTypeLabel(beacon.deviceType),
-      geoFenceName: beacon.hasGeoFence() ? beacon.geoFence.name : '',
-      geoIndex: beacon.hasGeoFence() ? beacon.geoFence.geoIndex : 0,
+      deviceType: nextDeviceType == 'Unspecified'
+          ? previous?.deviceType ?? nextDeviceType
+          : nextDeviceType,
+      geoFenceName:
+          hasGeoFence ? beacon.geoFence.name : previous?.geoFenceName ?? '',
+      geoIndex:
+          hasGeoFence ? beacon.geoFence.geoIndex : previous?.geoIndex ?? 0,
       sleeping: beacon.sleeping,
     ).mergeDiscovery(previous);
 
-    final nodes = Map<int, EdgezMeshNode>.of(_state.nodes)..[nodeNum] = node;
+    final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
+    if (previousEntry != null && previousEntry.key != nodeNum) {
+      nodes.remove(previousEntry.key);
+    }
+    nodes[nodeNum] = node;
     final sensorSamples =
         Map<int, List<EdgezSensorSample>>.of(_state.sensorSamples);
+    if (previousEntry != null && previousEntry.key != nodeNum) {
+      final previousSamples = sensorSamples.remove(previousEntry.key);
+      if (previousSamples != null && sensorSamples[nodeNum] == null) {
+        sensorSamples[nodeNum] = previousSamples;
+      }
+    }
     final sensorData = _sensorData(beacon);
     if (sensorData != null) {
       sensorSamples[nodeNum] = <EdgezSensorSample>[
@@ -850,7 +917,14 @@ class EdgezMeshSession extends ChangeNotifier {
 
   proto.NetworkPacket? _parseNetworkPacket(List<int> bytes) {
     try {
-      return proto.NetworkPacket.fromBuffer(bytes);
+      var payload = bytes;
+      if (bytes.length >= 4 && bytes[0] == 0x45 && bytes[1] == 0x5a) {
+        final payloadLength = bytes[2] | (bytes[3] << 8);
+        if (payloadLength <= 512 && bytes.length >= payloadLength + 4) {
+          payload = bytes.sublist(4, payloadLength + 4);
+        }
+      }
+      return proto.NetworkPacket.fromBuffer(payload);
     } catch (_) {
       return null;
     }
@@ -904,26 +978,44 @@ class EdgezMeshSession extends ChangeNotifier {
     return unsigned.toRadixString(16).padLeft(16, '0');
   }
 
-  String _decodeBeaconUserName(String userName) {
+  _DecodedBeaconUserName _decodeBeaconUserName(
+    String userName,
+    String protoMarker,
+  ) {
     const separator = '|m=';
     final separatorIndex = userName.lastIndexOf(separator);
-    if (separatorIndex < 0) return userName;
-    return userName.substring(0, separatorIndex);
+    if (separatorIndex < 0) {
+      return _DecodedBeaconUserName(userName, protoMarker);
+    }
+    final suffixMarker = userName.substring(separatorIndex + separator.length);
+    if (!_knownMarkerIds.contains(suffixMarker) || suffixMarker == 'default') {
+      return _DecodedBeaconUserName(userName, protoMarker);
+    }
+    return _DecodedBeaconUserName(
+      userName.substring(0, separatorIndex),
+      protoMarker == 'default' ? suffixMarker : protoMarker,
+    );
   }
 
   String _markerId(proto.MarkerColor marker) {
     return switch (marker) {
       proto.MarkerColor.MARKER_RED => 'red',
+      proto.MarkerColor.MARKER_BLUE => 'blue',
+      proto.MarkerColor.MARKER_PURPLE => 'purple',
+      proto.MarkerColor.MARKER_YELLOW => 'yellow',
+      proto.MarkerColor.MARKER_PINK => 'pink',
+      proto.MarkerColor.MARKER_BROWN => 'brown',
       proto.MarkerColor.MARKER_GREEN => 'green',
       proto.MarkerColor.MARKER_ORANGE => 'orange',
-      proto.MarkerColor.MARKER_PURPLE ||
-      proto.MarkerColor.MARKER_DEEP_PURPLE =>
-        'purple',
-      proto.MarkerColor.MARKER_GRAY ||
-      proto.MarkerColor.MARKER_BLUE_GRAY =>
-        'gray',
+      proto.MarkerColor.MARKER_DEEP_PURPLE => 'deep_purple',
+      proto.MarkerColor.MARKER_LIGHT_BLUE => 'light_blue',
+      proto.MarkerColor.MARKER_CYAN => 'cyan',
       proto.MarkerColor.MARKER_TEAL => 'teal',
-      _ => 'blue',
+      proto.MarkerColor.MARKER_LIME => 'lime',
+      proto.MarkerColor.MARKER_DEEP_ORANGE => 'deep_orange',
+      proto.MarkerColor.MARKER_GRAY => 'gray',
+      proto.MarkerColor.MARKER_BLUE_GRAY => 'blue_gray',
+      _ => 'default',
     };
   }
 
@@ -970,6 +1062,13 @@ class EdgezMeshSession extends ChangeNotifier {
     _subscription.cancel();
     super.dispose();
   }
+}
+
+class _DecodedBeaconUserName {
+  const _DecodedBeaconUserName(this.name, this.marker);
+
+  final String name;
+  final String marker;
 }
 
 class _PendingVoiceMessage {
