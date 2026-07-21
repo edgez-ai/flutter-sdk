@@ -76,6 +76,23 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('disconnect');
   }
 
+  Future<bool> isOtaReady() async {
+    return await _transport.invokeMethod<bool>('isOtaReady') ?? false;
+  }
+
+  Future<String> performOta(List<int> firmwareImage) async {
+    if (firmwareImage.isEmpty) throw StateError('OTA image is empty');
+    return await _transport.invokeMethod<String>(
+          'performOta',
+          {'image': Uint8List.fromList(firmwareImage)},
+        ) ??
+        'Firmware uploaded; the device is restarting';
+  }
+
+  Future<void> abortOta() {
+    return _transport.invokeMethod<void>('abortOta');
+  }
+
   Future<bool> requestMicrophonePermission() async {
     return await _transport.invokeMethod<bool>('requestMicrophonePermission') ??
         false;
@@ -112,6 +129,78 @@ class EdgezMeshSdk {
       'bytes': Uint8List.fromList(message.voiceBytes),
       'codec': message.voiceCodec,
     });
+  }
+
+  Future<void> startLiveVoiceAudio() async {
+    final permitted = await requestMicrophonePermission();
+    if (!permitted) throw StateError('Microphone permission denied');
+    await _transport.invokeMethod<void>('startLiveVoiceAudio');
+  }
+
+  Future<void> stopLiveVoiceAudio() {
+    return _transport.invokeMethod<void>('stopLiveVoiceAudio');
+  }
+
+  Future<void> playLiveVoiceAudio(List<int> audio) {
+    return _transport.invokeMethod<void>(
+      'playLiveVoiceAudio',
+      {'audio': Uint8List.fromList(audio)},
+    );
+  }
+
+  Future<void> sendVoiceCallFrame({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode toNode,
+    required int fromNode,
+    required List<int> plaintext,
+    required int sequence,
+    int maxHop = 0,
+  }) async {
+    final encrypted = await _encryptConversationPayload(
+      identity: config.identity,
+      recipient: toNode,
+      fromNode: fromNode,
+      plaintext: plaintext,
+    );
+    await _transport.invokeMethod<void>('sendVoiceCallFrame', {
+      'to': toNode.nodeNum,
+      'maxHop': maxHop.clamp(0, 255),
+      'sequence': sequence,
+      'nonce': Uint8List.fromList(encrypted.nonce),
+      'ciphertext': Uint8List.fromList(encrypted.ciphertext),
+    });
+  }
+
+  Future<EdgezVoiceCallEnvelope> decryptVoiceCallFrame({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode sender,
+    required int localNode,
+    required List<int> payload,
+  }) async {
+    if (payload.length < 6 + 4 + 12 + 1) {
+      throw StateError('Compact voice frame is too short');
+    }
+    final data = ByteData.sublistView(Uint8List.fromList(payload));
+    var fromNode = 0;
+    for (var index = 0; index < 6; index++) {
+      fromNode = (fromNode << 8) | data.getUint8(index);
+    }
+    final sequence = data.getUint32(6, Endian.big);
+    final nonce = payload.sublist(10, 22);
+    final ciphertext = payload.sublist(22);
+    final plaintext = await _decryptConversationPayload(
+      identity: config.identity,
+      sender: sender,
+      fromNode: fromNode,
+      toNode: localNode,
+      nonce: nonce,
+      ciphertext: ciphertext,
+    );
+    return EdgezVoiceCallEnvelope(
+      fromNode: fromNode,
+      sequence: sequence,
+      plaintext: plaintext,
+    );
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) {

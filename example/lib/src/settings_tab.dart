@@ -62,6 +62,11 @@ class SettingsScreen extends StatefulWidget {
     required this.meshStatus,
     required this.bleAutoConnect,
     required this.statusLine,
+    required this.otaAvailableVersion,
+    required this.otaCheckInProgress,
+    required this.otaInProgress,
+    required this.otaProgress,
+    required this.otaMessage,
     required this.meshCountry,
     required this.meshId,
     required this.passphrase,
@@ -97,6 +102,9 @@ class SettingsScreen extends StatefulWidget {
     required this.onSelectBleDevice,
     required this.onBleAutoConnectChanged,
     required this.onDisconnect,
+    required this.onCheckForOtaUpdate,
+    required this.onInstallOtaUpdate,
+    required this.onAbortOta,
     required this.onSaveAppSettings,
     required this.onRegenerateUserKeyPair,
     required this.onSaveDeviceSettings,
@@ -143,6 +151,11 @@ class SettingsScreen extends StatefulWidget {
   final EdgezMeshStatus? meshStatus;
   final bool bleAutoConnect;
   final String statusLine;
+  final String? otaAvailableVersion;
+  final bool otaCheckInProgress;
+  final bool otaInProgress;
+  final double otaProgress;
+  final String otaMessage;
   final String meshCountry;
   final String meshId;
   final String passphrase;
@@ -178,6 +191,9 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<EdgezBleDevice> onSelectBleDevice;
   final ValueChanged<bool> onBleAutoConnectChanged;
   final VoidCallback onDisconnect;
+  final FutureOr<void> Function() onCheckForOtaUpdate;
+  final FutureOr<void> Function() onInstallOtaUpdate;
+  final FutureOr<void> Function() onAbortOta;
   final FutureOr<void> Function() onSaveAppSettings;
   final FutureOr<void> Function() onRegenerateUserKeyPair;
   final FutureOr<void> Function() onSaveDeviceSettings;
@@ -633,6 +649,60 @@ class SettingsScreen extends StatefulWidget {
           ],
           if (!deviceModeEnabled &&
               selectedTab == _SettingsTab.others) ...<Widget>[
+            cardGap,
+            InfoCard(
+              title: 'Firmware update',
+              children: <Widget>[
+                Text(
+                  'Current: ${meshStatus?.firmwareVersion.isNotEmpty == true ? meshStatus!.firmwareVersion : 'Unknown'}',
+                ),
+                if (otaAvailableVersion != null)
+                  Text('Available: $otaAvailableVersion'),
+                if (otaInProgress) ...<Widget>[
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(value: otaProgress),
+                ],
+                if (otaMessage.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 6),
+                  Text(otaMessage,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: <Widget>[
+                    OutlinedButton(
+                      onPressed: activeConnection == EdgezConnectionType.ble &&
+                              !otaCheckInProgress &&
+                              !otaInProgress
+                          ? () => unawaited(
+                                Future<void>.value(onCheckForOtaUpdate()),
+                              )
+                          : null,
+                      child: Text(
+                        otaCheckInProgress ? 'Checking...' : 'Check for update',
+                      ),
+                    ),
+                    if (otaAvailableVersion != null && !otaInProgress)
+                      FilledButton(
+                        onPressed: activeConnection == EdgezConnectionType.ble
+                            ? () => unawaited(
+                                  Future<void>.value(onInstallOtaUpdate()),
+                                )
+                            : null,
+                        child: const Text('Update'),
+                      ),
+                    if (otaInProgress)
+                      TextButton(
+                        onPressed: () => unawaited(
+                          Future<void>.value(onAbortOta()),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
             cardGap,
             InfoCard(
               title: 'Chat',

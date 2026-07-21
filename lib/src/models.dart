@@ -19,6 +19,8 @@ enum EdgezMeshEventType {
   node,
   message,
   voiceFrame,
+  voiceAudio,
+  otaProgress,
   log;
 
   static EdgezMeshEventType fromWire(String? value) {
@@ -531,6 +533,35 @@ class EdgezVoiceRecording {
   final int codec;
 }
 
+enum EdgezVoiceCallPhase { idle, outgoing, incoming, active }
+
+class EdgezVoiceCallState {
+  const EdgezVoiceCallState({
+    this.peerNodeNum,
+    this.callId = 0,
+    this.phase = EdgezVoiceCallPhase.idle,
+  });
+
+  final int? peerNodeNum;
+  final int callId;
+  final EdgezVoiceCallPhase phase;
+
+  bool get isIdle => phase == EdgezVoiceCallPhase.idle;
+  bool get isActive => phase == EdgezVoiceCallPhase.active;
+}
+
+class EdgezVoiceCallEnvelope {
+  const EdgezVoiceCallEnvelope({
+    required this.fromNode,
+    required this.sequence,
+    required this.plaintext,
+  });
+
+  final int fromNode;
+  final int sequence;
+  final List<int> plaintext;
+}
+
 class EdgezMeshEvent {
   const EdgezMeshEvent({
     required this.type,
@@ -540,6 +571,8 @@ class EdgezMeshEvent {
     this.status,
     this.node,
     this.message,
+    this.sentBytes = 0,
+    this.totalBytes = 0,
     this.log = '',
   });
 
@@ -550,7 +583,11 @@ class EdgezMeshEvent {
   final EdgezMeshStatus? status;
   final EdgezMeshNode? node;
   final EdgezConversationMessage? message;
+  final int sentBytes;
+  final int totalBytes;
   final String log;
+
+  double get progress => totalBytes <= 0 ? 0 : sentBytes / totalBytes;
 
   factory EdgezMeshEvent.fromMap(Map<Object?, Object?> map) {
     final type = EdgezMeshEventType.fromWire(map['type'] as String?);
@@ -575,6 +612,8 @@ class EdgezMeshEvent {
           ? EdgezConversationMessage.fromMap(
               map['message'] as Map<Object?, Object?>)
           : null,
+      sentBytes: map['sentBytes'] as int? ?? 0,
+      totalBytes: map['totalBytes'] as int? ?? 0,
       log: map['log'] as String? ?? '',
     );
   }

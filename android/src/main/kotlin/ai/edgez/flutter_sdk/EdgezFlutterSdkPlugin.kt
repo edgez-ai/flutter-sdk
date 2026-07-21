@@ -41,6 +41,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.ArrayDeque
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 private const val BLE_PERMISSION_REQUEST = 9007
 private const val MICROPHONE_PERMISSION_REQUEST = 9008
@@ -50,6 +52,17 @@ private const val EDGEZ_HEADER_LEN = 4
 private const val EDGEZ_MAX_PAYLOAD = 512
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val EDGEZ_BLE_REQUESTED_MTU = 517
+private const val OTA_BEGIN: Byte = 1
+private const val OTA_DATA: Byte = 2
+private const val OTA_END: Byte = 3
+private const val OTA_ABORT: Byte = 4
+private const val OTA_DATA_HEADER_SIZE = 5
+private const val OTA_DATA_MAX_CHUNK_SIZE = 220
+private const val OTA_WRITE_TIMEOUT_MS = 15_000L
+private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 2)
+private const val EDGEZ_VOICE_NONCE_SIZE = 12
+private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
+private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
 private val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
@@ -90,6 +103,11 @@ class EdgezFlutterSdkPlugin :
     private val notificationDescriptors = ArrayDeque<BluetoothGattDescriptor>()
     private var notificationDescriptorWriteInFlight = false
     private var serviceReadyPending = false
+    private var negotiatedMtu = 23
+    private val otaWriteLock = Object()
+    private var otaWriteStatus: Int? = null
+    private val otaAbortRequested = AtomicBoolean(false)
+    private val otaInProgress = AtomicBoolean(false)
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingMicrophoneResult: MethodChannel.Result? = null
     private var voicePlayer: MediaPlayer? = null
@@ -97,6 +115,7 @@ class EdgezFlutterSdkPlugin :
     private var voiceRecordingFile: File? = null
     private var voiceRecordingCodec: Int = VOICE_CODEC_AMR_NB
     private var voiceRecordingStartedAtMs: Long = 0
+    private var liveVoiceAudio: EdgezLiveVoiceAudio? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
@@ -104,7 +123,10 @@ class EdgezFlutterSdkPlugin :
     private val forwardRxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
     private var forwardRxLen = 0
     private val txQueue = ArrayDeque<ByteArray>()
+    private val voiceTxQueue = ArrayDeque<ByteArray>()
     private var txWriteInFlight = false
+    private var voiceTxWriteInFlight = false
+    private var dataWriteInFlight = false
     private var scanGeneration = 0
 
     private val bluetoothAdapter: BluetoothAdapter?
@@ -144,6 +166,9 @@ class EdgezFlutterSdkPlugin :
         events = EventChannel(binding.binaryMessenger, "edgez_flutter_sdk/events")
         methods.setMethodCallHandler(this)
         events.setStreamHandler(this)
+        liveVoiceAudio = EdgezLiveVoiceAudio(context) { audio ->
+            emit(mapOf("type" to "voiceAudio", "packet" to audio))
+        }
         val bondFilter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
         if (Build.VERSION.SDK_INT >= 33) {
             context.registerReceiver(bondStateReceiver, bondFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -157,6 +182,8 @@ class EdgezFlutterSdkPlugin :
         stopBleScan()
         closeGatt()
         discardVoiceRecording()
+        liveVoiceAudio?.stop()
+        liveVoiceAudio = null
         voicePlayer?.release()
         voicePlayer = null
         methods.setMethodCallHandler(null)
@@ -220,6 +247,62 @@ class EdgezFlutterSdkPlugin :
                 stopVoiceRecording(send, result)
             }
             "playVoiceMessage" -> playVoiceMessage(call, result)
+            "isOtaReady" -> result.success(gatt != null && otaCharacteristic != null)
+            "performOta" -> performOta(call, result)
+            "abortOta" -> {
+                otaAbortRequested.set(true)
+                result.success(null)
+            }
+            "sendVoiceCallFrame" -> {
+                val nonce = call.argument<ByteArray>("nonce")
+                val ciphertext = call.argument<ByteArray>("ciphertext")
+                if (nonce == null || ciphertext == null) {
+                    result.error("voice_frame_invalid", "Voice crypto envelope is missing", null)
+                    return
+                }
+                sendVoiceCallFrame(
+                    to = call.argument<Long>("to") ?: 0L,
+                    maxHop = call.argument<Int>("maxHop") ?: 0,
+                    sequence = call.argument<Int>("sequence") ?: 1,
+                    nonce = nonce,
+                    ciphertext = ciphertext,
+                ).fold(
+                    onSuccess = { result.success(it) },
+                    onFailure = {
+                        result.error("voice_write_failed", it.message ?: "Voice write failed", null)
+                    },
+                )
+            }
+            "startLiveVoiceAudio" -> {
+                if (ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO,
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    result.error("microphone_permission_denied", "Microphone permission denied", null)
+                    return
+                }
+                runCatching { liveVoiceAudio?.start() }
+                    .fold(
+                        onSuccess = { result.success(null) },
+                        onFailure = {
+                            result.error("voice_audio_failed", it.message ?: "Live voice failed", null)
+                        },
+                    )
+            }
+            "stopLiveVoiceAudio" -> {
+                liveVoiceAudio?.stop()
+                result.success(null)
+            }
+            "playLiveVoiceAudio" -> {
+                val audio = call.argument<ByteArray>("audio")
+                if (audio == null || audio.isEmpty()) {
+                    result.error("voice_audio_invalid", "Live voice audio is empty", null)
+                    return
+                }
+                liveVoiceAudio?.play(audio)
+                result.success(null)
+            }
             "disconnect" -> {
                 stopBleScan()
                 closeGatt()
@@ -468,6 +551,151 @@ class EdgezFlutterSdkPlugin :
         )
     }
 
+    private fun performOta(call: MethodCall, result: MethodChannel.Result) {
+        val image = call.argument<ByteArray>("image")
+        if (image == null || image.isEmpty()) {
+            result.error("ota_image_invalid", "OTA image is empty", null)
+            return
+        }
+        if (gatt == null || otaCharacteristic == null) {
+            result.error("ota_unavailable", "BLE OTA characteristic FFF5 is unavailable", null)
+            return
+        }
+        if (!otaInProgress.compareAndSet(false, true)) {
+            result.error("ota_in_progress", "An OTA update is already running", null)
+            return
+        }
+        otaAbortRequested.set(false)
+        thread(name = "edgez-ble-ota") {
+            runCatching {
+                writeOtaPacket(otaPacket(OTA_BEGIN, image.size))
+                val chunkSize = (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE)
+                    .coerceIn(20, OTA_DATA_MAX_CHUNK_SIZE)
+                var sent = 0
+                while (sent < image.size) {
+                    check(!otaAbortRequested.get()) { "Firmware update cancelled" }
+                    val length = minOf(chunkSize, image.size - sent)
+                    writeOtaPacket(otaDataPacket(sent, image, length))
+                    sent += length
+                    emit(
+                        mapOf(
+                            "type" to "otaProgress",
+                            "sentBytes" to sent,
+                            "totalBytes" to image.size,
+                        ),
+                    )
+                }
+                writeOtaPacket(byteArrayOf(OTA_END))
+                "Firmware uploaded; the device is restarting"
+            }.onFailure {
+                runCatching { writeOtaPacket(byteArrayOf(OTA_ABORT)) }
+            }.fold(
+                onSuccess = { message -> mainHandler.post { result.success(message) } },
+                onFailure = { error ->
+                    mainHandler.post {
+                        result.error("ota_failed", error.message ?: "Firmware update failed", null)
+                    }
+                },
+            )
+            otaInProgress.set(false)
+            otaAbortRequested.set(false)
+        }
+    }
+
+    private fun otaPacket(command: Byte, value: Int): ByteArray =
+        ByteBuffer.allocate(OTA_DATA_HEADER_SIZE)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .put(command)
+            .putInt(value)
+            .array()
+
+    private fun otaDataPacket(offset: Int, image: ByteArray, length: Int): ByteArray =
+        ByteBuffer.allocate(OTA_DATA_HEADER_SIZE + length)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .put(OTA_DATA)
+            .putInt(offset)
+            .put(image, offset, length)
+            .array()
+
+    @SuppressLint("MissingPermission")
+    private fun writeOtaPacket(packet: ByteArray) {
+        val activeGatt = gatt ?: throw IllegalStateException("BLE is not connected")
+        val characteristic = otaCharacteristic
+            ?: throw IllegalStateException("BLE OTA characteristic FFF5 is unavailable")
+        synchronized(otaWriteLock) {
+            otaWriteStatus = null
+            val started = if (Build.VERSION.SDK_INT >= 33) {
+                activeGatt.writeCharacteristic(
+                    characteristic,
+                    packet,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                ) == BluetoothGatt.GATT_SUCCESS
+            } else {
+                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                characteristic.value = packet
+                activeGatt.writeCharacteristic(characteristic)
+            }
+            if (!started) throw IllegalStateException("BLE OTA write could not start")
+            val deadline = System.currentTimeMillis() + OTA_WRITE_TIMEOUT_MS
+            while (otaWriteStatus == null && System.currentTimeMillis() < deadline) {
+                otaWriteLock.wait((deadline - System.currentTimeMillis()).coerceAtLeast(1))
+            }
+            val status = otaWriteStatus ?: throw IllegalStateException("BLE OTA write timed out")
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                throw IllegalStateException("BLE OTA write failed: $status")
+            }
+        }
+    }
+
+    private fun sendVoiceCallFrame(
+        to: Long,
+        maxHop: Int,
+        sequence: Int,
+        nonce: ByteArray,
+        ciphertext: ByteArray,
+    ): Result<String> {
+        if (nonce.size != EDGEZ_VOICE_NONCE_SIZE || ciphertext.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Invalid voice-call crypto envelope"))
+        }
+        val packet = ByteBuffer.allocate(
+            EDGEZ_VOICE_ROUTE_SIZE + nonce.size + ciphertext.size,
+        ).order(ByteOrder.BIG_ENDIAN)
+        for (shift in 40 downTo 0 step 8) packet.put((to ushr shift).toByte())
+        packet.put(maxHop.coerceIn(0, 255).toByte())
+        packet.putInt(sequence)
+        packet.put(nonce)
+        packet.put(ciphertext)
+        return sendVoicePacket(packet.array())
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendVoicePacket(packet: ByteArray): Result<String> {
+        val activeGatt = gatt
+            ?: return Result.failure(IllegalStateException("BLE is not connected"))
+        val voice = voiceRxCharacteristic ?: return Result.failure(
+            IllegalStateException("BLE voice characteristics FFF7/FFF8 are unavailable"),
+        )
+        val frame = EDGEZ_VOICE_PROTOCOL_MAGIC + packet
+        val maxVoiceFrame = minOf(negotiatedMtu - 3, EDGEZ_MAX_PAYLOAD)
+        if (frame.size > maxVoiceFrame) {
+            return Result.failure(
+                IllegalArgumentException("Voice packet too large: ${frame.size}/$maxVoiceFrame"),
+            )
+        }
+        synchronized(this) {
+            if (voiceTxQueue.size >= EDGEZ_VOICE_TX_QUEUE_DEPTH) {
+                if (voiceTxWriteInFlight) voiceTxQueue.pollLast() else voiceTxQueue.pollFirst()
+            }
+            voiceTxQueue.addLast(frame)
+        }
+        return if (writeNextVoiceFrame(activeGatt, voice)) {
+            Result.success("BLE voice queued")
+        } else {
+            synchronized(this) { voiceTxQueue.remove(frame) }
+            Result.failure(IllegalStateException("BLE voice write failed"))
+        }
+    }
+
     private fun requiredBlePermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= 31) {
             arrayOf(
@@ -639,6 +867,8 @@ class EdgezFlutterSdkPlugin :
 
     @SuppressLint("MissingPermission")
     private fun closeGatt() {
+        otaAbortRequested.set(true)
+        liveVoiceAudio?.stop()
         pendingBondDevice = null
         rxCharacteristic = null
         txCharacteristic = null
@@ -651,6 +881,7 @@ class EdgezFlutterSdkPlugin :
         notificationDescriptors.clear()
         notificationDescriptorWriteInFlight = false
         serviceReadyPending = false
+        negotiatedMtu = 23
         rxLen = 0
         forwardRxLen = 0
         clearTxQueue()
@@ -693,9 +924,10 @@ class EdgezFlutterSdkPlugin :
         val currentGatt = activeGatt ?: return false
         val rx = writeCharacteristic ?: return false
         val frame = synchronized(this) {
-            if (txWriteInFlight) return true
+            if (dataWriteInFlight || txWriteInFlight) return true
             val nextFrame = txQueue.peekFirst() ?: return true
             txWriteInFlight = true
+            dataWriteInFlight = true
             nextFrame
         }
 
@@ -709,15 +941,62 @@ class EdgezFlutterSdkPlugin :
         if (!ok) {
             synchronized(this) {
                 txWriteInFlight = false
+                dataWriteInFlight = false
             }
         }
         return ok
     }
 
+    @SuppressLint("MissingPermission")
+    private fun writeNextVoiceFrame(
+        activeGatt: BluetoothGatt? = gatt,
+        writeCharacteristic: BluetoothGattCharacteristic? = voiceRxCharacteristic,
+    ): Boolean {
+        val currentGatt = activeGatt ?: return false
+        val voice = writeCharacteristic ?: return false
+        val frame = synchronized(this) {
+            if (dataWriteInFlight || voiceTxWriteInFlight) return true
+            val nextFrame = voiceTxQueue.peekFirst() ?: return true
+            voiceTxWriteInFlight = true
+            dataWriteInFlight = true
+            nextFrame
+        }
+        val ok = if (Build.VERSION.SDK_INT >= 33) {
+            currentGatt.writeCharacteristic(
+                voice,
+                frame,
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+            ) == BluetoothGatt.GATT_SUCCESS
+        } else {
+            voice.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            voice.value = frame
+            currentGatt.writeCharacteristic(voice)
+        }
+        if (!ok) {
+            synchronized(this) {
+                voiceTxWriteInFlight = false
+                dataWriteInFlight = false
+            }
+        }
+        return ok
+    }
+
+    private fun writeNextDataFrame(activeGatt: BluetoothGatt) {
+        if (synchronized(this) { dataWriteInFlight }) return
+        if (txQueue.isNotEmpty()) {
+            writeNextFrame(activeGatt, rxCharacteristic)
+        } else if (voiceTxQueue.isNotEmpty()) {
+            writeNextVoiceFrame(activeGatt, voiceRxCharacteristic)
+        }
+    }
+
     @Synchronized
     private fun clearTxQueue() {
         txQueue.clear()
+        voiceTxQueue.clear()
         txWriteInFlight = false
+        voiceTxWriteInFlight = false
+        dataWriteInFlight = false
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -732,6 +1011,7 @@ class EdgezFlutterSdkPlugin :
                 emit(mapOf("type" to "connection", "connection" to "ble"))
                 gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                otaAbortRequested.set(true)
                 rxCharacteristic = null
                 txCharacteristic = null
                 forwardRxCharacteristic = null
@@ -743,6 +1023,7 @@ class EdgezFlutterSdkPlugin :
                 notificationDescriptors.clear()
                 notificationDescriptorWriteInFlight = false
                 serviceReadyPending = false
+                negotiatedMtu = 23
                 rxLen = 0
                 forwardRxLen = 0
                 clearTxQueue()
@@ -753,6 +1034,7 @@ class EdgezFlutterSdkPlugin :
         @SuppressLint("MissingPermission")
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             emit(mapOf("type" to "log", "log" to "BLE MTU mtu=$mtu status=$status"))
+            if (status == BluetoothGatt.GATT_SUCCESS) negotiatedMtu = mtu
             gatt.discoverServices()
         }
 
@@ -852,18 +1134,37 @@ class EdgezFlutterSdkPlugin :
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
+            if (characteristic.uuid == otaCharacteristic?.uuid) {
+                synchronized(otaWriteLock) {
+                    otaWriteStatus = status
+                    otaWriteLock.notifyAll()
+                }
+                return
+            }
+            val isVoiceWrite = characteristic.uuid == voiceRxCharacteristic?.uuid
             synchronized(this@EdgezFlutterSdkPlugin) {
-                txWriteInFlight = false
-                if (status == BluetoothGatt.GATT_SUCCESS) {
-                    txQueue.pollFirst()
+                dataWriteInFlight = false
+                if (isVoiceWrite) {
+                    voiceTxWriteInFlight = false
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        voiceTxQueue.pollFirst()
+                    } else {
+                        voiceTxQueue.clear()
+                    }
                 } else {
-                    txQueue.clear()
+                    txWriteInFlight = false
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        txQueue.pollFirst()
+                    } else {
+                        txQueue.clear()
+                    }
                 }
             }
-            emit(mapOf("type" to "log", "log" to "BLE TX complete status=$status queued=${synchronized(this@EdgezFlutterSdkPlugin) { txQueue.size }}"))
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                writeNextFrame(gatt, characteristic)
+            val remaining = synchronized(this@EdgezFlutterSdkPlugin) {
+                if (isVoiceWrite) voiceTxQueue.size else txQueue.size
             }
+            emit(mapOf("type" to "log", "log" to "BLE TX complete status=$status queued=$remaining voice=$isVoiceWrite"))
+            writeNextDataFrame(gatt)
         }
 
         override fun onCharacteristicChanged(
@@ -877,9 +1178,7 @@ class EdgezFlutterSdkPlugin :
                 otaStatusCharacteristic?.uuid -> emit(
                     mapOf("type" to "log", "log" to "BLE OTA status=${value.toHexString()}"),
                 )
-                voiceTxCharacteristic?.uuid -> emit(
-                    mapOf("type" to "voiceFrame", "packet" to value),
-                )
+                voiceTxCharacteristic?.uuid -> handleVoiceBytes(value)
                 else -> emit(
                     mapOf("type" to "log", "log" to "BLE notification from unknown characteristic ${characteristic.uuid}"),
                 )
@@ -898,9 +1197,7 @@ class EdgezFlutterSdkPlugin :
                 otaStatusCharacteristic?.uuid -> emit(
                     mapOf("type" to "log", "log" to "BLE OTA status=${value.toHexString()}"),
                 )
-                voiceTxCharacteristic?.uuid -> emit(
-                    mapOf("type" to "voiceFrame", "packet" to value),
-                )
+                voiceTxCharacteristic?.uuid -> handleVoiceBytes(value)
                 else -> emit(
                     mapOf("type" to "log", "log" to "BLE notification from unknown characteristic ${characteristic.uuid}"),
                 )
@@ -977,6 +1274,24 @@ class EdgezFlutterSdkPlugin :
             }
             forwardRxLen = remaining
         }
+    }
+
+    private fun handleVoiceBytes(bytes: ByteArray) {
+        if (bytes.size <= EDGEZ_VOICE_PROTOCOL_MAGIC.size ||
+            !bytes.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
+                .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)
+        ) {
+            emit(mapOf("type" to "log", "log" to "BLE voice frame invalid len=${bytes.size}"))
+            return
+        }
+        val payload = bytes.copyOfRange(EDGEZ_VOICE_PROTOCOL_MAGIC.size, bytes.size)
+        if (payload.size < 6 + 4 + EDGEZ_VOICE_NONCE_SIZE + 1 ||
+            payload.size > EDGEZ_MAX_PAYLOAD
+        ) {
+            emit(mapOf("type" to "log", "log" to "BLE voice payload invalid len=${payload.size}"))
+            return
+        }
+        emit(mapOf("type" to "voiceFrame", "packet" to payload))
     }
 
     private fun findMagicOffset(buffer: ByteArray, length: Int): Int {

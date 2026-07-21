@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
 
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +26,20 @@ enum AppDestination {
   final String label;
   final IconData icon;
   final IconData selectedIcon;
+}
+
+const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
+
+class _OtaRelease {
+  const _OtaRelease({
+    required this.version,
+    required this.size,
+    required this.url,
+  });
+
+  final String version;
+  final int size;
+  final String url;
 }
 
 class EdgezExampleApp extends StatefulWidget {
@@ -53,6 +70,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool deviceModeEnabled = false;
   bool bleAutoConnect = false;
   EdgezBleDevice? selectedBleDevice;
+  _OtaRelease? otaRelease;
+  bool otaCheckInProgress = false;
+  String otaMessage = '';
 
   String meshCountry = 'US';
   String meshId = 'edgez';
@@ -338,6 +358,97 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     );
   }
 
+  Future<void> _checkForOtaUpdate() async {
+    if (otaCheckInProgress || session.state.otaInProgress) return;
+    setState(() {
+      otaCheckInProgress = true;
+      otaMessage = 'Checking for firmware updates...';
+    });
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.getUrl(Uri.parse(_otaManifestUrl));
+      final response = await request.close().timeout(const Duration(seconds: 15));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('Firmware check failed: HTTP ${response.statusCode}');
+      }
+      final json = jsonDecode(await utf8.decoder.bind(response).join())
+          as Map<String, dynamic>;
+      final release = _OtaRelease(
+        version: json['version'] as String,
+        size: json['size'] as int,
+        url: json['url'] as String,
+      );
+      if (!mounted) return;
+      setState(() {
+        otaRelease = release;
+        otaMessage = _isNewerFirmwareVersion(
+          session.state.status?.firmwareVersion ?? '',
+          release.version,
+        )
+            ? 'Update available: ${release.version}'
+            : 'Your firmware is up to date';
+      });
+    } catch (error) {
+      if (mounted) setState(() => otaMessage = '$error');
+    } finally {
+      client.close(force: true);
+      if (mounted) setState(() => otaCheckInProgress = false);
+    }
+  }
+
+  Future<void> _installOtaUpdate() async {
+    final release = otaRelease;
+    if (release == null || session.state.otaInProgress) return;
+    if (!await session.isOtaReady) {
+      setState(() => otaMessage = 'Reconnect to a device with BLE OTA support');
+      return;
+    }
+    setState(() => otaMessage = 'Downloading ${release.version}...');
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    try {
+      final request = await client.getUrl(Uri.parse(release.url));
+      final response = await request.close().timeout(const Duration(seconds: 30));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('Firmware download failed: HTTP ${response.statusCode}');
+      }
+      final image = await response.fold<List<int>>(
+        <int>[],
+        (bytes, chunk) => bytes..addAll(chunk),
+      );
+      if (image.length != release.size) {
+        throw StateError(
+          'Firmware size mismatch: ${image.length}/${release.size}',
+        );
+      }
+      await session.performOta(image);
+      if (mounted) {
+        setState(() => otaMessage = 'Firmware uploaded. The device is restarting.');
+      }
+    } catch (error) {
+      if (mounted) setState(() => otaMessage = '$error');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  bool _isNewerFirmwareVersion(String current, String available) {
+    List<int> components(String value) => value
+        .replaceFirst(RegExp('^v'), '')
+        .split(RegExp(r'[.\-_]'))
+        .map(int.tryParse)
+        .whereType<int>()
+        .toList();
+    final left = components(current);
+    final right = components(available);
+    if (left.isEmpty || right.isEmpty) return current != available;
+    for (var index = 0; index < max(left.length, right.length); index++) {
+      final currentPart = index < left.length ? left[index] : 0;
+      final availablePart = index < right.length ? right[index] : 0;
+      if (currentPart != availablePart) return availablePart > currentPart;
+    }
+    return false;
+  }
+
   void _openNode(EdgezMeshNode node) {
     setState(() => selectedNodeNum = node.nodeNum);
   }
@@ -425,6 +536,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                           onStartVoiceMessage: _startVoiceMessage,
                           onStopVoiceMessage: _stopVoiceMessage,
                           onReplayVoiceMessage: session.playVoiceMessage,
+                          callState: meshState.voiceCall,
+                          onStartCall: () =>
+                              session.startVoiceCall(selected.nodeNum),
+                          onAcceptCall: session.acceptVoiceCall,
+                          onEndCall: session.endVoiceCall,
                         )
                       : DeviceDetailScreen(
                           user: selected,
@@ -436,6 +552,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               activeConnection: meshState.connection,
               meshStatus: meshState.status,
               statusLine: meshState.statusLine,
+              otaAvailableVersion: otaRelease?.version,
+              otaCheckInProgress: otaCheckInProgress,
+              otaInProgress: meshState.otaInProgress,
+              otaProgress: meshState.otaProgress,
+              otaMessage: otaMessage,
               nodeCount: meshState.nodes.length,
               conversationCount: meshState.conversations.length,
               shareLocation: shareLocation,
@@ -493,6 +614,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                 unawaited(bleConfigurationStore.setAutoConnect(value));
               },
               onDisconnect: _disconnect,
+              onCheckForOtaUpdate: _checkForOtaUpdate,
+              onInstallOtaUpdate: _installOtaUpdate,
+              onAbortOta: session.abortOta,
               onSaveAppSettings: _saveAppSettings,
               onRegenerateUserKeyPair: _regenerateUserKeyPair,
               onSaveDeviceSettings: _saveDeviceSettings,

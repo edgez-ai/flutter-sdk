@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -15,6 +16,10 @@ class EdgezMeshState {
     required Map<int, List<EdgezSensorSample>> sensorSamples,
     required List<EdgezTopologyLink> topologyLinks,
     required Map<int, List<EdgezConversationMessage>> conversations,
+    required this.otaInProgress,
+    required this.otaSentBytes,
+    required this.otaTotalBytes,
+    required this.voiceCall,
     required this.statusLine,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
@@ -31,6 +36,10 @@ class EdgezMeshState {
       sensorSamples: const <int, List<EdgezSensorSample>>{},
       topologyLinks: const <EdgezTopologyLink>[],
       conversations: const <int, List<EdgezConversationMessage>>{},
+      otaInProgress: false,
+      otaSentBytes: 0,
+      otaTotalBytes: 0,
+      voiceCall: const EdgezVoiceCallState(),
       statusLine: 'Connect with BLE, then save mesh settings.',
     );
   }
@@ -42,7 +51,14 @@ class EdgezMeshState {
   final Map<int, List<EdgezSensorSample>> sensorSamples;
   final List<EdgezTopologyLink> topologyLinks;
   final Map<int, List<EdgezConversationMessage>> conversations;
+  final bool otaInProgress;
+  final int otaSentBytes;
+  final int otaTotalBytes;
+  final EdgezVoiceCallState voiceCall;
   final String statusLine;
+
+  double get otaProgress =>
+      otaTotalBytes <= 0 ? 0 : otaSentBytes / otaTotalBytes;
 
   List<EdgezMeshNode> get sortedNodes {
     final sorted = nodes.values.toList()
@@ -67,6 +83,10 @@ class EdgezMeshState {
     Map<int, List<EdgezSensorSample>>? sensorSamples,
     List<EdgezTopologyLink>? topologyLinks,
     Map<int, List<EdgezConversationMessage>>? conversations,
+    bool? otaInProgress,
+    int? otaSentBytes,
+    int? otaTotalBytes,
+    EdgezVoiceCallState? voiceCall,
     String? statusLine,
   }) {
     return EdgezMeshState(
@@ -77,6 +97,10 @@ class EdgezMeshState {
       sensorSamples: sensorSamples ?? this.sensorSamples,
       topologyLinks: topologyLinks ?? this.topologyLinks,
       conversations: conversations ?? this.conversations,
+      otaInProgress: otaInProgress ?? this.otaInProgress,
+      otaSentBytes: otaSentBytes ?? this.otaSentBytes,
+      otaTotalBytes: otaTotalBytes ?? this.otaTotalBytes,
+      voiceCall: voiceCall ?? this.voiceCall,
       statusLine: statusLine ?? this.statusLine,
     );
   }
@@ -120,6 +144,7 @@ class EdgezMeshSession extends ChangeNotifier {
   var _bleReady = false;
   var _initInFlight = false;
   String? _lastInitKey;
+  var _voiceCallSequence = 1;
   final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
       <String, _PendingVoiceMessage>{};
   static const Set<String> _knownMarkerIds = <String>{
@@ -143,6 +168,12 @@ class EdgezMeshSession extends ChangeNotifier {
   };
 
   EdgezMeshState get state => _state;
+
+  static const _callMagic = <int>[0x45, 0x56, 0x43, 0x32];
+  static const _callInvite = 1;
+  static const _callAccept = 2;
+  static const _callEnd = 3;
+  static const _callAudio = 4;
 
   void restoreCachedMeshData({
     required Map<int, EdgezMeshNode> nodes,
@@ -183,6 +214,143 @@ class EdgezMeshSession extends ChangeNotifier {
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'BLE stop scan failed: $error'));
     }
+  }
+
+  Future<bool> get isOtaReady => sdk.isOtaReady();
+
+  Future<void> performOta(List<int> firmwareImage) async {
+    _setState(
+      _state.copyWith(
+        otaInProgress: true,
+        otaSentBytes: 0,
+        otaTotalBytes: firmwareImage.length,
+        statusLine: 'Starting firmware update',
+      ),
+    );
+    try {
+      final message = await sdk.performOta(firmwareImage);
+      _setState(
+        _state.copyWith(
+          otaInProgress: false,
+          otaSentBytes: firmwareImage.length,
+          otaTotalBytes: firmwareImage.length,
+          statusLine: message,
+        ),
+      );
+    } catch (error) {
+      _setState(
+        _state.copyWith(
+          otaInProgress: false,
+          statusLine: 'Firmware update failed: $error',
+        ),
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> abortOta() async {
+    await sdk.abortOta();
+    _setState(
+      _state.copyWith(
+        otaInProgress: false,
+        statusLine: 'Firmware update cancelled',
+      ),
+    );
+  }
+
+  Future<void> startVoiceCall(int peerNodeNum) async {
+    if (!_state.voiceCall.isIdle) {
+      throw StateError('A voice call is already in progress');
+    }
+    final peer = _state.nodes[peerNodeNum];
+    if (peer == null || !peer.opensConversation) {
+      throw StateError('Voice-call peer is unavailable');
+    }
+    final callId = Random.secure().nextInt(0x7fffffff) |
+        (Random.secure().nextInt(0x7fffffff) << 31);
+    _voiceCallSequence = 1;
+    _setState(
+      _state.copyWith(
+        voiceCall: EdgezVoiceCallState(
+          peerNodeNum: peerNodeNum,
+          callId: callId,
+          phase: EdgezVoiceCallPhase.outgoing,
+        ),
+        statusLine: 'Calling ${peer.resolvedDisplayName}',
+      ),
+    );
+    try {
+      await _sendVoiceCallPacket(_callInvite);
+    } catch (_) {
+      await _resetVoiceCall();
+      rethrow;
+    }
+  }
+
+  Future<void> acceptVoiceCall() async {
+    if (_state.voiceCall.phase != EdgezVoiceCallPhase.incoming) {
+      throw StateError('No incoming voice call');
+    }
+    await _sendVoiceCallPacket(_callAccept);
+    await sdk.startLiveVoiceAudio();
+    _setState(
+      _state.copyWith(
+        voiceCall: EdgezVoiceCallState(
+          peerNodeNum: _state.voiceCall.peerNodeNum,
+          callId: _state.voiceCall.callId,
+          phase: EdgezVoiceCallPhase.active,
+        ),
+        statusLine: 'Voice call active',
+      ),
+    );
+  }
+
+  Future<void> endVoiceCall() async {
+    if (!_state.voiceCall.isIdle) {
+      try {
+        await _sendVoiceCallPacket(_callEnd);
+      } catch (_) {
+        // Always release local audio even if the remote end disappeared.
+      }
+    }
+    await _resetVoiceCall();
+  }
+
+  Future<void> _resetVoiceCall() async {
+    await sdk.stopLiveVoiceAudio();
+    _setState(
+      _state.copyWith(
+        voiceCall: const EdgezVoiceCallState(),
+        statusLine: 'Voice call ended',
+      ),
+    );
+  }
+
+  Future<void> _sendVoiceCallPacket(int type,
+      [List<int> audio = const []]) async {
+    final call = _state.voiceCall;
+    final config = _lastMeshConfig;
+    final peer =
+        call.peerNodeNum == null ? null : _state.nodes[call.peerNodeNum!];
+    final fromNode = _state.status?.macAddress ?? 0;
+    if (config == null || peer == null || fromNode == 0) {
+      throw StateError('Voice-call mesh identity is unavailable');
+    }
+    final sequence = _voiceCallSequence++;
+    final packet = _encodeVoiceCallPacket(
+      type: type,
+      callId: call.callId,
+      sequence: sequence,
+      audio: audio,
+    );
+    await sdk.sendVoiceCallFrame(
+      config: config,
+      toNode: peer,
+      fromNode: fromNode,
+      plaintext: packet,
+      sequence: sequence,
+      maxHop: config.maxHop,
+    );
   }
 
   Future<void> connectBle(String deviceId) async {
@@ -447,8 +615,18 @@ class EdgezMeshSession extends ChangeNotifier {
         if (event.connection == EdgezConnectionType.none) {
           _bleReady = false;
           _lastInitKey = null;
+          if (!_state.voiceCall.isIdle) {
+            unawaited(sdk.stopLiveVoiceAudio());
+          }
         }
-        _setState(_state.copyWith(connection: event.connection));
+        _setState(
+          _state.copyWith(
+            connection: event.connection,
+            voiceCall: event.connection == EdgezConnectionType.none
+                ? const EdgezVoiceCallState()
+                : _state.voiceCall,
+          ),
+        );
       case EdgezMeshEventType.bleDevice:
         final device = event.bleDevice;
         if (device == null || device.id.isEmpty) return;
@@ -502,7 +680,23 @@ class EdgezMeshSession extends ChangeNotifier {
           statusLine: 'Conversation message received',
         );
       case EdgezMeshEventType.voiceFrame:
-        _setState(_state.copyWith(statusLine: 'BLE voice frame received'));
+        unawaited(_handleVoiceCallFrame(event.packet));
+      case EdgezMeshEventType.voiceAudio:
+        if (_state.voiceCall.isActive && event.packet.isNotEmpty) {
+          unawaited(_sendVoiceCallPacket(_callAudio, event.packet));
+        }
+      case EdgezMeshEventType.otaProgress:
+        _setState(
+          _state.copyWith(
+            otaInProgress: true,
+            otaSentBytes: event.sentBytes,
+            otaTotalBytes: event.totalBytes,
+            statusLine: event.totalBytes <= 0
+                ? 'Installing firmware'
+                : 'Installing firmware: '
+                    '${(event.progress * 100).floor()}%',
+          ),
+        );
       case EdgezMeshEventType.log:
         _setState(_state.copyWith(statusLine: event.log));
     }
@@ -917,6 +1111,103 @@ class EdgezMeshSession extends ChangeNotifier {
     ].join('|');
   }
 
+  List<int> _encodeVoiceCallPacket({
+    required int type,
+    required int callId,
+    required int sequence,
+    required List<int> audio,
+  }) {
+    final bytes = Uint8List(_callMagic.length + 1 + 8 + 4 + audio.length);
+    bytes.setRange(0, _callMagic.length, _callMagic);
+    final data = ByteData.sublistView(bytes);
+    data.setUint8(4, type);
+    data.setInt64(5, callId, Endian.little);
+    data.setInt32(13, sequence, Endian.little);
+    bytes.setRange(17, bytes.length, audio);
+    return bytes;
+  }
+
+  _DecodedVoiceCallPacket? _decodeVoiceCallPacket(List<int> payload) {
+    if (payload.length < 17) return null;
+    for (var index = 0; index < _callMagic.length; index++) {
+      if (payload[index] != _callMagic[index]) return null;
+    }
+    final bytes = Uint8List.fromList(payload);
+    final data = ByteData.sublistView(bytes);
+    return _DecodedVoiceCallPacket(
+      type: data.getUint8(4),
+      callId: data.getInt64(5, Endian.little),
+      sequence: data.getInt32(13, Endian.little),
+      audio: bytes.sublist(17),
+    );
+  }
+
+  Future<void> _handleVoiceCallFrame(List<int> payload) async {
+    final config = _lastMeshConfig;
+    final localNode = _state.status?.macAddress ?? 0;
+    if (config == null || localNode == 0 || payload.length < 6) return;
+    var fromNode = 0;
+    for (var index = 0; index < 6; index++) {
+      fromNode = (fromNode << 8) | payload[index];
+    }
+    final sender = _state.nodes[fromNode];
+    if (sender == null) return;
+    try {
+      final envelope = await sdk.decryptVoiceCallFrame(
+        config: config,
+        sender: sender,
+        localNode: localNode,
+        payload: payload,
+      );
+      final packet = _decodeVoiceCallPacket(envelope.plaintext);
+      if (packet == null || packet.sequence != envelope.sequence) return;
+      final call = _state.voiceCall;
+      switch (packet.type) {
+        case _callInvite:
+          if (call.isIdle) {
+            _voiceCallSequence = 1;
+            _setState(
+              _state.copyWith(
+                voiceCall: EdgezVoiceCallState(
+                  peerNodeNum: fromNode,
+                  callId: packet.callId,
+                  phase: EdgezVoiceCallPhase.incoming,
+                ),
+                statusLine: 'Incoming call from ${sender.resolvedDisplayName}',
+              ),
+            );
+          }
+        case _callAccept:
+          if (call.phase == EdgezVoiceCallPhase.outgoing &&
+              call.callId == packet.callId &&
+              call.peerNodeNum == fromNode) {
+            await sdk.startLiveVoiceAudio();
+            _setState(
+              _state.copyWith(
+                voiceCall: EdgezVoiceCallState(
+                  peerNodeNum: fromNode,
+                  callId: packet.callId,
+                  phase: EdgezVoiceCallPhase.active,
+                ),
+                statusLine: 'Voice call active',
+              ),
+            );
+          }
+        case _callEnd:
+          if (call.callId == packet.callId) await _resetVoiceCall();
+        case _callAudio:
+          if (call.isActive &&
+              call.callId == packet.callId &&
+              call.peerNodeNum == fromNode &&
+              packet.audio.isNotEmpty) {
+            await sdk.playLiveVoiceAudio(packet.audio);
+          }
+      }
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Voice call frame failed: $error'));
+    }
+  }
+
   proto.NetworkPacket? _parseNetworkPacket(List<int> bytes) {
     try {
       var payload = bytes;
@@ -1101,6 +1392,20 @@ class _PendingVoiceMessage {
       durationMs: durationMs,
     );
   }
+}
+
+class _DecodedVoiceCallPacket {
+  const _DecodedVoiceCallPacket({
+    required this.type,
+    required this.callId,
+    required this.sequence,
+    required this.audio,
+  });
+
+  final int type;
+  final int callId;
+  final int sequence;
+  final List<int> audio;
 }
 
 class _CompletedVoiceMessage {
