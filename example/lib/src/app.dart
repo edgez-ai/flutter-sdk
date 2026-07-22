@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'conversation_screen.dart';
 import 'debug_tab.dart';
@@ -379,6 +380,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         });
       }
       return location;
+    } on MissingPluginException {
+      if (mounted) {
+        setState(() {
+          locationMessage = 'Location support was added to the native plugin. '
+              'Fully stop and run the app again (hot reload is not enough).';
+        });
+      }
+      return null;
     } catch (error) {
       if (mounted) {
         setState(() => locationMessage = 'Location unavailable: $error');
