@@ -22,6 +22,11 @@ events without hardware.
 
 The example app is intentionally in-memory only. It does not use SQLite and it does not include the map tab or Organic Maps dependencies.
 
+## Flash Firmware
+
+Flash your device with the firmware available from the [EdgeZ web flasher](https://www.edgez.ai/flasher).
+Currently, only the Heltec HT-HC33 is supported.
+
 ## Firmware OTA
 
 The Android transport follows the same OTA protocol as `edgez-android-app`:
