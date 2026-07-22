@@ -881,6 +881,80 @@ class EdgezMeshSdk {
     });
   }
 
+  /// Uploads or removes a Lua sensor driver using the firmware's chunked
+  /// ScriptConfig protocol.
+  Future<void> sendSensorScript(EdgezSensorScriptConfig config) async {
+    const chunkSize = 220;
+    final bytes = utf8.encode(config.script);
+    final packets = <proto.ScriptConfig>[];
+    if (config.action == EdgezSensorScriptAction.delete) {
+      packets.add(_scriptPacket(
+        proto.ScriptConfigAction.SCRIPT_CONFIG_DELETE,
+        config,
+        totalSize: 0,
+        offset: 0,
+      ));
+    } else {
+      packets.add(_scriptPacket(
+        proto.ScriptConfigAction.SCRIPT_CONFIG_BEGIN,
+        config,
+        totalSize: bytes.length,
+        offset: 0,
+      ));
+      for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+        final end = min(offset + chunkSize, bytes.length);
+        packets.add(_scriptPacket(
+          proto.ScriptConfigAction.SCRIPT_CONFIG_CHUNK,
+          config,
+          totalSize: bytes.length,
+          offset: offset,
+          chunk: bytes.sublist(offset, end),
+        ));
+      }
+      packets.add(_scriptPacket(
+        proto.ScriptConfigAction.SCRIPT_CONFIG_COMMIT,
+        config,
+        totalSize: bytes.length,
+        offset: bytes.length,
+      ));
+    }
+
+    for (final scriptConfig in packets) {
+      final packet = proto.NetworkPacket(
+        operation: proto.Operation.REQUEST,
+        interface: proto.Interface.HALOW,
+        scriptConfig: scriptConfig,
+      );
+      await _transport.invokeMethod<void>('sendPacket', {
+        'label': 'Sensor driver ${config.name}',
+        'packet': Uint8List.fromList(packet.writeToBuffer()),
+      });
+    }
+  }
+
+  proto.ScriptConfig _scriptPacket(
+    proto.ScriptConfigAction action,
+    EdgezSensorScriptConfig config, {
+    required int totalSize,
+    required int offset,
+    List<int> chunk = const <int>[],
+  }) {
+    return proto.ScriptConfig(
+      action: action,
+      scriptId: config.scriptId.clamp(1, 65535),
+      name: _take(config.name, 64),
+      version: config.version.clamp(1, 65535),
+      totalSize: max(0, totalSize),
+      offset: max(0, offset),
+      chunk: chunk,
+      sensorType: _take(config.sensorType, 32),
+      selectUartI2c: config.connector == EdgezSensorConnector.uartI2c,
+      selectRs485: config.connector == EdgezSensorConnector.rs485,
+      globalBufferSize: config.globalBufferSize.clamp(1024, 65535),
+      mimeType: _take(config.mimeType, 48),
+    );
+  }
+
   proto.DeviceType _deviceType(String value) {
     return switch (value.trim().toLowerCase()) {
       'user' => proto.DeviceType.DEVICE_TYPE_USER,

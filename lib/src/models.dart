@@ -286,6 +286,10 @@ class EdgezDeviceSettings {
     this.beaconUnicast = 0,
     this.deviceType = 'relay',
     this.sleepModeEnabled = false,
+    this.userIdHigh = 0,
+    this.userIdLow = 0,
+    this.userPublicKey = const <int>[],
+    this.userPrivateKey = const <int>[],
   });
 
   final bool deviceModeEnabled;
@@ -307,6 +311,10 @@ class EdgezDeviceSettings {
   final int beaconUnicast;
   final String deviceType;
   final bool sleepModeEnabled;
+  final int userIdHigh;
+  final int userIdLow;
+  final List<int> userPublicKey;
+  final List<int> userPrivateKey;
 
   Map<String, Object?> toMap() => {
         'deviceModeEnabled': deviceModeEnabled,
@@ -328,7 +336,40 @@ class EdgezDeviceSettings {
         'beaconUnicast': beaconUnicast,
         'deviceType': deviceType,
         'sleepModeEnabled': sleepModeEnabled,
+        'userIdHigh': userIdHigh,
+        'userIdLow': userIdLow,
+        'userPublicKey': userPublicKey,
+        'userPrivateKey': userPrivateKey,
       };
+}
+
+enum EdgezSensorConnector { uartI2c, rs485 }
+
+enum EdgezSensorScriptAction { upload, delete }
+
+/// A device-side Lua driver transferred with ScriptConfig packets.
+class EdgezSensorScriptConfig {
+  const EdgezSensorScriptConfig({
+    required this.scriptId,
+    required this.version,
+    required this.name,
+    required this.sensorType,
+    required this.connector,
+    required this.script,
+    this.globalBufferSize = 4096,
+    this.mimeType = 'application/x-lua',
+    this.action = EdgezSensorScriptAction.upload,
+  });
+
+  final int scriptId;
+  final int version;
+  final String name;
+  final String sensorType;
+  final EdgezSensorConnector connector;
+  final String script;
+  final int globalBufferSize;
+  final String mimeType;
+  final EdgezSensorScriptAction action;
 }
 
 enum EdgezLicenseStatus {

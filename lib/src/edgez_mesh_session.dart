@@ -22,6 +22,8 @@ class EdgezMeshState {
     required this.otaTotalBytes,
     required this.voiceCall,
     required this.statusLine,
+    required this.bleReady,
+    this.deviceSettings,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         sensorSamples = _freezeSensorSamples(sensorSamples),
@@ -43,6 +45,7 @@ class EdgezMeshState {
       otaTotalBytes: 0,
       voiceCall: const EdgezVoiceCallState(),
       statusLine: 'Connect with BLE, then save mesh settings.',
+      bleReady: false,
     );
   }
 
@@ -59,6 +62,8 @@ class EdgezMeshState {
   final int otaTotalBytes;
   final EdgezVoiceCallState voiceCall;
   final String statusLine;
+  final bool bleReady;
+  final EdgezDeviceSettings? deviceSettings;
 
   double get otaProgress =>
       otaTotalBytes <= 0 ? 0 : otaSentBytes / otaTotalBytes;
@@ -92,6 +97,9 @@ class EdgezMeshState {
     int? otaTotalBytes,
     EdgezVoiceCallState? voiceCall,
     String? statusLine,
+    bool? bleReady,
+    EdgezDeviceSettings? deviceSettings,
+    bool clearDeviceSettings = false,
   }) {
     return EdgezMeshState(
       connection: connection ?? this.connection,
@@ -107,6 +115,9 @@ class EdgezMeshState {
       otaTotalBytes: otaTotalBytes ?? this.otaTotalBytes,
       voiceCall: voiceCall ?? this.voiceCall,
       statusLine: statusLine ?? this.statusLine,
+      bleReady: bleReady ?? this.bleReady,
+      deviceSettings:
+          clearDeviceSettings ? null : deviceSettings ?? this.deviceSettings,
     );
   }
 
@@ -147,6 +158,7 @@ class EdgezMeshSession extends ChangeNotifier {
   EdgezMeshState _state = EdgezMeshState.initial();
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
+  var _provisioning = false;
   var _initInFlight = false;
   String? _lastInitKey;
   var _voiceCallSequence = 1;
@@ -176,6 +188,14 @@ class EdgezMeshSession extends ChangeNotifier {
   };
 
   EdgezMeshState get state => _state;
+
+  void beginProvisioning() {
+    _provisioning = true;
+  }
+
+  void endProvisioning() {
+    _provisioning = false;
+  }
 
   static const _callMagic = <int>[0x45, 0x56, 0x43, 0x32];
   static const _callInvite = 1;
@@ -401,6 +421,8 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(
         _state.copyWith(
           connection: EdgezConnectionType.ble,
+          bleReady: false,
+          clearDeviceSettings: true,
           statusLine:
               'Connecting BLE ${_state.bleDevices[deviceId]?.label ?? deviceId}',
         ),
@@ -424,13 +446,33 @@ class EdgezMeshSession extends ChangeNotifier {
     await _sendInitIfReady(force: true);
   }
 
-  Future<void> sendDeviceSettings(EdgezDeviceSettings settings) async {
-    final identity = _lastMeshConfig?.identity;
+  Future<void> requestDeviceSettings() async {
+    await sdk.requestDeviceSettings();
+    _setState(_state.copyWith(statusLine: 'Device settings requested'));
+  }
+
+  Future<void> sendDeviceSettings(
+    EdgezDeviceSettings settings, {
+    EdgezUserIdentity? identity,
+    List<EdgezSensorScriptConfig> scripts = const <EdgezSensorScriptConfig>[],
+  }) async {
+    final settingsIdentity = identity ?? _lastMeshConfig?.identity;
     try {
-      await sdk.sendDeviceSettings(settings: settings, identity: identity);
-      _setState(_state.copyWith(statusLine: 'Device settings sent'));
+      await sdk.sendDeviceSettings(
+        settings: settings,
+        identity: settingsIdentity,
+      );
+      for (final script in scripts) {
+        await sdk.sendSensorScript(script);
+      }
+      _setState(_state.copyWith(
+        statusLine: scripts.isEmpty
+            ? 'Device settings sent'
+            : 'Device settings and ${scripts.length} driver(s) sent',
+      ));
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Device settings failed: $error'));
+      rethrow;
     }
   }
 
@@ -663,6 +705,9 @@ class EdgezMeshSession extends ChangeNotifier {
         _setState(
           _state.copyWith(
             connection: event.connection,
+            bleReady: event.connection == EdgezConnectionType.none
+                ? false
+                : _state.bleReady,
             otaReady: event.connection == EdgezConnectionType.none
                 ? false
                 : _state.otaReady,
@@ -686,9 +731,12 @@ class EdgezMeshSession extends ChangeNotifier {
         _handlePacket(event.packet);
       case EdgezMeshEventType.ready:
         _bleReady = true;
-        _setState(_state.copyWith(statusLine: 'BLE control service ready'));
+        _setState(_state.copyWith(
+          statusLine: 'BLE control service ready',
+          bleReady: true,
+        ));
         unawaited(_refreshOtaReadiness());
-        unawaited(_sendInitIfReady());
+        if (!_provisioning) unawaited(_sendInitIfReady());
       case EdgezMeshEventType.status:
         _setState(_state.copyWith(status: event.status));
       case EdgezMeshEventType.node:
@@ -794,7 +842,35 @@ class EdgezMeshSession extends ChangeNotifier {
     }
 
     if (packet.hasDeviceSettings()) {
-      _setState(_state.copyWith(statusLine: 'Device settings received'));
+      final settings = packet.deviceSettings;
+      _setState(_state.copyWith(
+        statusLine: 'Device settings received',
+        deviceSettings: EdgezDeviceSettings(
+          deviceModeEnabled: settings.deviceModeEnabled,
+          meshId: settings.meshId,
+          shareLocation: settings.shareLocation,
+          userName: settings.userName,
+          marker: _markerId(settings.marker),
+          beaconIntervalSeconds: settings.beaconIntervalSeconds,
+          maxHop: settings.maxHop,
+          latitude: settings.hasLatitude() ? settings.latitude : null,
+          longitude: settings.hasLongitude() ? settings.longitude : null,
+          geoFenceName: settings.hasGeoFence() ? settings.geoFence.name : '',
+          geoIndex: settings.geoIndex,
+          uartI2cSensorType: settings.uartI2cSensorType,
+          rs485SensorType: settings.rs485SensorType,
+          passphrase: settings.passphrase,
+          upstreamWifiSsid: settings.upstreamWifiSsid,
+          upstreamWifiPassphrase: settings.upstreamWifiPassphrase,
+          beaconUnicast: settings.beaconUnicast.toInt(),
+          deviceType: _deviceTypeLabel(settings.deviceType).toLowerCase(),
+          sleepModeEnabled: settings.sleepModeEnabled,
+          userIdHigh: settings.userIdHigh.toInt(),
+          userIdLow: settings.userIdLow.toInt(),
+          userPublicKey: settings.userPublicKey,
+          userPrivateKey: settings.userPrivateKey,
+        ),
+      ));
     }
 
     if (packet.hasReport()) {

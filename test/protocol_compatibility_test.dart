@@ -71,7 +71,14 @@ void main() {
   });
 
   test('unsigned source checkout fails closed before transport', () async {
-    final unsignedSdk = EdgezMeshSdk(methodChannel: channel);
+    final unsignedSdk = EdgezMeshSdk(
+      methodChannel: channel,
+      releaseCredential: const EdgezSdkReleaseCredential(
+        compatibility: '^0.5.0',
+        releaseId: 'source-checkout',
+        signatureHex: '',
+      ),
+    );
 
     expect(
       () =>
@@ -110,6 +117,37 @@ void main() {
     expect(packet.deviceSettings.beaconUnicast.toInt(), 0x123456789abc);
     expect(packet.deviceSettings.deviceType, DeviceType.DEVICE_TYPE_SENSOR);
     expect(packet.deviceSettings.sleepModeEnabled, isTrue);
+  });
+
+  test('sensor drivers use begin, 220-byte chunks, and commit', () async {
+    final script = List<String>.filled(500, 'x').join();
+    await sdk.sendSensorScript(
+      EdgezSensorScriptConfig(
+        scriptId: 1002,
+        version: 2,
+        name: 'SHT3x',
+        sensorType: '1002-1',
+        connector: EdgezSensorConnector.uartI2c,
+        script: script,
+      ),
+    );
+
+    final packets = calls.map(_packetFrom).toList(growable: false);
+    expect(packets, hasLength(5));
+    expect(packets.first.scriptConfig.action,
+        ScriptConfigAction.SCRIPT_CONFIG_BEGIN);
+    expect(packets.last.scriptConfig.action,
+        ScriptConfigAction.SCRIPT_CONFIG_COMMIT);
+    final chunks = packets
+        .where((packet) =>
+            packet.scriptConfig.action ==
+            ScriptConfigAction.SCRIPT_CONFIG_CHUNK)
+        .map((packet) => packet.scriptConfig.chunk)
+        .toList(growable: false);
+    expect(chunks.map((chunk) => chunk.length), <int>[220, 220, 60]);
+    expect(chunks.expand((chunk) => chunk).length, 500);
+    expect(packets.first.scriptConfig.selectUartI2c, isTrue);
+    expect(packets.first.scriptConfig.sensorType, '1002-1');
   });
 
   test('topology reports become five-minute RSSI links', () async {

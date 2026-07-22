@@ -9,14 +9,18 @@ import 'package:flutter/services.dart';
 import 'conversation_screen.dart';
 import 'debug_tab.dart';
 import 'device_detail_screen.dart';
+import 'driver_catalog.dart';
+import 'drivers_tab.dart';
 import 'example_database.dart';
 import 'models.dart';
 import 'nodes_tab.dart';
+import 'provisioning_screen.dart';
 import 'settings_tab.dart';
 import 'topology_screen.dart';
 
 enum AppDestination {
   nodes('Nodes', Icons.hub_outlined, Icons.hub),
+  drivers('Drivers', Icons.usb_outlined, Icons.usb),
   debug('Debug', Icons.bug_report_outlined, Icons.bug_report),
   settings('Settings', Icons.bluetooth_connected_outlined,
       Icons.bluetooth_connected);
@@ -56,6 +60,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool shareLocation = false;
   bool autoReplayReceivedVoice = false;
   bool deviceModeEnabled = false;
+  bool provisionMode = false;
+  List<ExampleDriver> drivers = ExampleDriverCatalog.bundled;
   bool bleAutoConnect = false;
   EdgezBleDevice? selectedBleDevice;
   EdgezOtaRelease? otaRelease;
@@ -104,6 +110,26 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     session.addListener(_persistSessionSnapshot);
     unawaited(_loadIdentityAndBleConfiguration());
     unawaited(_hydrateFromDatabase());
+  }
+
+  Future<void> _openProvisioning() async {
+    if (session.state.connection != EdgezConnectionType.none) {
+      await session.disconnect();
+    }
+    session.beginProvisioning();
+    if (mounted) setState(() => provisionMode = true);
+  }
+
+  void _closeProvisioning() {
+    session.endProvisioning();
+    setState(() {
+      provisionMode = false;
+      destination = AppDestination.nodes;
+    });
+    final selected = selectedBleDevice;
+    if (bleAutoConnect && selected != null) {
+      unawaited(_connectBleDevice(selected.id));
+    }
   }
 
   Future<void> _loadIdentityAndBleConfiguration() async {
@@ -567,6 +593,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                       users: meshState.sortedNodes,
                       sensorSamples: meshState.sensorSamples,
                       onOpenTopology: () => setState(() => showTopology = true),
+                      onOpenProvisioning: _openProvisioning,
                       onRemoveNode: _removeNode,
                       onOpenNode: _openNode,
                     )
@@ -606,6 +633,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               deviceModeEnabled: deviceModeEnabled,
               databaseReady: databaseReady,
             ),
+          AppDestination.drivers => DriversScreen(drivers: drivers),
           AppDestination.settings => SettingsScreen(
               activeConnection: meshState.connection,
               shareLocation: shareLocation,
@@ -758,26 +786,33 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
             useMaterial3: true,
             cardTheme: const CardThemeData(margin: EdgeInsets.zero),
           ),
-          home: Scaffold(
-            body: body,
-            bottomNavigationBar: NavigationBar(
-              selectedIndex: AppDestination.values.indexOf(destination),
-              onDestinationSelected: (index) => setState(() {
-                destination = AppDestination.values[index];
-                if (destination != AppDestination.nodes) {
-                  selectedNodeNum = null;
-                  showTopology = false;
-                }
-              }),
-              destinations: AppDestination.values.map((item) {
-                return NavigationDestination(
-                  icon: Icon(item.icon),
-                  selectedIcon: Icon(item.selectedIcon),
-                  label: item.label,
-                );
-              }).toList(),
-            ),
-          ),
+          home: provisionMode
+              ? ProvisioningScreen(
+                  session: session,
+                  drivers: drivers,
+                  onCancel: _closeProvisioning,
+                  onComplete: _closeProvisioning,
+                )
+              : Scaffold(
+                  body: body,
+                  bottomNavigationBar: NavigationBar(
+                    selectedIndex: AppDestination.values.indexOf(destination),
+                    onDestinationSelected: (index) => setState(() {
+                      destination = AppDestination.values[index];
+                      if (destination != AppDestination.nodes) {
+                        selectedNodeNum = null;
+                        showTopology = false;
+                      }
+                    }),
+                    destinations: AppDestination.values.map((item) {
+                      return NavigationDestination(
+                        icon: Icon(item.icon),
+                        selectedIcon: Icon(item.selectedIcon),
+                        label: item.label,
+                      );
+                    }).toList(),
+                  ),
+                ),
         );
       },
     );

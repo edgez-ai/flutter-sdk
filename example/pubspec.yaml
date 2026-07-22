@@ -11,6 +11,7 @@ dependencies:
   edgez_flutter_sdk:
     path: ..
   sqflite: ^2.4.1
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
@@ -19,3 +20,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/drivers/flow-meter-rs485/
+    - assets/drivers/random-temperature/
+    - assets/drivers/sht3x/
+    - assets/drivers/vc0706-camera/
+    - assets/drivers/vibration-rs485/

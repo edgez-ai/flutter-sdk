@@ -63,6 +63,21 @@ class EdgezIdentityStore {
     return updated;
   }
 
+  /// Creates an independent identity without changing the app user's stored
+  /// identity. Provisioning uses this for the device profile.
+  EdgezUserIdentity createIdentity({String name = 'EdgeZ Device'}) {
+    final uuid = _newUuid();
+    final generated = _generateKeyPair();
+    return EdgezUserIdentity(
+      userUuid: uuid,
+      userIdHigh: _uuidHigh(uuid),
+      userIdLow: _uuidLow(uuid),
+      name: name.trim().isEmpty ? 'EdgeZ Device' : name.trim(),
+      privateKey: generated.$1,
+      publicKey: generated.$2,
+    );
+  }
+
   Future<void> save(EdgezUserIdentity identity) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyUserUuid, identity.userUuid);

@@ -34,6 +34,32 @@ void main() {
     expect(find.text('Nodes'), findsWidgets);
   });
 
+  testWidgets('nodes opens the device provisioning flow', (tester) async {
+    await tester.pumpWidget(const EdgezExampleApp());
+
+    await tester.tap(find.text('Prov'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Provisioning'), findsOneWidget);
+    expect(find.text('Step 1 of 8: Select BLE device'), findsOneWidget);
+    expect(find.text('Scanning for EdgeZ devices...'), findsOneWidget);
+  });
+
+  testWidgets('drivers tab lists the bundled Android-reference drivers',
+      (tester) async {
+    await tester.pumpWidget(const EdgezExampleApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Drivers').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('UART / I2C'), findsOneWidget);
+    expect(find.text('Random Temperature (Sample)'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    expect(find.text('Flow Meter RS485'), findsOneWidget);
+  });
+
   testWidgets('settings expose HaLow channel controls', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
     await tester.tap(find.text('Settings').last);
