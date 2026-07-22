@@ -687,7 +687,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                       users: meshState.sortedNodes,
                       sensorSamples: meshState.sensorSamples,
                       onOpenTopology: () => setState(() => showTopology = true),
-                      onOpenProvisioning: _openProvisioning,
                       onRemoveNode: _removeNode,
                       onOpenNode: _openNode,
                     )
@@ -897,6 +896,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               ? ProvisioningScreen(
                   session: session,
                   drivers: drivers,
+                  excludedBleDeviceId: selectedBleDevice?.id,
                   onCancel: _closeProvisioning,
                   onComplete: _closeProvisioning,
                 )

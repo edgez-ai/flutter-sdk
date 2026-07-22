@@ -11,7 +11,6 @@ class NodesScreen extends StatelessWidget {
     required this.users,
     required this.sensorSamples,
     required this.onOpenTopology,
-    required this.onOpenProvisioning,
     required this.onRemoveNode,
     required this.onOpenNode,
     super.key,
@@ -22,7 +21,6 @@ class NodesScreen extends StatelessWidget {
   final List<EdgezMeshNode> users;
   final Map<int, List<EdgezSensorSample>> sensorSamples;
   final VoidCallback onOpenTopology;
-  final VoidCallback onOpenProvisioning;
   final ValueChanged<EdgezMeshNode> onRemoveNode;
   final ValueChanged<EdgezMeshNode> onOpenNode;
 
@@ -37,11 +35,6 @@ class NodesScreen extends StatelessWidget {
               Expanded(
                   child: Text('Nodes',
                       style: Theme.of(context).textTheme.headlineMedium)),
-              TextButton.icon(
-                onPressed: onOpenProvisioning,
-                icon: const Icon(Icons.bluetooth_searching),
-                label: const Text('Prov'),
-              ),
               TextButton.icon(
                 onPressed: onOpenTopology,
                 icon: const Icon(Icons.account_tree_outlined),

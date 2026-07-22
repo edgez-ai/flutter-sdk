@@ -22,10 +22,21 @@ enum _ProvisionStep {
   final String title;
 }
 
+List<EdgezBleDevice> provisioningBleDevices(
+  List<EdgezBleDevice> devices,
+  String? excludedDeviceId,
+) {
+  if (excludedDeviceId == null || excludedDeviceId.isEmpty) return devices;
+  return devices
+      .where((device) => device.id != excludedDeviceId)
+      .toList(growable: false);
+}
+
 class ProvisioningScreen extends StatefulWidget {
   const ProvisioningScreen({
     required this.session,
     required this.drivers,
+    required this.excludedBleDeviceId,
     required this.onCancel,
     required this.onComplete,
     super.key,
@@ -33,6 +44,7 @@ class ProvisioningScreen extends StatefulWidget {
 
   final EdgezMeshSession session;
   final List<ExampleDriver> drivers;
+  final String? excludedBleDeviceId;
   final VoidCallback onCancel;
   final VoidCallback onComplete;
 
@@ -321,6 +333,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   Widget _stepContent(EdgezMeshState state) {
     switch (step) {
       case _ProvisionStep.selectBle:
+        final devices = provisioningBleDevices(
+          state.sortedBleDevices,
+          widget.excludedBleDeviceId,
+        );
         return InfoCard(
           title: 'Select BLE device',
           action: IconButton(
@@ -329,9 +345,8 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
             icon: const Icon(Icons.refresh),
           ),
           children: <Widget>[
-            if (state.sortedBleDevices.isEmpty)
-              const Text('Scanning for EdgeZ devices...'),
-            for (final device in state.sortedBleDevices)
+            if (devices.isEmpty) const Text('Scanning for EdgeZ devices...'),
+            for (final device in devices)
               ListTile(
                 selected: selectedBle?.id == device.id,
                 leading: Icon(selectedBle?.id == device.id

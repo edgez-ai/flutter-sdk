@@ -3,6 +3,7 @@ import 'package:edgez_flutter_sdk_example/src/conversation_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:edgez_flutter_sdk_example/src/app.dart';
+import 'package:edgez_flutter_sdk_example/src/provisioning_screen.dart';
 
 Finder findVerticalScrollable() => find.byWidgetPredicate(
       (widget) =>
@@ -12,6 +13,23 @@ Finder findVerticalScrollable() => find.byWidgetPredicate(
     );
 
 void main() {
+  test('provisioning excludes the BLE device selected in settings', () {
+    const selected = EdgezBleDevice(
+      id: 'selected',
+      name: 'Current',
+      rssi: -40,
+      lastSeenMs: 1,
+    );
+    const other = EdgezBleDevice(
+      id: 'other',
+      name: 'Available',
+      rssi: -50,
+      lastSeenMs: 2,
+    );
+
+    expect(provisioningBleDevices([selected, other], selected.id), [other]);
+  });
+
   testWidgets('example app opens on the dashboard tab', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
 
@@ -27,6 +45,7 @@ void main() {
     await tester.tap(find.text('Nodes').last);
     await tester.pumpAndSettle();
 
+    expect(find.text('Prov'), findsNothing);
     await tester.tap(find.text('Topology'));
     await tester.pumpAndSettle();
     expect(find.text('Mesh topology'), findsOneWidget);
@@ -37,7 +56,7 @@ void main() {
     expect(find.text('Nodes'), findsWidgets);
   });
 
-  testWidgets('nodes opens the device provisioning flow', (tester) async {
+  testWidgets('dashboard opens the device provisioning flow', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
 
     await tester.tap(find.text('Prov'));
