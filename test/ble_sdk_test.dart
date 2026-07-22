@@ -29,7 +29,45 @@ void main() {
     expect(restored.deviceId, device.id);
     expect(restored.deviceName, device.name);
     expect(restored.autoConnect, isTrue);
+    expect(restored.shareLocation, isFalse);
     expect(restored.selectedDevice?.label, device.label);
+
+    await store.setShareLocation(true);
+    expect((await store.load()).shareLocation, isTrue);
+  });
+
+  group('OTA release metadata', () {
+    test('parses the manifest and compares semantic versions', () {
+      final release = EdgezOtaRelease.fromJson(<String, Object?>{
+        'version': 'v0.6.1',
+        'size': 123456,
+        'url': 'https://www.edgez.ai/firmware/app.bin',
+      });
+
+      expect(release.size, 123456);
+      expect(release.isNewerThan('0.6.0'), isTrue);
+      expect(release.isNewerThan('v0.6.1'), isFalse);
+      expect(release.isNewerThan('0.7.0'), isFalse);
+    });
+
+    test('rejects incomplete or invalid manifests', () {
+      expect(
+        () => EdgezOtaRelease.fromJson(<String, Object?>{
+          'version': '0.6.1',
+          'size': 0,
+          'url': 'https://www.edgez.ai/firmware/app.bin',
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => EdgezOtaRelease.fromJson(<String, Object?>{
+          'version': '0.6.1',
+          'size': 123,
+          'url': 'not a URL',
+        }),
+        throwsFormatException,
+      );
+    });
   });
 
   group('EdgezMeshSdk with mocked BLE', () {
@@ -62,6 +100,54 @@ void main() {
         ble.calls[1].argumentMap['deviceId'],
         'AA:BB:CC:DD:EE:FF',
       );
+    });
+
+    test('returns the best known phone location from the platform', () async {
+      ble.results['getBestKnownLocation'] = <Object?, Object?>{
+        'latitude': 59.3293,
+        'longitude': 18.0686,
+        'timestampMs': 123456,
+      };
+
+      final location = await sdk.getBestKnownLocation();
+
+      expect(location?.latitude, closeTo(59.3293, 0.000001));
+      expect(location?.longitude, closeTo(18.0686, 0.000001));
+      expect(location?.timestampMs, 123456);
+      expect(ble.callsFor('getBestKnownLocation'), hasLength(1));
+    });
+
+    test('forwards OTA readiness, image, progress, and cancellation', () async {
+      ble.results['isOtaReady'] = true;
+      ble.results['performOta'] = 'Firmware uploaded; the device is restarting';
+      final session = EdgezMeshSession(sdk: sdk);
+
+      expect(await session.isOtaReady, isTrue);
+      ble.emitConnection(EdgezConnectionType.ble);
+      ble.emitReady();
+      await ble.flushEvents();
+      expect(session.state.otaReady, isTrue);
+      ble.emitOtaProgress(sentBytes: 220, totalBytes: 440);
+      await ble.flushEvents();
+      expect(session.state.otaInProgress, isTrue);
+      expect(session.state.otaProgress, 0.5);
+
+      await session.performOta(<int>[1, 2, 3, 4]);
+      final otaCall = ble.callsFor('performOta').single;
+      expect(
+          otaCall.argumentMap['image'], Uint8List.fromList(<int>[1, 2, 3, 4]));
+      expect(session.state.otaProgress, 1);
+      expect(session.state.otaInProgress, isFalse);
+
+      await session.abortOta();
+      expect(ble.callsFor('abortOta'), hasLength(1));
+      expect(session.state.otaInProgress, isFalse);
+
+      ble.emitConnection(EdgezConnectionType.none);
+      await ble.flushEvents();
+      expect(session.state.otaReady, isFalse);
+
+      session.dispose();
     });
 
     test('turns mocked BLE events into SDK events', () async {

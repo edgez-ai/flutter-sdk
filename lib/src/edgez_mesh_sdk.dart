@@ -83,6 +83,14 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('disconnect');
   }
 
+  Future<EdgezLocation?> getBestKnownLocation() async {
+    final result = await _transport.invokeMethod<Object?>(
+      'getBestKnownLocation',
+    );
+    if (result is! Map) return null;
+    return EdgezLocation.fromMap(result.cast<Object?, Object?>());
+  }
+
   Future<bool> isOtaReady() async {
     return await _transport.invokeMethod<bool>('isOtaReady') ?? false;
   }

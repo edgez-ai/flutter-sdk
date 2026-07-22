@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
@@ -29,18 +28,6 @@ enum AppDestination {
 }
 
 const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
-
-class _OtaRelease {
-  const _OtaRelease({
-    required this.version,
-    required this.size,
-    required this.url,
-  });
-
-  final String version;
-  final int size;
-  final String url;
-}
 
 class EdgezExampleApp extends StatefulWidget {
   const EdgezExampleApp({super.key});
@@ -70,9 +57,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool deviceModeEnabled = false;
   bool bleAutoConnect = false;
   EdgezBleDevice? selectedBleDevice;
-  _OtaRelease? otaRelease;
+  EdgezOtaRelease? otaRelease;
   bool otaCheckInProgress = false;
+  bool otaInstallInProgress = false;
   String otaMessage = '';
+  String locationMessage = '';
 
   String meshCountry = 'US';
   String meshId = 'edgez';
@@ -125,6 +114,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       userName = identity.name;
       selectedBleDevice = bleConfiguration.selectedDevice;
       bleAutoConnect = bleConfiguration.autoConnect;
+      shareLocation = bleConfiguration.shareLocation;
     });
     if (bleConfiguration.autoConnect && bleConfiguration.hasSelectedDevice) {
       await _connectBleDevice(bleConfiguration.deviceId);
@@ -291,6 +281,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   Future<void> _saveAppSettings() async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
     final identity = await identityStore.updateName(userName);
+    final location = shareLocation ? await _getBestKnownLocation() : null;
     if (mounted) {
       setState(() {
         userIdentity = identity;
@@ -309,6 +300,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
           intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 30,
           marker: userMarker.name,
           shareLocation: shareLocation,
+          latitude: location?.latitude,
+          longitude: location?.longitude,
+          locationTimestampMs: location?.timestampMs ?? 0,
         ),
         identity: EdgezUserIdentity(
           userUuid: identity.userUuid,
@@ -329,6 +323,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   }
 
   Future<void> _saveDeviceSettings() async {
+    if (deviceShareLocation) await _refreshDeviceLocation();
+    final latitude = double.tryParse(deviceLatitude);
+    final longitude = double.tryParse(deviceLongitude);
+    if (deviceShareLocation && (latitude == null || longitude == null)) {
+      throw StateError('No phone location is available for the device');
+    }
     await session.sendDeviceSettings(
       EdgezDeviceSettings(
         deviceModeEnabled: deviceModeEnabled,
@@ -338,8 +338,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         marker: deviceMarker.name,
         beaconIntervalSeconds: int.tryParse(deviceBeaconIntervalSeconds) ?? 30,
         maxHop: int.tryParse(deviceMaxHop) ?? 0,
-        latitude: double.tryParse(deviceLatitude),
-        longitude: double.tryParse(deviceLongitude),
+        latitude: deviceShareLocation ? latitude : null,
+        longitude: deviceShareLocation ? longitude : null,
         geoFenceName: deviceGeoFenceName.trim(),
         geoIndex: deviceGeoIndex,
         uartI2cSensorType: uartI2cSensorType,
@@ -358,8 +358,52 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     );
   }
 
+  Future<void> _refreshDeviceLocation() async {
+    final location = await _getBestKnownLocation();
+    if (location == null || !mounted) return;
+    setState(() {
+      deviceLatitude = location.latitude.toStringAsFixed(6);
+      deviceLongitude = location.longitude.toStringAsFixed(6);
+    });
+  }
+
+  Future<EdgezLocation?> _getBestKnownLocation() async {
+    try {
+      final location = await session.sdk.getBestKnownLocation();
+      if (mounted) {
+        setState(() {
+          locationMessage = location == null
+              ? 'No phone location is available yet'
+              : 'Phone location: ${location.latitude.toStringAsFixed(6)}, '
+                  '${location.longitude.toStringAsFixed(6)}';
+        });
+      }
+      return location;
+    } catch (error) {
+      if (mounted) {
+        setState(() => locationMessage = 'Location unavailable: $error');
+      }
+      return null;
+    }
+  }
+
+  void _setShareLocation(bool value) {
+    setState(() => shareLocation = value);
+    unawaited(bleConfigurationStore.setShareLocation(value));
+    if (value) unawaited(_getBestKnownLocation());
+  }
+
+  void _setDeviceShareLocation(bool value) {
+    setState(() => deviceShareLocation = value);
+    if (value) unawaited(_refreshDeviceLocation());
+  }
+
   Future<void> _checkForOtaUpdate() async {
-    if (otaCheckInProgress || session.state.otaInProgress) return;
+    if (otaCheckInProgress ||
+        otaInstallInProgress ||
+        session.state.otaInProgress) {
+      return;
+    }
     setState(() {
       otaCheckInProgress = true;
       otaMessage = 'Checking for firmware updates...';
@@ -375,17 +419,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       }
       final json = jsonDecode(await utf8.decoder.bind(response).join())
           as Map<String, dynamic>;
-      final release = _OtaRelease(
-        version: json['version'] as String,
-        size: json['size'] as int,
-        url: json['url'] as String,
-      );
+      final release = EdgezOtaRelease.fromJson(json);
       if (!mounted) return;
       setState(() {
         otaRelease = release;
-        otaMessage = _isNewerFirmwareVersion(
+        otaMessage = release.isNewerThan(
           session.state.status?.firmwareVersion ?? '',
-          release.version,
         )
             ? 'Update available: ${release.version}'
             : 'Your firmware is up to date';
@@ -400,12 +439,19 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   Future<void> _installOtaUpdate() async {
     final release = otaRelease;
-    if (release == null || session.state.otaInProgress) return;
-    if (!await session.isOtaReady) {
+    if (release == null ||
+        otaInstallInProgress ||
+        session.state.otaInProgress) {
+      return;
+    }
+    if (!session.state.otaReady) {
       setState(() => otaMessage = 'Reconnect to a device with BLE OTA support');
       return;
     }
-    setState(() => otaMessage = 'Downloading ${release.version}...');
+    setState(() {
+      otaInstallInProgress = true;
+      otaMessage = 'Downloading ${release.version}...';
+    });
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 15);
     try {
@@ -416,7 +462,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         throw StateError(
             'Firmware download failed: HTTP ${response.statusCode}');
       }
-      final image = await response.fold<List<int>>(
+      final image =
+          await response.timeout(const Duration(seconds: 30)).fold<List<int>>(
         <int>[],
         (bytes, chunk) => bytes..addAll(chunk),
       );
@@ -434,25 +481,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       if (mounted) setState(() => otaMessage = '$error');
     } finally {
       client.close(force: true);
+      if (mounted) setState(() => otaInstallInProgress = false);
     }
-  }
-
-  bool _isNewerFirmwareVersion(String current, String available) {
-    List<int> components(String value) => value
-        .replaceFirst(RegExp('^v'), '')
-        .split(RegExp(r'[.\-_]'))
-        .map(int.tryParse)
-        .whereType<int>()
-        .toList();
-    final left = components(current);
-    final right = components(available);
-    if (left.isEmpty || right.isEmpty) return current != available;
-    for (var index = 0; index < max(left.length, right.length); index++) {
-      final currentPart = index < left.length ? left[index] : 0;
-      final availablePart = index < right.length ? right[index] : 0;
-      if (currentPart != availablePart) return availablePart > currentPart;
-    }
-    return false;
   }
 
   void _openNode(EdgezMeshNode node) {
@@ -577,11 +607,19 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               meshStatus: meshState.status,
               bleAutoConnect: bleAutoConnect,
               statusLine: meshState.statusLine,
-              otaAvailableVersion: otaRelease?.version,
+              otaUpdateAvailable: otaRelease?.isNewerThan(
+                    meshState.status?.firmwareVersion ?? '',
+                  ) ??
+                  false,
+              otaReady: meshState.otaReady,
               otaCheckInProgress: otaCheckInProgress,
-              otaInProgress: meshState.otaInProgress,
-              otaProgress: meshState.otaProgress,
-              otaMessage: otaMessage,
+              otaInProgress: otaInstallInProgress || meshState.otaInProgress,
+              otaProgress: meshState.otaInProgress ? meshState.otaProgress : 0,
+              otaMessage: meshState.otaInProgress && otaRelease != null
+                  ? 'Installing ${otaRelease!.version}: '
+                      '${(meshState.otaProgress * 100).floor()}%'
+                  : otaMessage,
+              locationMessage: locationMessage,
               meshCountry: meshCountry,
               meshId: meshId,
               passphrase: passphrase,
@@ -625,12 +663,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               onDisconnect: _disconnect,
               onCheckForOtaUpdate: _checkForOtaUpdate,
               onInstallOtaUpdate: _installOtaUpdate,
-              onAbortOta: session.abortOta,
               onSaveAppSettings: _saveAppSettings,
               onRegenerateUserKeyPair: _regenerateUserKeyPair,
               onSaveDeviceSettings: _saveDeviceSettings,
-              onShareLocationChanged: (value) =>
-                  setState(() => shareLocation = value),
+              onShareLocationChanged: _setShareLocation,
               onAutoReplayChanged: (value) =>
                   setState(() => autoReplayReceivedVoice = value),
               onDeviceModeChanged: (value) =>
@@ -675,8 +711,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                   setState(() => deviceMaxHop = value),
               onDeviceBeaconIntervalChanged: (value) =>
                   setState(() => deviceBeaconIntervalSeconds = value),
-              onDeviceShareLocationChanged: (value) =>
-                  setState(() => deviceShareLocation = value),
+              onDeviceShareLocationChanged: _setDeviceShareLocation,
+              onRefreshDeviceLocation: _refreshDeviceLocation,
               onDeviceLatitudeChanged: (value) =>
                   setState(() => deviceLatitude = value),
               onDeviceLongitudeChanged: (value) =>

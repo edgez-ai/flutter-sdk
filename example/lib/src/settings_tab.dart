@@ -62,11 +62,13 @@ class SettingsScreen extends StatefulWidget {
     required this.meshStatus,
     required this.bleAutoConnect,
     required this.statusLine,
-    required this.otaAvailableVersion,
+    required this.otaUpdateAvailable,
+    required this.otaReady,
     required this.otaCheckInProgress,
     required this.otaInProgress,
     required this.otaProgress,
     required this.otaMessage,
+    required this.locationMessage,
     required this.meshCountry,
     required this.meshId,
     required this.passphrase,
@@ -104,7 +106,6 @@ class SettingsScreen extends StatefulWidget {
     required this.onDisconnect,
     required this.onCheckForOtaUpdate,
     required this.onInstallOtaUpdate,
-    required this.onAbortOta,
     required this.onSaveAppSettings,
     required this.onRegenerateUserKeyPair,
     required this.onSaveDeviceSettings,
@@ -126,6 +127,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onDeviceMaxHopChanged,
     required this.onDeviceBeaconIntervalChanged,
     required this.onDeviceShareLocationChanged,
+    required this.onRefreshDeviceLocation,
     required this.onDeviceLatitudeChanged,
     required this.onDeviceLongitudeChanged,
     required this.onDeviceGeoFenceNameChanged,
@@ -151,11 +153,13 @@ class SettingsScreen extends StatefulWidget {
   final EdgezMeshStatus? meshStatus;
   final bool bleAutoConnect;
   final String statusLine;
-  final String? otaAvailableVersion;
+  final bool otaUpdateAvailable;
+  final bool otaReady;
   final bool otaCheckInProgress;
   final bool otaInProgress;
   final double otaProgress;
   final String otaMessage;
+  final String locationMessage;
   final String meshCountry;
   final String meshId;
   final String passphrase;
@@ -193,7 +197,6 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback onDisconnect;
   final FutureOr<void> Function() onCheckForOtaUpdate;
   final FutureOr<void> Function() onInstallOtaUpdate;
-  final FutureOr<void> Function() onAbortOta;
   final FutureOr<void> Function() onSaveAppSettings;
   final FutureOr<void> Function() onRegenerateUserKeyPair;
   final FutureOr<void> Function() onSaveDeviceSettings;
@@ -215,6 +218,7 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<String> onDeviceMaxHopChanged;
   final ValueChanged<String> onDeviceBeaconIntervalChanged;
   final ValueChanged<bool> onDeviceShareLocationChanged;
+  final FutureOr<void> Function() onRefreshDeviceLocation;
   final ValueChanged<String> onDeviceLatitudeChanged;
   final ValueChanged<String> onDeviceLongitudeChanged;
   final ValueChanged<String> onDeviceGeoFenceNameChanged;
@@ -332,6 +336,59 @@ class SettingsScreen extends StatefulWidget {
                   ),
                 ],
               ),
+              if (activeConnection == EdgezConnectionType.ble) ...<Widget>[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    OutlinedButton(
+                      onPressed:
+                          meshStatus?.firmwareVersion.isNotEmpty == true &&
+                                  !otaCheckInProgress &&
+                                  !otaInProgress
+                              ? () => unawaited(
+                                    Future<void>.value(
+                                      onCheckForOtaUpdate(),
+                                    ),
+                                  )
+                              : null,
+                      child: Text(
+                        otaCheckInProgress ? 'Checking...' : 'Check for update',
+                      ),
+                    ),
+                    if (otaUpdateAvailable)
+                      FilledButton(
+                        onPressed: !otaInProgress && otaReady
+                            ? () => unawaited(
+                                  Future<void>.value(onInstallOtaUpdate()),
+                                )
+                            : null,
+                        child: Text(
+                          otaInProgress
+                              ? 'Updating ${(otaProgress * 100).floor()}%'
+                              : 'Update',
+                        ),
+                      ),
+                  ],
+                ),
+                if (otaMessage.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 6),
+                  Text(
+                    otaMessage,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                if (otaUpdateAvailable && !otaReady) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    'This connected firmware does not expose BLE OTA yet.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                  ),
+                ],
+              ],
               const Divider(height: 24),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -401,7 +458,14 @@ class SettingsScreen extends StatefulWidget {
                       ? onDeviceShareLocationChanged
                       : onShareLocationChanged,
                 ),
-                if (deviceModeEnabled && deviceShareLocation)
+                if (locationMessage.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    locationMessage,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                if (deviceModeEnabled && deviceShareLocation) ...<Widget>[
                   Row(
                     children: <Widget>[
                       Expanded(
@@ -423,6 +487,15 @@ class SettingsScreen extends StatefulWidget {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => unawaited(
+                      Future<void>.value(onRefreshDeviceLocation()),
+                    ),
+                    icon: const Icon(Icons.my_location),
+                    label: const Text('Refresh phone location'),
+                  ),
+                ],
               ],
             ),
           ],
@@ -651,60 +724,6 @@ class SettingsScreen extends StatefulWidget {
           ],
           if (!deviceModeEnabled &&
               selectedTab == _SettingsTab.others) ...<Widget>[
-            cardGap,
-            InfoCard(
-              title: 'Firmware update',
-              children: <Widget>[
-                Text(
-                  'Current: ${meshStatus?.firmwareVersion.isNotEmpty == true ? meshStatus!.firmwareVersion : 'Unknown'}',
-                ),
-                if (otaAvailableVersion != null)
-                  Text('Available: $otaAvailableVersion'),
-                if (otaInProgress) ...<Widget>[
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(value: otaProgress),
-                ],
-                if (otaMessage.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 6),
-                  Text(otaMessage,
-                      style: Theme.of(context).textTheme.bodySmall),
-                ],
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: <Widget>[
-                    OutlinedButton(
-                      onPressed: activeConnection == EdgezConnectionType.ble &&
-                              !otaCheckInProgress &&
-                              !otaInProgress
-                          ? () => unawaited(
-                                Future<void>.value(onCheckForOtaUpdate()),
-                              )
-                          : null,
-                      child: Text(
-                        otaCheckInProgress ? 'Checking...' : 'Check for update',
-                      ),
-                    ),
-                    if (otaAvailableVersion != null && !otaInProgress)
-                      FilledButton(
-                        onPressed: activeConnection == EdgezConnectionType.ble
-                            ? () => unawaited(
-                                  Future<void>.value(onInstallOtaUpdate()),
-                                )
-                            : null,
-                        child: const Text('Update'),
-                      ),
-                    if (otaInProgress)
-                      TextButton(
-                        onPressed: () => unawaited(
-                          Future<void>.value(onAbortOta()),
-                        ),
-                        child: const Text('Cancel'),
-                      ),
-                  ],
-                ),
-              ],
-            ),
             cardGap,
             InfoCard(
               title: 'Chat',

@@ -46,6 +46,7 @@ import kotlin.concurrent.thread
 
 private const val BLE_PERMISSION_REQUEST = 9007
 private const val MICROPHONE_PERMISSION_REQUEST = 9008
+private const val LOCATION_PERMISSION_REQUEST = 9009
 private const val VOICE_CODEC_AMR_NB = 1
 private const val VOICE_CODEC_OPUS = 2
 private const val EDGEZ_HEADER_LEN = 4
@@ -110,6 +111,7 @@ class EdgezFlutterSdkPlugin :
     private val otaInProgress = AtomicBoolean(false)
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingMicrophoneResult: MethodChannel.Result? = null
+    private var pendingLocationResult: MethodChannel.Result? = null
     private var voicePlayer: MediaPlayer? = null
     private var voiceRecorder: MediaRecorder? = null
     private var voiceRecordingFile: File? = null
@@ -263,6 +265,7 @@ class EdgezFlutterSdkPlugin :
                 val deviceId = call.argument<String>("deviceId").orEmpty()
                 connectBle(deviceId, result)
             }
+            "getBestKnownLocation" -> getBestKnownLocation(result)
             "requestMicrophonePermission" -> requestMicrophonePermission(result)
             "startVoiceRecording" -> startVoiceRecording(result)
             "stopVoiceRecording" -> {
@@ -410,8 +413,83 @@ class EdgezFlutterSdkPlugin :
                 result.success(granted)
                 return true
             }
+            LOCATION_PERMISSION_REQUEST -> {
+                val result = pendingLocationResult ?: return true
+                pendingLocationResult = null
+                if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
+                    returnBestKnownLocation(result)
+                } else {
+                    result.error("location_permission_denied", "Location permission denied", null)
+                }
+                return true
+            }
             else -> return false
         }
+    }
+
+    private fun getBestKnownLocation(result: MethodChannel.Result) {
+        val permissions = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
+        if (permissions.none {
+                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }
+        ) {
+            val currentActivity = activity
+            if (currentActivity == null) {
+                result.error("location_permission_required", "Location permission requires an activity", null)
+                return
+            }
+            pendingLocationResult = result
+            currentActivity.requestPermissions(permissions, LOCATION_PERMISSION_REQUEST)
+            return
+        }
+        returnBestKnownLocation(result)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun returnBestKnownLocation(result: MethodChannel.Result) {
+        val hasFine = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val manager = context.getSystemService(LocationManager::class.java)
+        if (manager == null || (!hasFine && !hasCoarse)) {
+            result.success(null)
+            return
+        }
+        val providers = if (hasFine) {
+            listOf(
+                LocationManager.GPS_PROVIDER,
+                LocationManager.NETWORK_PROVIDER,
+                LocationManager.PASSIVE_PROVIDER,
+            )
+        } else {
+            listOf(LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+        }
+        val location = providers.mapNotNull { provider ->
+            runCatching {
+                if (manager.isProviderEnabled(provider)) {
+                    manager.getLastKnownLocation(provider)
+                } else {
+                    null
+                }
+            }.getOrNull()
+        }.maxByOrNull { it.time }
+        result.success(
+            location?.let {
+                mapOf(
+                    "latitude" to it.latitude,
+                    "longitude" to it.longitude,
+                    "timestampMs" to it.time,
+                )
+            },
+        )
     }
 
     private fun requestMicrophonePermission(result: MethodChannel.Result) {

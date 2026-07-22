@@ -13,6 +13,7 @@ The SDK owns BLE transport and mesh operations:
 - node/beacon events
 - text and voice message send APIs
 - device settings send APIs
+- BLE firmware OTA with acknowledged writes, progress events, and cancellation
 
 Production builds use `EdgezChannelTransport`, which bridges the SDK to the
 Android BLE plugin through Flutter method and event channels. Tests can inject
@@ -20,6 +21,18 @@ an `EdgezPlatformTransport` implementation to mock BLE commands and incoming
 events without hardware.
 
 The example app is intentionally in-memory only. It does not use SQLite and it does not include the map tab or Organic Maps dependencies.
+
+## Firmware OTA
+
+The Android transport follows the same OTA protocol as `edgez-android-app`:
+it discovers characteristics FFF5/FFF6, sends begin/data/end commands using
+acknowledged BLE writes, limits data chunks for the ESP32 NimBLE ACL buffer,
+and emits `EdgezMeshEventType.otaProgress` events.
+
+Use `EdgezOtaRelease.fromJson` to validate the firmware manifest and compare its
+version with the connected device. After downloading and validating the image
+size, call `EdgezMeshSession.performOta`. The example demonstrates the complete
+check, download, install, progress, and cancel workflow in its Settings tab.
 
 ## Current Android Reference
 

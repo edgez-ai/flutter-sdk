@@ -17,6 +17,7 @@ class EdgezMeshState {
     required List<EdgezTopologyLink> topologyLinks,
     required Map<int, List<EdgezConversationMessage>> conversations,
     required this.otaInProgress,
+    required this.otaReady,
     required this.otaSentBytes,
     required this.otaTotalBytes,
     required this.voiceCall,
@@ -37,6 +38,7 @@ class EdgezMeshState {
       topologyLinks: const <EdgezTopologyLink>[],
       conversations: const <int, List<EdgezConversationMessage>>{},
       otaInProgress: false,
+      otaReady: false,
       otaSentBytes: 0,
       otaTotalBytes: 0,
       voiceCall: const EdgezVoiceCallState(),
@@ -52,6 +54,7 @@ class EdgezMeshState {
   final List<EdgezTopologyLink> topologyLinks;
   final Map<int, List<EdgezConversationMessage>> conversations;
   final bool otaInProgress;
+  final bool otaReady;
   final int otaSentBytes;
   final int otaTotalBytes;
   final EdgezVoiceCallState voiceCall;
@@ -84,6 +87,7 @@ class EdgezMeshState {
     List<EdgezTopologyLink>? topologyLinks,
     Map<int, List<EdgezConversationMessage>>? conversations,
     bool? otaInProgress,
+    bool? otaReady,
     int? otaSentBytes,
     int? otaTotalBytes,
     EdgezVoiceCallState? voiceCall,
@@ -98,6 +102,7 @@ class EdgezMeshState {
       topologyLinks: topologyLinks ?? this.topologyLinks,
       conversations: conversations ?? this.conversations,
       otaInProgress: otaInProgress ?? this.otaInProgress,
+      otaReady: otaReady ?? this.otaReady,
       otaSentBytes: otaSentBytes ?? this.otaSentBytes,
       otaTotalBytes: otaTotalBytes ?? this.otaTotalBytes,
       voiceCall: voiceCall ?? this.voiceCall,
@@ -658,6 +663,9 @@ class EdgezMeshSession extends ChangeNotifier {
         _setState(
           _state.copyWith(
             connection: event.connection,
+            otaReady: event.connection == EdgezConnectionType.none
+                ? false
+                : _state.otaReady,
             voiceCall: event.connection == EdgezConnectionType.none
                 ? const EdgezVoiceCallState()
                 : _state.voiceCall,
@@ -679,6 +687,7 @@ class EdgezMeshSession extends ChangeNotifier {
       case EdgezMeshEventType.ready:
         _bleReady = true;
         _setState(_state.copyWith(statusLine: 'BLE control service ready'));
+        unawaited(_refreshOtaReadiness());
         unawaited(_sendInitIfReady());
       case EdgezMeshEventType.status:
         _setState(_state.copyWith(status: event.status));
@@ -740,6 +749,19 @@ class EdgezMeshSession extends ChangeNotifier {
         );
       case EdgezMeshEventType.log:
         _setState(_state.copyWith(statusLine: event.log));
+    }
+  }
+
+  Future<void> _refreshOtaReadiness() async {
+    try {
+      final ready = await sdk.isOtaReady();
+      if (_state.connection == EdgezConnectionType.ble) {
+        _setState(_state.copyWith(otaReady: ready));
+      }
+    } catch (_) {
+      if (_state.connection == EdgezConnectionType.ble) {
+        _setState(_state.copyWith(otaReady: false));
+      }
     }
   }
 

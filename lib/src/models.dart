@@ -245,6 +245,26 @@ class EdgezBeaconConfig {
       };
 }
 
+class EdgezLocation {
+  const EdgezLocation({
+    required this.latitude,
+    required this.longitude,
+    required this.timestampMs,
+  });
+
+  factory EdgezLocation.fromMap(Map<Object?, Object?> map) {
+    return EdgezLocation(
+      latitude: (map['latitude'] as num).toDouble(),
+      longitude: (map['longitude'] as num).toDouble(),
+      timestampMs: (map['timestampMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  final double latitude;
+  final double longitude;
+  final int timestampMs;
+}
+
 class EdgezDeviceSettings {
   const EdgezDeviceSettings({
     this.deviceModeEnabled = false,

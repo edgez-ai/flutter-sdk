@@ -129,6 +129,14 @@ class MockBleTransport implements EdgezPlatformTransport {
     _events.add(<Object?, Object?>{'type': 'log', 'log': message});
   }
 
+  void emitOtaProgress({required int sentBytes, required int totalBytes}) {
+    _events.add(<Object?, Object?>{
+      'type': 'otaProgress',
+      'sentBytes': sentBytes,
+      'totalBytes': totalBytes,
+    });
+  }
+
   Future<void> flushEvents() async {
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);

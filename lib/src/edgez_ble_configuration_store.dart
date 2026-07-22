@@ -7,11 +7,13 @@ class EdgezBleConfiguration {
     this.deviceId = '',
     this.deviceName = '',
     this.autoConnect = false,
+    this.shareLocation = false,
   });
 
   final String deviceId;
   final String deviceName;
   final bool autoConnect;
+  final bool shareLocation;
 
   bool get hasSelectedDevice => deviceId.isNotEmpty;
 
@@ -29,6 +31,7 @@ class EdgezBleConfigurationStore {
   static const _keyDeviceId = 'edgez_ble_device_id';
   static const _keyDeviceName = 'edgez_ble_device_name';
   static const _keyAutoConnect = 'edgez_ble_auto_connect';
+  static const _keyShareLocation = 'edgez_share_location';
 
   Future<EdgezBleConfiguration> load() async {
     final preferences = await SharedPreferences.getInstance();
@@ -36,6 +39,7 @@ class EdgezBleConfigurationStore {
       deviceId: preferences.getString(_keyDeviceId) ?? '',
       deviceName: preferences.getString(_keyDeviceName) ?? '',
       autoConnect: preferences.getBool(_keyAutoConnect) ?? false,
+      shareLocation: preferences.getBool(_keyShareLocation) ?? false,
     );
   }
 
@@ -48,6 +52,11 @@ class EdgezBleConfigurationStore {
   Future<void> setAutoConnect(bool enabled) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_keyAutoConnect, enabled);
+  }
+
+  Future<void> setShareLocation(bool enabled) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_keyShareLocation, enabled);
   }
 
   Future<void> clearSelectedDevice() async {
