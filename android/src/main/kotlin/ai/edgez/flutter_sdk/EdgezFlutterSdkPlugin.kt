@@ -60,6 +60,7 @@ private const val OTA_ABORT: Byte = 4
 private const val OTA_DATA_HEADER_SIZE = 5
 private const val OTA_DATA_MAX_CHUNK_SIZE = 220
 private const val OTA_WRITE_TIMEOUT_MS = 15_000L
+private const val CONTROL_SERVICE_READY_FALLBACK_MS = 750L
 private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 2)
 private const val EDGEZ_VOICE_NONCE_SIZE = 12
 private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
@@ -1191,6 +1192,21 @@ class EdgezFlutterSdkPlugin :
             serviceReadyPending = true
             writeNextNotificationDescriptor(gatt)
             maybeMarkControlServiceReady(gatt)
+            // Some Android stacks accept the CCCD write at the peripheral but
+            // omit onDescriptorWrite while PHY/data-length negotiation is in
+            // flight. Do not leave HaLow initialization blocked forever. The
+            // delay lets the GATT operation finish before Flutter writes INIT.
+            mainHandler.postDelayed({
+                if (this@EdgezFlutterSdkPlugin.gatt === gatt && serviceReadyPending) {
+                    emit(
+                        mapOf(
+                            "type" to "log",
+                            "log" to "BLE notification callback timeout; continuing with control service",
+                        ),
+                    )
+                    maybeMarkControlServiceReady(gatt, allowPendingNotifications = true)
+                }
+            }, CONTROL_SERVICE_READY_FALLBACK_MS)
         }
 
         override fun onDescriptorWrite(
@@ -1234,8 +1250,16 @@ class EdgezFlutterSdkPlugin :
             }
         }
 
-        private fun maybeMarkControlServiceReady(gatt: BluetoothGatt) {
-            if (!serviceReadyPending || notificationDescriptorWriteInFlight || notificationDescriptors.isNotEmpty()) return
+        private fun maybeMarkControlServiceReady(
+            gatt: BluetoothGatt,
+            allowPendingNotifications: Boolean = false,
+        ) {
+            if (!serviceReadyPending) return
+            if (!allowPendingNotifications &&
+                (notificationDescriptorWriteInFlight || notificationDescriptors.isNotEmpty())
+            ) {
+                return
+            }
             serviceReadyPending = false
             emit(mapOf("type" to "log", "log" to "BLE control service ready"))
             emit(mapOf("type" to "ready"))
