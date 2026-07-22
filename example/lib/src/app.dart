@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'conversation_screen.dart';
+import 'dashboard_tab.dart';
 import 'debug_tab.dart';
 import 'device_detail_screen.dart';
 import 'driver_catalog.dart';
@@ -21,9 +22,9 @@ import 'settings_tab.dart';
 import 'topology_screen.dart';
 
 enum AppDestination {
+  dashboard('Dashboard', Icons.dashboard_outlined, Icons.dashboard),
   nodes('Nodes', Icons.hub_outlined, Icons.hub),
   drivers('Drivers', Icons.usb_outlined, Icons.usb),
-  debug('Debug', Icons.bug_report_outlined, Icons.bug_report),
   settings('Settings', Icons.bluetooth_connected_outlined,
       Icons.bluetooth_connected);
 
@@ -51,9 +52,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   late final EdgezDriverStore driverStore;
   late final AppLinks appLinks;
   StreamSubscription<Uri>? driverLinkSubscription;
-  AppDestination destination = AppDestination.nodes;
+  AppDestination destination = AppDestination.dashboard;
   int? selectedNodeNum;
   bool showTopology = false;
+  bool showDebug = false;
   EdgezUserIdentity? userIdentity;
   bool databaseReady = false;
   bool persistenceEnabled = false;
@@ -637,6 +639,41 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         final selected =
             selectedNodeNum == null ? null : meshState.nodes[selectedNodeNum!];
         final body = switch (destination) {
+          AppDestination.dashboard => selected == null
+              ? DashboardScreen(
+                  activeConnection: meshState.connection,
+                  status: meshState.status,
+                  users: meshState.sortedNodes,
+                  sensorSamples: meshState.sensorSamples,
+                  onOpenProvisioning: _openProvisioning,
+                  onOpenNode: _openNode,
+                )
+              : selected.opensConversation
+                  ? ConversationScreen(
+                      activeConnection: meshState.connection,
+                      user: selected,
+                      messages: meshState.conversations[selected.nodeNum] ??
+                          const <EdgezConversationMessage>[],
+                      sensorSamples:
+                          meshState.sensorSamples[selected.nodeNum] ??
+                              const <EdgezSensorSample>[],
+                      onBack: () => setState(() => selectedNodeNum = null),
+                      onSendMessage: _sendMessage,
+                      onStartVoiceMessage: _startVoiceMessage,
+                      onStopVoiceMessage: _stopVoiceMessage,
+                      onReplayVoiceMessage: session.playVoiceMessage,
+                      callState: meshState.voiceCall,
+                      onStartCall: () =>
+                          session.startVoiceCall(selected.nodeNum),
+                      onAcceptCall: session.acceptVoiceCall,
+                      onEndCall: session.endVoiceCall,
+                    )
+                  : DeviceDetailScreen(
+                      user: selected,
+                      samples: meshState.sensorSamples[selected.nodeNum] ??
+                          const <EdgezSensorSample>[],
+                      onBack: () => setState(() => selectedNodeNum = null),
+                    ),
           AppDestination.nodes => showTopology
               ? TopologyScreen(
                   users: meshState.sortedNodes,
@@ -680,16 +717,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                               const <EdgezSensorSample>[],
                           onBack: () => setState(() => selectedNodeNum = null),
                         ),
-          AppDestination.debug => DebugScreen(
-              activeConnection: meshState.connection,
-              meshStatus: meshState.status,
-              statusLine: meshState.statusLine,
-              nodeCount: meshState.nodes.length,
-              conversationCount: meshState.conversations.length,
-              shareLocation: shareLocation,
-              deviceModeEnabled: deviceModeEnabled,
-              databaseReady: databaseReady,
-            ),
           AppDestination.drivers => DriversScreen(
               drivers: drivers,
               driverStore: driverStore,
@@ -697,150 +724,166 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               onInstallHandled: _driverInstallHandled,
               onInstalled: _loadInstalledDrivers,
             ),
-          AppDestination.settings => SettingsScreen(
-              activeConnection: meshState.connection,
-              shareLocation: shareLocation,
-              autoReplayReceivedVoice: autoReplayReceivedVoice,
-              deviceModeEnabled: deviceModeEnabled,
-              bleDevices: meshState.sortedBleDevices,
-              drivers: drivers,
-              selectedBleDevice: selectedBleDevice,
-              meshStatus: meshState.status,
-              bleAutoConnect: bleAutoConnect,
-              statusLine: meshState.statusLine,
-              otaUpdateAvailable: otaRelease?.isNewerThan(
-                    meshState.status?.firmwareVersion ?? '',
-                  ) ??
-                  false,
-              otaReady: meshState.otaReady,
-              otaCheckInProgress: otaCheckInProgress,
-              otaInProgress: otaInstallInProgress || meshState.otaInProgress,
-              otaProgress: meshState.otaInProgress ? meshState.otaProgress : 0,
-              otaMessage: meshState.otaInProgress && otaRelease != null
-                  ? 'Installing ${otaRelease!.version}: '
-                      '${(meshState.otaProgress * 100).floor()}%'
-                  : otaMessage,
-              locationMessage: locationMessage,
-              meshCountry: meshCountry,
-              meshId: meshId,
-              passphrase: passphrase,
-              maxHop: maxHop,
-              meshBandwidthMhz: meshBandwidthMhz,
-              meshFrequencyKhz: meshFrequencyKhz,
-              beaconIntervalSeconds: beaconIntervalSeconds,
-              userName: userName,
-              userIdentity: userIdentity,
-              userMarker: userMarker,
-              deviceUserName: deviceUserName,
-              deviceMarker: deviceMarker,
-              deviceMeshId: deviceMeshId,
-              deviceMaxHop: deviceMaxHop,
-              deviceBeaconIntervalSeconds: deviceBeaconIntervalSeconds,
-              deviceShareLocation: deviceShareLocation,
-              deviceLatitude: deviceLatitude,
-              deviceLongitude: deviceLongitude,
-              deviceGeoFenceName: deviceGeoFenceName,
-              deviceGeoIndex: deviceGeoIndex,
-              uartI2cSensorType: uartI2cSensorType,
-              rs485SensorType: rs485SensorType,
-              deviceType: deviceType,
-              devicePassphrase: devicePassphrase,
-              deviceUpstreamEnabled: deviceUpstreamEnabled,
-              deviceUpstreamWifiSsid: deviceUpstreamWifiSsid,
-              deviceUpstreamWifiPassphrase: deviceUpstreamWifiPassphrase,
-              deviceBeaconMulticast: deviceBeaconMulticast,
-              deviceSleepModeEnabled: deviceSleepModeEnabled,
-              onConnectBle: _connectBle,
-              onStopBleScan: _stopBleScan,
-              onConnectBleDevice: _connectBleDevice,
-              onSelectBleDevice: (device) {
-                setState(() => selectedBleDevice = device);
-                unawaited(bleConfigurationStore.saveSelectedDevice(device));
-              },
-              onBleAutoConnectChanged: (value) {
-                setState(() => bleAutoConnect = value);
-                unawaited(bleConfigurationStore.setAutoConnect(value));
-              },
-              onDisconnect: _disconnect,
-              onCheckForOtaUpdate: _checkForOtaUpdate,
-              onInstallOtaUpdate: _installOtaUpdate,
-              onSaveAppSettings: _saveAppSettings,
-              onRegenerateUserKeyPair: _regenerateUserKeyPair,
-              onSaveDeviceSettings: _saveDeviceSettings,
-              onShareLocationChanged: _setShareLocation,
-              onAutoReplayChanged: (value) =>
-                  setState(() => autoReplayReceivedVoice = value),
-              onDeviceModeChanged: (value) =>
-                  setState(() => deviceModeEnabled = value),
-              onMeshCountryChanged: (value) => setState(() {
-                meshCountry = value;
-                final bandwidths = halowBandwidthOptions(value);
-                if (!bandwidths.contains(meshBandwidthMhz)) {
-                  meshBandwidthMhz = bandwidths.first;
-                }
-                final frequencies =
-                    halowFrequenciesKhz(value, meshBandwidthMhz);
-                if (!frequencies.contains(meshFrequencyKhz)) {
-                  meshFrequencyKhz = frequencies.first;
-                }
-              }),
-              onMeshBandwidthChanged: (value) => setState(() {
-                meshBandwidthMhz = value;
-                final frequencies = halowFrequenciesKhz(meshCountry, value);
-                if (!frequencies.contains(meshFrequencyKhz)) {
-                  meshFrequencyKhz = frequencies.first;
-                }
-              }),
-              onMeshFrequencyChanged: (value) =>
-                  setState(() => meshFrequencyKhz = value),
-              onMeshIdChanged: (value) => setState(() => meshId = value),
-              onPassphraseChanged: (value) =>
-                  setState(() => passphrase = value),
-              onMaxHopChanged: (value) => setState(() => maxHop = value),
-              onBeaconIntervalChanged: (value) =>
-                  setState(() => beaconIntervalSeconds = value),
-              onUserNameChanged: (value) => setState(() => userName = value),
-              onUserMarkerChanged: (value) =>
-                  setState(() => userMarker = value),
-              onDeviceUserNameChanged: (value) =>
-                  setState(() => deviceUserName = value),
-              onDeviceMarkerChanged: (value) =>
-                  setState(() => deviceMarker = value),
-              onDeviceMeshIdChanged: (value) =>
-                  setState(() => deviceMeshId = value),
-              onDeviceMaxHopChanged: (value) =>
-                  setState(() => deviceMaxHop = value),
-              onDeviceBeaconIntervalChanged: (value) =>
-                  setState(() => deviceBeaconIntervalSeconds = value),
-              onDeviceShareLocationChanged: _setDeviceShareLocation,
-              onRefreshDeviceLocation: _refreshDeviceLocation,
-              onDeviceLatitudeChanged: (value) =>
-                  setState(() => deviceLatitude = value),
-              onDeviceLongitudeChanged: (value) =>
-                  setState(() => deviceLongitude = value),
-              onDeviceGeoFenceNameChanged: (value) =>
-                  setState(() => deviceGeoFenceName = value),
-              onDeviceGeoIndexChanged: (value) =>
-                  setState(() => deviceGeoIndex = value),
-              onUartI2cSensorChanged: (value) =>
-                  setState(() => uartI2cSensorType = value),
-              onRs485SensorChanged: (value) =>
-                  setState(() => rs485SensorType = value),
-              onDeviceTypeChanged: (value) =>
-                  setState(() => deviceType = value),
-              onDevicePassphraseChanged: (value) =>
-                  setState(() => devicePassphrase = value),
-              onDeviceUpstreamEnabledChanged: (value) =>
-                  setState(() => deviceUpstreamEnabled = value),
-              onDeviceUpstreamWifiSsidChanged: (value) =>
-                  setState(() => deviceUpstreamWifiSsid = value),
-              onDeviceUpstreamWifiPassphraseChanged: (value) =>
-                  setState(() => deviceUpstreamWifiPassphrase = value),
-              onDeviceBeaconMulticastChanged: (value) =>
-                  setState(() => deviceBeaconMulticast = value),
-              onDeviceSleepModeChanged: (value) =>
-                  setState(() => deviceSleepModeEnabled = value),
-            ),
+          AppDestination.settings => showDebug
+              ? DebugScreen(
+                  activeConnection: meshState.connection,
+                  meshStatus: meshState.status,
+                  statusLine: meshState.statusLine,
+                  nodeCount: meshState.nodes.length,
+                  conversationCount: meshState.conversations.length,
+                  shareLocation: shareLocation,
+                  deviceModeEnabled: deviceModeEnabled,
+                  databaseReady: databaseReady,
+                  onClose: () => setState(() => showDebug = false),
+                )
+              : SettingsScreen(
+                  activeConnection: meshState.connection,
+                  shareLocation: shareLocation,
+                  autoReplayReceivedVoice: autoReplayReceivedVoice,
+                  deviceModeEnabled: deviceModeEnabled,
+                  bleDevices: meshState.sortedBleDevices,
+                  drivers: drivers,
+                  selectedBleDevice: selectedBleDevice,
+                  meshStatus: meshState.status,
+                  bleAutoConnect: bleAutoConnect,
+                  statusLine: meshState.statusLine,
+                  otaUpdateAvailable: otaRelease?.isNewerThan(
+                        meshState.status?.firmwareVersion ?? '',
+                      ) ??
+                      false,
+                  otaReady: meshState.otaReady,
+                  otaCheckInProgress: otaCheckInProgress,
+                  otaInProgress:
+                      otaInstallInProgress || meshState.otaInProgress,
+                  otaProgress:
+                      meshState.otaInProgress ? meshState.otaProgress : 0,
+                  otaMessage: meshState.otaInProgress && otaRelease != null
+                      ? 'Installing ${otaRelease!.version}: '
+                          '${(meshState.otaProgress * 100).floor()}%'
+                      : otaMessage,
+                  locationMessage: locationMessage,
+                  meshCountry: meshCountry,
+                  meshId: meshId,
+                  passphrase: passphrase,
+                  maxHop: maxHop,
+                  meshBandwidthMhz: meshBandwidthMhz,
+                  meshFrequencyKhz: meshFrequencyKhz,
+                  beaconIntervalSeconds: beaconIntervalSeconds,
+                  userName: userName,
+                  userIdentity: userIdentity,
+                  userMarker: userMarker,
+                  deviceUserName: deviceUserName,
+                  deviceMarker: deviceMarker,
+                  deviceMeshId: deviceMeshId,
+                  deviceMaxHop: deviceMaxHop,
+                  deviceBeaconIntervalSeconds: deviceBeaconIntervalSeconds,
+                  deviceShareLocation: deviceShareLocation,
+                  deviceLatitude: deviceLatitude,
+                  deviceLongitude: deviceLongitude,
+                  deviceGeoFenceName: deviceGeoFenceName,
+                  deviceGeoIndex: deviceGeoIndex,
+                  uartI2cSensorType: uartI2cSensorType,
+                  rs485SensorType: rs485SensorType,
+                  deviceType: deviceType,
+                  devicePassphrase: devicePassphrase,
+                  deviceUpstreamEnabled: deviceUpstreamEnabled,
+                  deviceUpstreamWifiSsid: deviceUpstreamWifiSsid,
+                  deviceUpstreamWifiPassphrase: deviceUpstreamWifiPassphrase,
+                  deviceBeaconMulticast: deviceBeaconMulticast,
+                  deviceSleepModeEnabled: deviceSleepModeEnabled,
+                  onConnectBle: _connectBle,
+                  onStopBleScan: _stopBleScan,
+                  onConnectBleDevice: _connectBleDevice,
+                  onSelectBleDevice: (device) {
+                    setState(() => selectedBleDevice = device);
+                    unawaited(bleConfigurationStore.saveSelectedDevice(device));
+                  },
+                  onBleAutoConnectChanged: (value) {
+                    setState(() => bleAutoConnect = value);
+                    unawaited(bleConfigurationStore.setAutoConnect(value));
+                  },
+                  onDisconnect: _disconnect,
+                  onOpenDebug: () => setState(() => showDebug = true),
+                  onCheckForOtaUpdate: _checkForOtaUpdate,
+                  onInstallOtaUpdate: _installOtaUpdate,
+                  onSaveAppSettings: _saveAppSettings,
+                  onRegenerateUserKeyPair: _regenerateUserKeyPair,
+                  onSaveDeviceSettings: _saveDeviceSettings,
+                  onShareLocationChanged: _setShareLocation,
+                  onAutoReplayChanged: (value) =>
+                      setState(() => autoReplayReceivedVoice = value),
+                  onDeviceModeChanged: (value) =>
+                      setState(() => deviceModeEnabled = value),
+                  onMeshCountryChanged: (value) => setState(() {
+                    meshCountry = value;
+                    final bandwidths = halowBandwidthOptions(value);
+                    if (!bandwidths.contains(meshBandwidthMhz)) {
+                      meshBandwidthMhz = bandwidths.first;
+                    }
+                    final frequencies =
+                        halowFrequenciesKhz(value, meshBandwidthMhz);
+                    if (!frequencies.contains(meshFrequencyKhz)) {
+                      meshFrequencyKhz = frequencies.first;
+                    }
+                  }),
+                  onMeshBandwidthChanged: (value) => setState(() {
+                    meshBandwidthMhz = value;
+                    final frequencies = halowFrequenciesKhz(meshCountry, value);
+                    if (!frequencies.contains(meshFrequencyKhz)) {
+                      meshFrequencyKhz = frequencies.first;
+                    }
+                  }),
+                  onMeshFrequencyChanged: (value) =>
+                      setState(() => meshFrequencyKhz = value),
+                  onMeshIdChanged: (value) => setState(() => meshId = value),
+                  onPassphraseChanged: (value) =>
+                      setState(() => passphrase = value),
+                  onMaxHopChanged: (value) => setState(() => maxHop = value),
+                  onBeaconIntervalChanged: (value) =>
+                      setState(() => beaconIntervalSeconds = value),
+                  onUserNameChanged: (value) =>
+                      setState(() => userName = value),
+                  onUserMarkerChanged: (value) =>
+                      setState(() => userMarker = value),
+                  onDeviceUserNameChanged: (value) =>
+                      setState(() => deviceUserName = value),
+                  onDeviceMarkerChanged: (value) =>
+                      setState(() => deviceMarker = value),
+                  onDeviceMeshIdChanged: (value) =>
+                      setState(() => deviceMeshId = value),
+                  onDeviceMaxHopChanged: (value) =>
+                      setState(() => deviceMaxHop = value),
+                  onDeviceBeaconIntervalChanged: (value) =>
+                      setState(() => deviceBeaconIntervalSeconds = value),
+                  onDeviceShareLocationChanged: _setDeviceShareLocation,
+                  onRefreshDeviceLocation: _refreshDeviceLocation,
+                  onDeviceLatitudeChanged: (value) =>
+                      setState(() => deviceLatitude = value),
+                  onDeviceLongitudeChanged: (value) =>
+                      setState(() => deviceLongitude = value),
+                  onDeviceGeoFenceNameChanged: (value) =>
+                      setState(() => deviceGeoFenceName = value),
+                  onDeviceGeoIndexChanged: (value) =>
+                      setState(() => deviceGeoIndex = value),
+                  onUartI2cSensorChanged: (value) =>
+                      setState(() => uartI2cSensorType = value),
+                  onRs485SensorChanged: (value) =>
+                      setState(() => rs485SensorType = value),
+                  onDeviceTypeChanged: (value) =>
+                      setState(() => deviceType = value),
+                  onDevicePassphraseChanged: (value) =>
+                      setState(() => devicePassphrase = value),
+                  onDeviceUpstreamEnabledChanged: (value) =>
+                      setState(() => deviceUpstreamEnabled = value),
+                  onDeviceUpstreamWifiSsidChanged: (value) =>
+                      setState(() => deviceUpstreamWifiSsid = value),
+                  onDeviceUpstreamWifiPassphraseChanged: (value) =>
+                      setState(() => deviceUpstreamWifiPassphrase = value),
+                  onDeviceBeaconMulticastChanged: (value) =>
+                      setState(() => deviceBeaconMulticast = value),
+                  onDeviceSleepModeChanged: (value) =>
+                      setState(() => deviceSleepModeEnabled = value),
+                ),
         };
 
         return MaterialApp(
@@ -863,6 +906,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                     selectedIndex: AppDestination.values.indexOf(destination),
                     onDestinationSelected: (index) => setState(() {
                       destination = AppDestination.values[index];
+                      showDebug = false;
                       if (destination != AppDestination.nodes) {
                         selectedNodeNum = null;
                         showTopology = false;

@@ -106,6 +106,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onSelectBleDevice,
     required this.onBleAutoConnectChanged,
     required this.onDisconnect,
+    required this.onOpenDebug,
     required this.onCheckForOtaUpdate,
     required this.onInstallOtaUpdate,
     required this.onSaveAppSettings,
@@ -198,6 +199,7 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<EdgezBleDevice> onSelectBleDevice;
   final ValueChanged<bool> onBleAutoConnectChanged;
   final VoidCallback onDisconnect;
+  final VoidCallback onOpenDebug;
   final FutureOr<void> Function() onCheckForOtaUpdate;
   final FutureOr<void> Function() onInstallOtaUpdate;
   final FutureOr<void> Function() onSaveAppSettings;
@@ -284,7 +286,21 @@ class SettingsScreen extends StatefulWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          Text('Settings', style: Theme.of(context).textTheme.headlineMedium),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'Settings',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onOpenDebug,
+                icon: const Icon(Icons.bug_report_outlined),
+                label: const Text('Debug'),
+              ),
+            ],
+          ),
           if (statusLine.isNotEmpty) ...<Widget>[
             const SizedBox(height: 4),
             Text(statusLine, style: Theme.of(context).textTheme.bodySmall),

@@ -12,17 +12,20 @@ Finder findVerticalScrollable() => find.byWidgetPredicate(
     );
 
 void main() {
-  testWidgets('example app shows nodes tab', (tester) async {
+  testWidgets('example app opens on the dashboard tab', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
 
-    expect(find.text('Nodes'), findsWidgets);
-    expect(find.text('Topology'), findsOneWidget);
-    expect(find.textContaining('No beacon or discovery packets received yet'),
-        findsOneWidget);
+    expect(find.text('Dashboard'), findsWidgets);
+    expect(find.text('Mesh overview'), findsOneWidget);
+    expect(find.text('No dashboard devices yet'), findsOneWidget);
+    expect(find.text('Debug'), findsNothing);
   });
 
   testWidgets('nodes opens topology as a separate page', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
+
+    await tester.tap(find.text('Nodes').last);
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Topology'));
     await tester.pumpAndSettle();
@@ -83,6 +86,23 @@ void main() {
     );
     expect(find.text('Bandwidth'), findsOneWidget);
     expect(find.text('Frequency'), findsOneWidget);
+  });
+
+  testWidgets('settings opens debug as a separate page', (tester) async {
+    await tester.pumpWidget(const EdgezExampleApp());
+    await tester.tap(find.text('Settings').last);
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(OutlinedButton, 'Debug'), findsOneWidget);
+    expect(find.text('Debug'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Debug'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Transport'), findsOneWidget);
+    expect(find.text('SDK events'), findsOneWidget);
+    await tester.tap(find.byTooltip('Back to settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('BLE connection'), findsOneWidget);
   });
 
   testWidgets('BLE connection uses the Android-style device picker',

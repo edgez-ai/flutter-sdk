@@ -13,6 +13,7 @@ class DebugScreen extends StatelessWidget {
     required this.shareLocation,
     required this.deviceModeEnabled,
     required this.databaseReady,
+    required this.onClose,
     super.key,
   });
 
@@ -24,6 +25,7 @@ class DebugScreen extends StatelessWidget {
   final bool shareLocation;
   final bool deviceModeEnabled;
   final bool databaseReady;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +36,12 @@ class DebugScreen extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
+              IconButton(
+                onPressed: onClose,
+                tooltip: 'Back to settings',
+                icon: const Icon(Icons.arrow_back),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text('Debug',
                     style: Theme.of(context).textTheme.headlineMedium),
