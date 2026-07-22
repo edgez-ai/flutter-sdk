@@ -100,49 +100,5 @@ class ExampleDriverCatalog {
           'value. No external hardware is required.',
       assetDirectory: 'assets/drivers/random-temperature',
     ),
-    ExampleDriver(
-      key: '1002-1',
-      scriptId: 1002,
-      version: 2,
-      name: 'SHT3x Temperature/Humidity',
-      connector: EdgezSensorConnector.uartI2c,
-      description: 'Digital I2C sensor for temperature and relative humidity '
-          'measurements. Uses address 0x44 by default and validates readings '
-          'with CRC.',
-      assetDirectory: 'assets/drivers/sht3x',
-    ),
-    ExampleDriver(
-      key: '1004-1',
-      scriptId: 1004,
-      version: 2,
-      name: 'VC0706 UART Camera',
-      connector: EdgezSensorConnector.uartI2c,
-      description: 'UART JPEG camera using the VC0706 command protocol. '
-          'Captures still images and transfers the JPEG data through the '
-          'script global buffer.',
-      assetDirectory: 'assets/drivers/vc0706-camera',
-      globalBufferSize: 32768,
-      mimeType: 'image/jpeg',
-    ),
-    ExampleDriver(
-      key: '2002-1',
-      scriptId: 2002,
-      version: 1,
-      name: 'Flow Meter RS485',
-      connector: EdgezSensorConnector.rs485,
-      description: 'Industrial Modbus RTU flow meter that reports '
-          'instantaneous flow rate and accumulated volume over RS485.',
-      assetDirectory: 'assets/drivers/flow-meter-rs485',
-    ),
-    ExampleDriver(
-      key: '2003-1',
-      scriptId: 2003,
-      version: 1,
-      name: 'RS485 Vibration Sensor',
-      connector: EdgezSensorConnector.rs485,
-      description: 'Modbus RTU vibration sensor used to calculate a pass-by '
-          'score from velocity and displacement measurements.',
-      assetDirectory: 'assets/drivers/vibration-rs485',
-    ),
   ];
 }

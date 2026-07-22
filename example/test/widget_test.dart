@@ -45,7 +45,7 @@ void main() {
     expect(find.text('Scanning for EdgeZ devices...'), findsOneWidget);
   });
 
-  testWidgets('drivers tab lists the bundled Android-reference drivers',
+  testWidgets('drivers tab bundles only the random temperature sample',
       (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
     await tester.pumpAndSettle();
@@ -55,9 +55,8 @@ void main() {
 
     expect(find.text('UART / I2C'), findsOneWidget);
     expect(find.text('Random Temperature (Sample)'), findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -1000));
-    await tester.pumpAndSettle();
-    expect(find.text('Flow Meter RS485'), findsOneWidget);
+    expect(find.text('Flow Meter RS485'), findsNothing);
+    expect(find.text('SHT3x Temperature/Humidity'), findsNothing);
   });
 
   testWidgets('settings expose HaLow channel controls', (tester) async {

@@ -406,6 +406,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     if (deviceShareLocation && (latitude == null || longitude == null)) {
       throw StateError('No phone location is available for the device');
     }
+    final scripts = <EdgezSensorScriptConfig>[];
+    for (final key in <String>[uartI2cSensorType, rs485SensorType]) {
+      if (key.isEmpty) continue;
+      final driver = drivers.where((item) => item.key == key).firstOrNull;
+      if (driver != null) scripts.add(await driver.loadScript());
+    }
     await session.sendDeviceSettings(
       EdgezDeviceSettings(
         deviceModeEnabled: deviceModeEnabled,
@@ -432,6 +438,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         deviceType: deviceType,
         sleepModeEnabled: deviceSleepModeEnabled,
       ),
+      scripts: scripts,
     );
   }
 
@@ -696,6 +703,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               autoReplayReceivedVoice: autoReplayReceivedVoice,
               deviceModeEnabled: deviceModeEnabled,
               bleDevices: meshState.sortedBleDevices,
+              drivers: drivers,
               selectedBleDevice: selectedBleDevice,
               meshStatus: meshState.status,
               bleAutoConnect: bleAutoConnect,

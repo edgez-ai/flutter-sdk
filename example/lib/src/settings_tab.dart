@@ -4,6 +4,7 @@ import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
 import 'models.dart';
+import 'driver_catalog.dart';
 import 'shared_widgets.dart';
 
 List<int> halowFrequenciesKhz(String country, int bandwidthMhz) {
@@ -58,6 +59,7 @@ class SettingsScreen extends StatefulWidget {
     required this.autoReplayReceivedVoice,
     required this.deviceModeEnabled,
     required this.bleDevices,
+    required this.drivers,
     required this.selectedBleDevice,
     required this.meshStatus,
     required this.bleAutoConnect,
@@ -149,6 +151,7 @@ class SettingsScreen extends StatefulWidget {
   final bool autoReplayReceivedVoice;
   final bool deviceModeEnabled;
   final List<EdgezBleDevice> bleDevices;
+  final List<ExampleDriver> drivers;
   final EdgezBleDevice? selectedBleDevice;
   final EdgezMeshStatus? meshStatus;
   final bool bleAutoConnect;
@@ -248,6 +251,35 @@ class SettingsScreen extends StatefulWidget {
         uartI2cSensorType.isNotEmpty || rs485SensorType.isNotEmpty;
     final geoFenceEnabled = deviceGeoFenceName.trim().isNotEmpty;
     final selectedBle = selectedBleDevice;
+    final uartDrivers = drivers
+        .where((driver) => driver.connector == EdgezSensorConnector.uartI2c)
+        .toList(growable: false);
+    final rs485Drivers = drivers
+        .where((driver) => driver.connector == EdgezSensorConnector.rs485)
+        .toList(growable: false);
+    final uartDriverKeys = <String>[
+      '',
+      ...uartDrivers.map((driver) => driver.key),
+      if (uartI2cSensorType.isNotEmpty &&
+          !uartDrivers.any((driver) => driver.key == uartI2cSensorType))
+        uartI2cSensorType,
+    ];
+    final rs485DriverKeys = <String>[
+      '',
+      ...rs485Drivers.map((driver) => driver.key),
+      if (rs485SensorType.isNotEmpty &&
+          !rs485Drivers.any((driver) => driver.key == rs485SensorType))
+        rs485SensorType,
+    ];
+    String driverLabel(List<ExampleDriver> available, String key) {
+      if (key.isEmpty) return 'None';
+      return available
+              .where((driver) => driver.key == key)
+              .map((driver) => driver.label)
+              .firstOrNull ??
+          key;
+    }
+
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -536,7 +568,11 @@ class SettingsScreen extends StatefulWidget {
                   value: sensorsEnabled,
                   onChanged: (enabled) {
                     if (enabled) {
-                      onUartI2cSensorChanged('sht3x_temperature_humidity');
+                      if (uartDrivers.isNotEmpty) {
+                        onUartI2cSensorChanged(uartDrivers.first.key);
+                      } else if (rs485Drivers.isNotEmpty) {
+                        onRs485SensorChanged(rs485Drivers.first.key);
+                      }
                     } else {
                       onUartI2cSensorChanged('');
                       onRs485SensorChanged('');
@@ -546,24 +582,16 @@ class SettingsScreen extends StatefulWidget {
                 DropdownSetting<String>(
                   label: 'UART/I2C connector',
                   value: uartI2cSensorType,
-                  values: const <String>[
-                    '',
-                    'sht3x_temperature_humidity',
-                    'random_temperature_sample'
-                  ],
-                  titleFor: (value) => value.isEmpty ? 'None' : value,
+                  values: uartDriverKeys,
+                  titleFor: (value) => driverLabel(uartDrivers, value),
                   onChanged: onUartI2cSensorChanged,
                   enabled: sensorsEnabled,
                 ),
                 DropdownSetting<String>(
                   label: 'RS485 connector',
                   value: rs485SensorType,
-                  values: const <String>[
-                    '',
-                    'vibration_sensor_rs485',
-                    'flow_meter_rs485'
-                  ],
-                  titleFor: (value) => value.isEmpty ? 'None' : value,
+                  values: rs485DriverKeys,
+                  titleFor: (value) => driverLabel(rs485Drivers, value),
                   onChanged: onRs485SensorChanged,
                   enabled: sensorsEnabled,
                 ),

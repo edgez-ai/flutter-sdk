@@ -12,9 +12,9 @@ flutter run
 ```
 
 The Nodes tab includes a **Prov** action that follows the Android app's
-eight-step BLE device-provisioning flow. The Drivers tab lists the same bundled
-UART/I2C and RS485 Lua drivers as `edgez-android-app`; selected drivers are
-uploaded to the device with the provisioning settings.
+eight-step BLE device-provisioning flow. Only the Random Temperature sample is
+bundled; production UART/I2C and RS485 drivers are installed from the
+marketplace. Selected drivers are uploaded with the provisioning settings.
 
 Marketplace links use
 `edgez://drivers/install?id=<uuid>&slug=<slug>`. The example validates the link,

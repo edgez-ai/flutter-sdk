@@ -23,8 +23,4 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/drivers/flow-meter-rs485/
     - assets/drivers/random-temperature/
-    - assets/drivers/sht3x/
-    - assets/drivers/vc0706-camera/
-    - assets/drivers/vibration-rs485/

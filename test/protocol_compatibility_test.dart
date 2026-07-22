@@ -123,10 +123,10 @@ void main() {
     final script = List<String>.filled(500, 'x').join();
     await sdk.sendSensorScript(
       EdgezSensorScriptConfig(
-        scriptId: 1002,
+        scriptId: 1003,
         version: 2,
-        name: 'SHT3x',
-        sensorType: '1002-1',
+        name: 'Random Temperature (Sample)',
+        sensorType: '1003-1',
         connector: EdgezSensorConnector.uartI2c,
         script: script,
       ),
@@ -147,7 +147,7 @@ void main() {
     expect(chunks.map((chunk) => chunk.length), <int>[220, 220, 60]);
     expect(chunks.expand((chunk) => chunk).length, 500);
     expect(packets.first.scriptConfig.selectUartI2c, isTrue);
-    expect(packets.first.scriptConfig.sensorType, '1002-1');
+    expect(packets.first.scriptConfig.sensorType, '1003-1');
   });
 
   test('topology reports become five-minute RSSI links', () async {
