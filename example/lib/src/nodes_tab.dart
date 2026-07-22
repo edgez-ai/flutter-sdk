@@ -10,8 +10,10 @@ class NodesScreen extends StatelessWidget {
     required this.status,
     required this.users,
     required this.sensorSamples,
+    required this.dashboardDisplays,
     required this.onOpenTopology,
     required this.onRemoveNode,
+    required this.onToggleDashboard,
     required this.onOpenNode,
     super.key,
   });
@@ -20,8 +22,10 @@ class NodesScreen extends StatelessWidget {
   final EdgezMeshStatus? status;
   final List<EdgezMeshNode> users;
   final Map<int, List<EdgezSensorSample>> sensorSamples;
+  final Map<String, ExampleDashboardDisplay> dashboardDisplays;
   final VoidCallback onOpenTopology;
   final ValueChanged<EdgezMeshNode> onRemoveNode;
+  final ValueChanged<EdgezMeshNode> onToggleDashboard;
   final ValueChanged<EdgezMeshNode> onOpenNode;
 
   @override
@@ -68,6 +72,10 @@ class NodesScreen extends StatelessWidget {
               child: NodeCard(
                 user: user,
                 latestSensor: sensorSamples[user.nodeNum]?.lastOrNull?.data,
+                showOnDashboard:
+                    dashboardDisplays[user.exampleUserId]?.showOnDashboard ??
+                        false,
+                onToggleDashboard: () => onToggleDashboard(user),
                 onTap: () => onOpenNode(user),
               ),
             ),
@@ -84,12 +92,16 @@ class NodeCard extends StatelessWidget {
     required this.user,
     required this.latestSensor,
     required this.onTap,
+    this.showOnDashboard,
+    this.onToggleDashboard,
     super.key,
   });
 
   final EdgezMeshNode user;
   final EdgezSensorData? latestSensor;
   final VoidCallback onTap;
+  final bool? showOnDashboard;
+  final VoidCallback? onToggleDashboard;
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +148,18 @@ class NodeCard extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: <Widget>[
+                      if (onToggleDashboard != null)
+                        IconButton(
+                          tooltip: showOnDashboard == true
+                              ? 'Remove from dashboard'
+                              : 'Show on dashboard',
+                          onPressed: onToggleDashboard,
+                          icon: Icon(
+                            showOnDashboard == true
+                                ? Icons.dashboard
+                                : Icons.dashboard_outlined,
+                          ),
+                        ),
                       if (user.sleeping)
                         Text('Sleeping',
                             style: Theme.of(context).textTheme.labelLarge),

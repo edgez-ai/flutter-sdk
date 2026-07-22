@@ -1,6 +1,8 @@
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'models.dart';
+
 class ExampleDatabase {
   Database? _database;
 
@@ -24,7 +26,10 @@ class ExampleDatabase {
             device_type TEXT NOT NULL,
             geo_fence_name TEXT NOT NULL,
             geo_index INTEGER NOT NULL,
-            sleeping INTEGER NOT NULL
+            sleeping INTEGER NOT NULL,
+            dashboard_show_on INTEGER NOT NULL DEFAULT 0,
+            dashboard_widget TEXT NOT NULL DEFAULT 'tempHumidity',
+            dashboard_range TEXT NOT NULL DEFAULT 'latest'
           )
         ''');
         await db.execute('''
@@ -65,7 +70,14 @@ class ExampleDatabase {
             temperature REAL,
             humidity REAL,
             pressure REAL,
-            vibration_average REAL
+            vibration_average REAL,
+            accel_x REAL,
+            accel_y REAL,
+            accel_z REAL,
+            gyro_x REAL,
+            gyro_y REAL,
+            gyro_z REAL,
+            sensor_data_length INTEGER
           )
         ''');
         await db.execute('''
@@ -131,6 +143,47 @@ class ExampleDatabase {
     };
   }
 
+  Future<Map<String, ExampleDashboardDisplay>> loadDashboardDisplays() async {
+    final db = _requireDatabase();
+    final rows = await db.query(
+      'nodes',
+      columns: <String>[
+        'node_num',
+        'user_uuid',
+        'dashboard_show_on',
+        'dashboard_widget',
+        'dashboard_range',
+      ],
+    );
+    return <String, ExampleDashboardDisplay>{
+      for (final row in rows)
+        _deviceKey(row['user_uuid'] as String, row['node_num'] as int):
+            ExampleDashboardDisplay(
+          deviceKey:
+              _deviceKey(row['user_uuid'] as String, row['node_num'] as int),
+          showOnDashboard: (row['dashboard_show_on'] as int) != 0,
+          widget: ExampleDashboardWidget.fromName(
+              row['dashboard_widget'] as String?),
+          range:
+              ExampleDashboardRange.fromName(row['dashboard_range'] as String?),
+        ),
+    };
+  }
+
+  Future<void> setDashboardDisplay(ExampleDashboardDisplay display) async {
+    final db = _requireDatabase();
+    await db.update(
+      'nodes',
+      <String, Object?>{
+        'dashboard_show_on': display.showOnDashboard ? 1 : 0,
+        'dashboard_widget': display.widget.name,
+        'dashboard_range': display.range.name,
+      },
+      where: 'user_uuid = ? OR (user_uuid = ? AND CAST(node_num AS TEXT) = ?)',
+      whereArgs: <Object?>[display.deviceKey, '', display.deviceKey],
+    );
+  }
+
   Future<Map<int, List<EdgezConversationMessage>>> loadConversations() async {
     final db = _requireDatabase();
     final rows = await db.query(
@@ -182,6 +235,13 @@ class ExampleDatabase {
           humidity: (row['humidity'] as num?)?.toDouble(),
           pressure: (row['pressure'] as num?)?.toDouble(),
           vibrationAverage: (row['vibration_average'] as num?)?.toDouble(),
+          accelX: (row['accel_x'] as num?)?.toDouble(),
+          accelY: (row['accel_y'] as num?)?.toDouble(),
+          accelZ: (row['accel_z'] as num?)?.toDouble(),
+          gyroX: (row['gyro_x'] as num?)?.toDouble(),
+          gyroY: (row['gyro_y'] as num?)?.toDouble(),
+          gyroZ: (row['gyro_z'] as num?)?.toDouble(),
+          binaryLengthBytes: row['sensor_data_length'] as int?,
         ),
       );
     }).toList(growable: false);
@@ -243,10 +303,52 @@ class ExampleDatabase {
       'humidity': sample.data.humidity,
       'pressure': sample.data.pressure,
       'vibration_average': sample.data.vibrationAverage,
+      'accel_x': sample.data.accelX,
+      'accel_y': sample.data.accelY,
+      'accel_z': sample.data.accelZ,
+      'gyro_x': sample.data.gyroX,
+      'gyro_y': sample.data.gyroY,
+      'gyro_z': sample.data.gyroZ,
+      'sensor_data_length': sample.data.binaryLengthBytes,
     });
   }
 
   Future<void> _upsertNode(Transaction txn, EdgezMeshNode node) async {
+    final deviceKey = _deviceKey(node.userUuid, node.nodeNum);
+    final savedDisplays = await txn.query(
+      'nodes',
+      columns: <String>[
+        'dashboard_show_on',
+        'dashboard_widget',
+        'dashboard_range',
+      ],
+      where: node.userUuid.isEmpty ? 'node_num = ?' : 'user_uuid = ?',
+      whereArgs: <Object?>[
+        node.userUuid.isEmpty ? node.nodeNum : node.userUuid,
+      ],
+      limit: 1,
+    );
+    final savedDisplay = savedDisplays.isEmpty
+        ? ExampleDashboardDisplay(deviceKey: deviceKey)
+        : ExampleDashboardDisplay(
+            deviceKey: deviceKey,
+            showOnDashboard:
+                (savedDisplays.single['dashboard_show_on'] as int) != 0,
+            widget: ExampleDashboardWidget.fromName(
+                savedDisplays.single['dashboard_widget'] as String?),
+            range: ExampleDashboardRange.fromName(
+                savedDisplays.single['dashboard_range'] as String?),
+          );
+    // Android keys cached peers by user UUID, which remains stable when a
+    // device receives a different mesh node number. Remove the stale row
+    // before replacing the current node-number keyed Flutter row.
+    if (node.userUuid.isNotEmpty) {
+      await txn.delete(
+        'nodes',
+        where: 'user_uuid = ? AND node_num != ?',
+        whereArgs: <Object?>[node.userUuid, node.nodeNum],
+      );
+    }
     await txn.insert(
       'nodes',
       <String, Object?>{
@@ -263,6 +365,9 @@ class ExampleDatabase {
         'geo_fence_name': node.geoFenceName,
         'geo_index': node.geoIndex,
         'sleeping': node.sleeping ? 1 : 0,
+        'dashboard_show_on': savedDisplay.showOnDashboard ? 1 : 0,
+        'dashboard_widget': savedDisplay.widget.name,
+        'dashboard_range': savedDisplay.range.name,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -317,6 +422,13 @@ class ExampleDatabase {
         'humidity': sample.data.humidity,
         'pressure': sample.data.pressure,
         'vibration_average': sample.data.vibrationAverage,
+        'accel_x': sample.data.accelX,
+        'accel_y': sample.data.accelY,
+        'accel_z': sample.data.accelZ,
+        'gyro_x': sample.data.gyroX,
+        'gyro_y': sample.data.gyroY,
+        'gyro_z': sample.data.gyroZ,
+        'sensor_data_length': sample.data.binaryLengthBytes,
       },
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
@@ -328,5 +440,9 @@ class ExampleDatabase {
       throw StateError('Example database is not open');
     }
     return db;
+  }
+
+  static String _deviceKey(String userUuid, int nodeNum) {
+    return userUuid.isNotEmpty ? userUuid : nodeNum.toString();
   }
 }

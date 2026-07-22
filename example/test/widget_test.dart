@@ -1,5 +1,7 @@
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:edgez_flutter_sdk_example/src/conversation_screen.dart';
+import 'package:edgez_flutter_sdk_example/src/dashboard_tab.dart';
+import 'package:edgez_flutter_sdk_example/src/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:edgez_flutter_sdk_example/src/app.dart';
@@ -65,6 +67,92 @@ void main() {
     expect(find.text('Provisioning'), findsOneWidget);
     expect(find.text('Step 1 of 8: Select BLE device'), findsOneWidget);
     expect(find.text('Scanning for EdgeZ devices...'), findsOneWidget);
+  });
+
+  testWidgets('dashboard renders Android-compatible visualization widgets',
+      (tester) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final users = <EdgezMeshNode>[
+      for (var index = 0; index < 6; index++)
+        EdgezMeshNode(
+          nodeNum: index + 1,
+          userUuid: 'node-$index',
+          displayName: index == 0 ? 'Mesh user' : 'Sensor $index',
+          route: 'BLE',
+          lastSeenMs: now,
+          marker: 'green',
+          deviceType: index == 0 ? 'User' : 'Sensor',
+        ),
+    ];
+    final widgets = <ExampleDashboardWidget>[
+      ExampleDashboardWidget.tempHumidity,
+      ExampleDashboardWidget.latestValue,
+      ExampleDashboardWidget.imuOrientation,
+      ExampleDashboardWidget.binaryData,
+      ExampleDashboardWidget.timeSeries,
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DashboardScreen(
+          activeConnection: EdgezConnectionType.ble,
+          status: null,
+          users: users,
+          sensorSamples: <int, List<EdgezSensorSample>>{
+            for (final user in users.skip(1))
+              user.nodeNum: <EdgezSensorSample>[
+                EdgezSensorSample(
+                  nodeNum: user.nodeNum,
+                  timestampMs: now - 1000,
+                  data: const EdgezSensorData(
+                    temperature: 21,
+                    humidity: 45,
+                    accelX: 0.2,
+                    accelY: 0.4,
+                    accelZ: 9.7,
+                    binaryLengthBytes: 128,
+                  ),
+                ),
+                EdgezSensorSample(
+                  nodeNum: user.nodeNum,
+                  timestampMs: now,
+                  data: const EdgezSensorData(
+                    temperature: 22,
+                    humidity: 46,
+                    accelX: 0.3,
+                    accelY: 0.5,
+                    accelZ: 9.6,
+                    binaryLengthBytes: 128,
+                  ),
+                ),
+              ],
+          },
+          dashboardDisplays: <String, ExampleDashboardDisplay>{
+            'node-0': const ExampleDashboardDisplay(
+              deviceKey: 'node-0',
+              showOnDashboard: true,
+            ),
+            for (var index = 0; index < widgets.length; index++)
+              'node-${index + 1}': ExampleDashboardDisplay(
+                deviceKey: 'node-${index + 1}',
+                showOnDashboard: true,
+                widget: widgets[index],
+                range: widgets[index] == ExampleDashboardWidget.timeSeries
+                    ? ExampleDashboardRange.last30Minutes
+                    : ExampleDashboardRange.latest,
+              ),
+          },
+          onOpenProvisioning: () {},
+          onOpenNode: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.text('Tap to open conversation'), findsOneWidget);
+    for (final widget in widgets) {
+      expect(find.text(widget.label), findsOneWidget);
+    }
+    expect(find.text('Binary length: 128 bytes'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('drivers tab bundles only the random temperature sample',

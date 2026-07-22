@@ -60,6 +60,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool databaseReady = false;
   bool persistenceEnabled = false;
   bool hydrationComplete = false;
+  Map<String, ExampleDashboardDisplay> dashboardDisplays =
+      const <String, ExampleDashboardDisplay>{};
   Timer? persistDebounce;
   bool persistInFlight = false;
   bool persistAgain = false;
@@ -214,6 +216,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     try {
       await database.open();
       final nodes = await database.loadNodes();
+      final savedDashboardDisplays = await database.loadDashboardDisplays();
       final conversations = await database.loadConversations();
       final samples = <int, List<EdgezSensorSample>>{};
       for (final nodeNum in nodes.keys) {
@@ -230,6 +233,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         databaseReady = true;
         persistenceEnabled = true;
         hydrationComplete = true;
+        dashboardDisplays = savedDashboardDisplays;
       });
     } catch (_) {
       if (!mounted) return;
@@ -297,6 +301,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         ..write('|')
         ..write(node.marker)
         ..write('|')
+        ..write(node.publicKey)
+        ..write('|')
         ..write(node.latitude)
         ..write('|')
         ..write(node.longitude)
@@ -328,6 +334,48 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
           ..write(message.status)
           ..write('|')
           ..write(message.messageUuid)
+          ..write(';');
+      }
+    }
+    final sensorSamples = state.sensorSamples.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    for (final entry in sensorSamples) {
+      buffer
+        ..write('s')
+        ..write(entry.key)
+        ..write(':');
+      for (final sample in entry.value) {
+        final data = sample.data;
+        buffer
+          ..write(sample.timestampMs)
+          ..write('|')
+          ..write(data.latitude)
+          ..write('|')
+          ..write(data.longitude)
+          ..write('|')
+          ..write(data.altitude)
+          ..write('|')
+          ..write(data.temperature)
+          ..write('|')
+          ..write(data.humidity)
+          ..write('|')
+          ..write(data.pressure)
+          ..write('|')
+          ..write(data.vibrationAverage)
+          ..write('|')
+          ..write(data.accelX)
+          ..write('|')
+          ..write(data.accelY)
+          ..write('|')
+          ..write(data.accelZ)
+          ..write('|')
+          ..write(data.gyroX)
+          ..write('|')
+          ..write(data.gyroY)
+          ..write('|')
+          ..write(data.gyroZ)
+          ..write('|')
+          ..write(data.binaryLengthBytes)
           ..write(';');
       }
     }
@@ -583,6 +631,30 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     setState(() => selectedNodeNum = node.nodeNum);
   }
 
+  ExampleDashboardDisplay _dashboardDisplayFor(EdgezMeshNode node) {
+    return dashboardDisplays[node.exampleUserId] ??
+        ExampleDashboardDisplay(deviceKey: node.exampleUserId);
+  }
+
+  Future<void> _setDashboardDisplay(ExampleDashboardDisplay display) async {
+    if (persistenceEnabled) {
+      await database.setDashboardDisplay(display);
+    }
+    if (!mounted) return;
+    setState(() {
+      dashboardDisplays = <String, ExampleDashboardDisplay>{
+        ...dashboardDisplays,
+        display.deviceKey: display,
+      };
+    });
+  }
+
+  void _toggleDashboard(EdgezMeshNode node) {
+    final current = _dashboardDisplayFor(node);
+    unawaited(_setDashboardDisplay(
+        current.copyWith(showOnDashboard: !current.showOnDashboard)));
+  }
+
   void _removeNode(EdgezMeshNode node) {
     session.removeNode(node.nodeNum);
     if (persistenceEnabled) {
@@ -645,6 +717,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                   status: meshState.status,
                   users: meshState.sortedNodes,
                   sensorSamples: meshState.sensorSamples,
+                  dashboardDisplays: dashboardDisplays,
                   onOpenProvisioning: _openProvisioning,
                   onOpenNode: _openNode,
                 )
@@ -672,6 +745,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                       user: selected,
                       samples: meshState.sensorSamples[selected.nodeNum] ??
                           const <EdgezSensorSample>[],
+                      dashboardDisplay: _dashboardDisplayFor(selected),
+                      onDashboardDisplayChanged: (display) =>
+                          unawaited(_setDashboardDisplay(display)),
                       onBack: () => setState(() => selectedNodeNum = null),
                     ),
           AppDestination.nodes => showTopology
@@ -686,8 +762,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                       status: meshState.status,
                       users: meshState.sortedNodes,
                       sensorSamples: meshState.sensorSamples,
+                      dashboardDisplays: dashboardDisplays,
                       onOpenTopology: () => setState(() => showTopology = true),
                       onRemoveNode: _removeNode,
+                      onToggleDashboard: _toggleDashboard,
                       onOpenNode: _openNode,
                     )
                   : selected.opensConversation
@@ -714,6 +792,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                           user: selected,
                           samples: meshState.sensorSamples[selected.nodeNum] ??
                               const <EdgezSensorSample>[],
+                          dashboardDisplay: _dashboardDisplayFor(selected),
+                          onDashboardDisplayChanged: (display) =>
+                              unawaited(_setDashboardDisplay(display)),
                           onBack: () => setState(() => selectedNodeNum = null),
                         ),
           AppDestination.drivers => DriversScreen(

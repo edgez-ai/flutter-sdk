@@ -10,12 +10,16 @@ class DeviceDetailScreen extends StatelessWidget {
   const DeviceDetailScreen({
     required this.user,
     required this.samples,
+    required this.dashboardDisplay,
+    required this.onDashboardDisplayChanged,
     required this.onBack,
     super.key,
   });
 
   final EdgezMeshNode user;
   final List<EdgezSensorSample> samples;
+  final ExampleDashboardDisplay dashboardDisplay;
+  final ValueChanged<ExampleDashboardDisplay> onDashboardDisplayChanged;
   final VoidCallback onBack;
 
   @override
@@ -44,6 +48,11 @@ class DeviceDetailScreen extends StatelessWidget {
           const SizedBox(height: 12),
           DeviceSummaryCard(user: user),
           const SizedBox(height: 12),
+          DashboardDisplayCard(
+            display: dashboardDisplay,
+            onChanged: onDashboardDisplayChanged,
+          ),
+          const SizedBox(height: 12),
           GeoFenceCard(user: user),
           const SizedBox(height: 12),
           SensorLatestCard(
@@ -52,6 +61,70 @@ class DeviceDetailScreen extends StatelessWidget {
           SensorChartCard(samples: samples),
         ],
       ),
+    );
+  }
+}
+
+class DashboardDisplayCard extends StatelessWidget {
+  const DashboardDisplayCard({
+    required this.display,
+    required this.onChanged,
+    super.key,
+  });
+
+  final ExampleDashboardDisplay display;
+  final ValueChanged<ExampleDashboardDisplay> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedRange = display.range == ExampleDashboardRange.latest
+        ? ExampleDashboardRange.last30Minutes
+        : display.range;
+    return InfoCard(
+      title: 'Dashboard visualization',
+      action: Switch(
+        value: display.showOnDashboard,
+        onChanged: (enabled) =>
+            onChanged(display.copyWith(showOnDashboard: enabled)),
+      ),
+      children: <Widget>[
+        DropdownButtonFormField<ExampleDashboardWidget>(
+          initialValue: display.widget,
+          decoration: const InputDecoration(labelText: 'Widget'),
+          items: <DropdownMenuItem<ExampleDashboardWidget>>[
+            for (final option in ExampleDashboardWidget.values)
+              DropdownMenuItem(value: option, child: Text(option.label)),
+          ],
+          onChanged: !display.showOnDashboard
+              ? null
+              : (option) {
+                  if (option == null) return;
+                  onChanged(
+                    display.copyWith(
+                      widget: option,
+                      range: option == ExampleDashboardWidget.timeSeries
+                          ? selectedRange
+                          : ExampleDashboardRange.latest,
+                    ),
+                  );
+                },
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<ExampleDashboardRange>(
+          initialValue: selectedRange,
+          decoration: const InputDecoration(labelText: 'Range'),
+          items: <DropdownMenuItem<ExampleDashboardRange>>[
+            for (final option in ExampleDashboardRange.timeSeriesOptions)
+              DropdownMenuItem(value: option, child: Text(option.label)),
+          ],
+          onChanged: !display.showOnDashboard ||
+                  display.widget != ExampleDashboardWidget.timeSeries
+              ? null
+              : (range) {
+                  if (range != null) onChanged(display.copyWith(range: range));
+                },
+        ),
+      ],
     );
   }
 }
