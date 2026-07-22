@@ -12,6 +12,9 @@ class ExampleDriver {
     required this.assetDirectory,
     this.globalBufferSize = 4096,
     this.mimeType = 'application/x-lua',
+    this.script = '',
+    this.imagePath = '',
+    this.isBundled = true,
   });
 
   final String key;
@@ -23,20 +26,42 @@ class ExampleDriver {
   final String assetDirectory;
   final int globalBufferSize;
   final String mimeType;
+  final String script;
+  final String imagePath;
+  final bool isBundled;
 
   String get label => '$name [id=$scriptId, v=$version]';
 
   Future<EdgezSensorScriptConfig> loadScript() async {
-    final script = await rootBundle.loadString('$assetDirectory/driver.lua');
+    final source = script.isNotEmpty
+        ? script
+        : await rootBundle.loadString('$assetDirectory/driver.lua');
     return EdgezSensorScriptConfig(
       scriptId: scriptId,
       version: version,
       name: name,
       sensorType: key,
       connector: connector,
-      script: script,
+      script: source,
       globalBufferSize: globalBufferSize,
       mimeType: mimeType,
+    );
+  }
+
+  factory ExampleDriver.fromInstalled(EdgezDriverBundle bundle) {
+    return ExampleDriver(
+      key: bundle.key,
+      scriptId: bundle.scriptId,
+      version: bundle.version,
+      name: bundle.name,
+      connector: bundle.connector,
+      description: bundle.description,
+      assetDirectory: '',
+      globalBufferSize: bundle.globalBufferSize,
+      mimeType: bundle.mimeType,
+      script: bundle.script,
+      imagePath: bundle.imagePath,
+      isBundled: false,
     );
   }
 

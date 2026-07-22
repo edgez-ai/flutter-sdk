@@ -6,5 +6,6 @@ export 'src/edgez_ota.dart';
 export 'src/edgez_sdk_release.dart';
 export 'src/edgez_identity_store.dart';
 export 'src/edgez_ble_configuration_store.dart';
+export 'src/edgez_driver_store.dart';
 export 'src/models.dart';
 export 'src/proto/edgez_mesh.pb.dart';

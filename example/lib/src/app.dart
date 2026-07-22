@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:app_links/app_links.dart';
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import 'driver_catalog.dart';
 import 'drivers_tab.dart';
 import 'example_database.dart';
 import 'models.dart';
+import 'marketplace_driver_install.dart';
 import 'nodes_tab.dart';
 import 'provisioning_screen.dart';
 import 'settings_tab.dart';
@@ -46,6 +48,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   late final ExampleDatabase database;
   late final EdgezIdentityStore identityStore;
   late final EdgezBleConfigurationStore bleConfigurationStore;
+  late final EdgezDriverStore driverStore;
+  late final AppLinks appLinks;
+  StreamSubscription<Uri>? driverLinkSubscription;
   AppDestination destination = AppDestination.nodes;
   int? selectedNodeNum;
   bool showTopology = false;
@@ -62,6 +67,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   bool deviceModeEnabled = false;
   bool provisionMode = false;
   List<ExampleDriver> drivers = ExampleDriverCatalog.bundled;
+  MarketplaceDriverInstallRequest? pendingDriverInstall;
   bool bleAutoConnect = false;
   EdgezBleDevice? selectedBleDevice;
   EdgezOtaRelease? otaRelease;
@@ -107,9 +113,52 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     database = ExampleDatabase();
     identityStore = EdgezIdentityStore();
     bleConfigurationStore = EdgezBleConfigurationStore();
+    driverStore = EdgezDriverStore();
+    appLinks = AppLinks();
     session.addListener(_persistSessionSnapshot);
     unawaited(_loadIdentityAndBleConfiguration());
     unawaited(_hydrateFromDatabase());
+    unawaited(_loadInstalledDrivers());
+    _listenForDriverLinks();
+  }
+
+  Future<void> _loadInstalledDrivers() async {
+    try {
+      final installed = await driverStore.load();
+      final byKey = <String, ExampleDriver>{
+        for (final driver in ExampleDriverCatalog.bundled) driver.key: driver,
+        for (final bundle in installed)
+          bundle.key: ExampleDriver.fromInstalled(bundle),
+      };
+      if (mounted) setState(() => drivers = byKey.values.toList());
+    } catch (_) {
+      // Driver storage is optional; bundled drivers remain available.
+    }
+  }
+
+  void _listenForDriverLinks() {
+    try {
+      driverLinkSubscription = appLinks.uriLinkStream.listen(
+        _handleDriverLink,
+        onError: (_) {},
+      );
+    } catch (_) {
+      // Deep-link services are unavailable in widget tests and some hosts.
+    }
+  }
+
+  void _handleDriverLink(Uri uri) {
+    final request = MarketplaceDriverInstallRequest.fromUri(uri);
+    if (request == null || !mounted) return;
+    setState(() {
+      pendingDriverInstall = request;
+      destination = AppDestination.drivers;
+      provisionMode = false;
+    });
+  }
+
+  void _driverInstallHandled() {
+    setState(() => pendingDriverInstall = null);
   }
 
   Future<void> _openProvisioning() async {
@@ -150,6 +199,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   @override
   void dispose() {
+    unawaited(driverLinkSubscription?.cancel());
     persistDebounce?.cancel();
     persistenceEnabled = false;
     session.removeListener(_persistSessionSnapshot);
@@ -633,7 +683,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
               deviceModeEnabled: deviceModeEnabled,
               databaseReady: databaseReady,
             ),
-          AppDestination.drivers => DriversScreen(drivers: drivers),
+          AppDestination.drivers => DriversScreen(
+              drivers: drivers,
+              driverStore: driverStore,
+              installRequest: pendingDriverInstall,
+              onInstallHandled: _driverInstallHandled,
+              onInstalled: _loadInstalledDrivers,
+            ),
           AppDestination.settings => SettingsScreen(
               activeConnection: meshState.connection,
               shareLocation: shareLocation,

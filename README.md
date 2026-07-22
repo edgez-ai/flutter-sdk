@@ -34,6 +34,13 @@ version with the connected device. After downloading and validating the image
 size, call `EdgezMeshSession.performOta`. The example demonstrates the complete
 check, download, install, progress, and cancel workflow in its Settings tab.
 
+## Driver storage
+
+`EdgezDriverStore` owns the installed-driver list and persistent bundle storage.
+Host apps resolve marketplace links and download the manifest, Lua source, and
+optional image, then pass the completed `EdgezDriverBundle` to `save`. The
+example demonstrates this boundary for `edgez://drivers/install` links.
+
 ## Current Android Reference
 
 The Android implementation should be wired from the current project seams:
