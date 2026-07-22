@@ -251,6 +251,22 @@ class EdgezMeshSdk {
     });
   }
 
+  Future<void> authorizeSession() {
+    final packet = proto.NetworkPacket(
+      operation: proto.Operation.REQUEST,
+      interface: proto.Interface.HALOW,
+      init: proto.HaLowInitConfig(
+        sdkCompatibility: _releaseCredential.compatibility,
+        sdkReleaseId: _releaseCredential.releaseId,
+        sdkReleaseSignature: _releaseCredential.signature,
+      ),
+    );
+    return _transport.invokeMethod<void>('sendPacket', {
+      'label': 'SDK license authorization',
+      'packet': Uint8List.fromList(packet.writeToBuffer()),
+    });
+  }
+
   Future<void> requestDeviceSettings({EdgezUserIdentity? identity}) {
     final packet = proto.NetworkPacket(
       operation: proto.Operation.REQUEST,
@@ -878,6 +894,7 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('sendPacket', {
       'label': 'Device settings',
       'packet': Uint8List.fromList(packet.writeToBuffer()),
+      'waitForDrainMs': 3000,
     });
   }
 
@@ -919,7 +936,8 @@ class EdgezMeshSdk {
       ));
     }
 
-    for (final scriptConfig in packets) {
+    for (var index = 0; index < packets.length; index++) {
+      final scriptConfig = packets[index];
       final packet = proto.NetworkPacket(
         operation: proto.Operation.REQUEST,
         interface: proto.Interface.HALOW,
@@ -928,6 +946,8 @@ class EdgezMeshSdk {
       await _transport.invokeMethod<void>('sendPacket', {
         'label': 'Sensor driver ${config.name}',
         'packet': Uint8List.fromList(packet.writeToBuffer()),
+        if (index == packets.length - 1)
+          'waitForDrainMs': (packets.length * 220).clamp(2000, 20000),
       });
     }
   }

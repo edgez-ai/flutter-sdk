@@ -70,6 +70,21 @@ void main() {
     expect(packet.init.sdkReleaseSignature, hasLength(64));
   });
 
+  test('authorization init carries credentials without a mesh profile',
+      () async {
+    await sdk.authorizeSession();
+
+    final packet = _packetFrom(calls.single);
+    expect(calls.single.method, 'sendPacket');
+    expect(packet.hasInit(), isTrue);
+    expect(packet.init.countryCode, isEmpty);
+    expect(packet.init.meshId, isEmpty);
+    expect(packet.init.passphrase, isEmpty);
+    expect(packet.init.sdkCompatibility, '^0.5.0');
+    expect(packet.init.sdkReleaseId, 'edgez_flutter_sdk@test');
+    expect(packet.init.sdkReleaseSignature, hasLength(64));
+  });
+
   test('unsigned source checkout fails closed before transport', () async {
     final unsignedSdk = EdgezMeshSdk(
       methodChannel: channel,
@@ -117,6 +132,10 @@ void main() {
     expect(packet.deviceSettings.beaconUnicast.toInt(), 0x123456789abc);
     expect(packet.deviceSettings.deviceType, DeviceType.DEVICE_TYPE_SENSOR);
     expect(packet.deviceSettings.sleepModeEnabled, isTrue);
+    expect(
+      (calls.single.arguments as Map<Object?, Object?>)['waitForDrainMs'],
+      3000,
+    );
   });
 
   test('sensor drivers use begin, 220-byte chunks, and commit', () async {
@@ -148,6 +167,16 @@ void main() {
     expect(chunks.expand((chunk) => chunk).length, 500);
     expect(packets.first.scriptConfig.selectUartI2c, isTrue);
     expect(packets.first.scriptConfig.sensorType, '1003-1');
+    for (final call in calls.take(calls.length - 1)) {
+      expect(
+        (call.arguments as Map<Object?, Object?>).containsKey('waitForDrainMs'),
+        isFalse,
+      );
+    }
+    expect(
+      (calls.last.arguments as Map<Object?, Object?>)['waitForDrainMs'],
+      2000,
+    );
   });
 
   test('topology reports become five-minute RSSI links', () async {

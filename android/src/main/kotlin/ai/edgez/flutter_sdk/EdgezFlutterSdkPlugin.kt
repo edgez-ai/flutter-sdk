@@ -358,6 +358,7 @@ class EdgezFlutterSdkPlugin :
             "sendPacket" -> {
                 val packet = call.argument<ByteArray>("packet")
                 val label = call.argument<String>("label") ?: "Packet"
+                val waitForDrainMs = call.argument<Int>("waitForDrainMs") ?: 0
                 if (packet == null) {
                     result.error("missing_packet", "Missing packet", null)
                     return
@@ -365,7 +366,29 @@ class EdgezFlutterSdkPlugin :
                 sendFrame(packet).fold(
                     onSuccess = {
                         emit(mapOf("type" to "log", "log" to "$label queued"))
-                        result.success(null)
+                        if (waitForDrainMs <= 0) {
+                            result.success(null)
+                        } else {
+                            thread(name = "edgez-control-tx-drain") {
+                                waitForControlTxDrain(waitForDrainMs).fold(
+                                    onSuccess = {
+                                        mainHandler.post {
+                                            emit(mapOf("type" to "log", "log" to "$label sent"))
+                                            result.success(null)
+                                        }
+                                    },
+                                    onFailure = {
+                                        mainHandler.post {
+                                            result.error(
+                                                "ble_write_timeout",
+                                                it.message ?: "BLE write did not complete",
+                                                null,
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
                     },
                     onFailure = {
                         result.error("ble_write_failed", it.message ?: "BLE write failed", null)
@@ -1028,6 +1051,26 @@ class EdgezFlutterSdkPlugin :
             }
             Result.failure(IllegalStateException("BLE write failed"))
         }
+    }
+
+    private fun waitForControlTxDrain(timeoutMs: Int): Result<String> {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            synchronized(this) {
+                if (!txWriteInFlight && txQueue.isEmpty()) {
+                    return Result.success("BLE control TX complete")
+                }
+            }
+            try {
+                Thread.sleep(10)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return Result.failure(IllegalStateException("BLE control TX interrupted"))
+            }
+        }
+        return Result.failure(
+            IllegalStateException("BLE control TX not complete after ${timeoutMs}ms"),
+        )
     }
 
     @SuppressLint("MissingPermission")

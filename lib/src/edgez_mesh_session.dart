@@ -422,6 +422,7 @@ class EdgezMeshSession extends ChangeNotifier {
         _state.copyWith(
           connection: EdgezConnectionType.ble,
           bleReady: false,
+          clearStatus: true,
           clearDeviceSettings: true,
           statusLine:
               'Connecting BLE ${_state.bleDevices[deviceId]?.label ?? deviceId}',
@@ -444,6 +445,19 @@ class EdgezMeshSession extends ChangeNotifier {
   Future<void> initializeMesh(EdgezMeshConfig config) async {
     _lastMeshConfig = config;
     await _sendInitIfReady(force: true);
+  }
+
+  Future<void> authorizeSession() async {
+    if (!_bleReady || _state.connection != EdgezConnectionType.ble) {
+      throw StateError('BLE control service is not ready');
+    }
+    _setState(
+      _state.copyWith(
+        clearStatus: true,
+        statusLine: 'Checking device license',
+      ),
+    );
+    await sdk.authorizeSession();
   }
 
   Future<void> requestDeviceSettings() async {

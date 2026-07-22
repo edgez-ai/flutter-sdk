@@ -897,6 +897,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                   session: session,
                   drivers: drivers,
                   excludedBleDeviceId: selectedBleDevice?.id,
+                  defaultMeshId: meshId,
+                  defaultPassphrase: passphrase,
+                  defaultMaxHop: maxHop,
+                  defaultBeaconInterval: beaconIntervalSeconds,
                   onCancel: _closeProvisioning,
                   onComplete: _closeProvisioning,
                 )

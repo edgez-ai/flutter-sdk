@@ -37,6 +37,10 @@ class ProvisioningScreen extends StatefulWidget {
     required this.session,
     required this.drivers,
     required this.excludedBleDeviceId,
+    required this.defaultMeshId,
+    required this.defaultPassphrase,
+    required this.defaultMaxHop,
+    required this.defaultBeaconInterval,
     required this.onCancel,
     required this.onComplete,
     super.key,
@@ -45,6 +49,10 @@ class ProvisioningScreen extends StatefulWidget {
   final EdgezMeshSession session;
   final List<ExampleDriver> drivers;
   final String? excludedBleDeviceId;
+  final String defaultMeshId;
+  final String defaultPassphrase;
+  final String defaultMaxHop;
+  final String defaultBeaconInterval;
   final VoidCallback onCancel;
   final VoidCallback onComplete;
 
@@ -57,17 +65,20 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   EdgezBleDevice? selectedBle;
   late EdgezUserIdentity deviceIdentity;
   bool waitingForSettings = false;
+  bool requestedAuthorization = false;
   bool requestedSettings = false;
+  bool licenseDialogShown = false;
   bool saving = false;
   String? error;
+  Timer? authorizationTimeout;
 
   String deviceType = '';
   String userName = 'EdgeZ Device';
   ExampleMarker marker = ExampleMarker.green;
-  String meshId = 'edgez';
-  String passphrase = '';
-  String maxHop = '4';
-  String beaconInterval = '30';
+  late String meshId;
+  late String passphrase;
+  late String maxHop;
+  late String beaconInterval;
   bool shareLocation = false;
   String latitude = '';
   String longitude = '';
@@ -75,15 +86,15 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   int geoIndex = 0;
   String uartI2cDriver = '';
   String rs485Driver = '';
-  bool upstreamEnabled = false;
-  String upstreamSsid = '';
-  String upstreamPassphrase = '';
-  String beaconMulticast = '';
   bool sleepMode = false;
 
   @override
   void initState() {
     super.initState();
+    meshId = widget.defaultMeshId;
+    passphrase = widget.defaultPassphrase;
+    maxHop = widget.defaultMaxHop;
+    beaconInterval = widget.defaultBeaconInterval;
     deviceIdentity = EdgezIdentityStore().createIdentity(name: userName);
     widget.session.addListener(_sessionChanged);
     unawaited(widget.session.startBleScan());
@@ -91,6 +102,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
 
   @override
   void dispose() {
+    authorizationTimeout?.cancel();
     widget.session.removeListener(_sessionChanged);
     if (step == _ProvisionStep.selectBle) {
       unawaited(widget.session.stopBleScan());
@@ -101,10 +113,44 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   void _sessionChanged() {
     if (!mounted || !waitingForSettings) return;
     final state = widget.session.state;
-    if (state.bleReady && !requestedSettings) {
+    if (state.bleReady && !requestedAuthorization) {
+      requestedAuthorization = true;
+      authorizationTimeout?.cancel();
+      authorizationTimeout = Timer(const Duration(seconds: 8), () {
+        if (!mounted || !waitingForSettings || requestedSettings) return;
+        final status = widget.session.state.status?.licenseStatus ??
+            EdgezLicenseStatus.unspecified;
+        setState(() {
+          waitingForSettings = false;
+          error = 'Device license check timed out';
+        });
+        if (!licenseDialogShown) {
+          licenseDialogShown = true;
+          unawaited(_showInvalidLicenseDialog(status));
+        }
+      });
+      unawaited(_authorizeDevice());
+    }
+
+    final licenseStatus = state.status?.licenseStatus;
+    if (requestedAuthorization &&
+        licenseStatus != null &&
+        _isRejectedLicense(licenseStatus)) {
+      authorizationTimeout?.cancel();
+      if (!licenseDialogShown) {
+        licenseDialogShown = true;
+        waitingForSettings = false;
+        error = 'Provisioning unavailable: ${licenseStatus.label}';
+        unawaited(_showInvalidLicenseDialog(licenseStatus));
+      }
+    } else if (requestedAuthorization &&
+        licenseStatus?.isAuthorized == true &&
+        !requestedSettings) {
+      authorizationTimeout?.cancel();
       requestedSettings = true;
       unawaited(widget.session.requestDeviceSettings());
     }
+
     final settings = state.deviceSettings;
     if (requestedSettings && settings != null) {
       _applySettings(settings);
@@ -117,6 +163,46 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     }
   }
 
+  Future<void> _authorizeDevice() async {
+    try {
+      await widget.session.authorizeSession();
+    } catch (exception) {
+      authorizationTimeout?.cancel();
+      if (!mounted) return;
+      setState(() {
+        waitingForSettings = false;
+        error = 'Device license check failed: $exception';
+      });
+    }
+  }
+
+  bool _isRejectedLicense(EdgezLicenseStatus status) {
+    return status == EdgezLicenseStatus.deviceNotLicensed ||
+        status == EdgezLicenseStatus.sdkVersionIncompatible ||
+        status == EdgezLicenseStatus.sdkReleaseInvalid;
+  }
+
+  Future<void> _showInvalidLicenseDialog(EdgezLicenseStatus status) {
+    final detail = status == EdgezLicenseStatus.unspecified
+        ? 'The device did not return a valid license response.'
+        : '${status.label}.';
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Device license invalid'),
+        content: Text(
+          '$detail Provisioning cannot continue on this device.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _applySettings(EdgezDeviceSettings settings) {
     deviceType = switch (settings.deviceType) {
       'beacon' => 'beacon',
@@ -126,10 +212,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     };
     userName = settings.userName.isEmpty ? userName : settings.userName;
     marker = ExampleMarker.fromId(settings.marker);
-    meshId = settings.meshId.isEmpty ? meshId : settings.meshId;
-    passphrase = settings.passphrase;
-    maxHop = settings.maxHop.toString();
-    beaconInterval = settings.beaconIntervalSeconds.toString();
     shareLocation = settings.shareLocation;
     latitude = settings.latitude?.toString() ?? '';
     longitude = settings.longitude?.toString() ?? '';
@@ -137,12 +219,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     geoIndex = settings.geoIndex;
     uartI2cDriver = settings.uartI2cSensorType;
     rs485Driver = settings.rs485SensorType;
-    upstreamSsid = settings.upstreamWifiSsid;
-    upstreamPassphrase = settings.upstreamWifiPassphrase;
-    beaconMulticast = _formatIpv4(settings.beaconUnicast);
-    upstreamEnabled = upstreamSsid.isNotEmpty ||
-        upstreamPassphrase.isNotEmpty ||
-        beaconMulticast.isNotEmpty;
     sleepMode = settings.sleepModeEnabled;
     if (settings.userPrivateKey.length == 32 &&
         (settings.userIdHigh != 0 || settings.userIdLow != 0)) {
@@ -162,7 +238,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     if (device == null) return;
     setState(() {
       waitingForSettings = true;
+      requestedAuthorization = false;
       requestedSettings = false;
+      licenseDialogShown = false;
       error = null;
     });
     await widget.session.stopBleScan();
@@ -207,6 +285,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
       error = null;
     });
     try {
+      final state = widget.session.state;
+      if (state.connection != EdgezConnectionType.ble || !state.bleReady) {
+        throw StateError('The provisioning device is not ready over BLE');
+      }
       final scripts = <EdgezSensorScriptConfig>[];
       for (final key in <String>[uartI2cDriver, rs485Driver]) {
         if (key.isEmpty) continue;
@@ -231,9 +313,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           geoIndex: geoIndex,
           uartI2cSensorType: uartI2cDriver,
           rs485SensorType: rs485Driver,
-          upstreamWifiSsid: upstreamEnabled ? upstreamSsid.trim() : '',
-          upstreamWifiPassphrase: upstreamEnabled ? upstreamPassphrase : '',
-          beaconUnicast: upstreamEnabled ? _parseIpv4(beaconMulticast) : 0,
           sleepModeEnabled: deviceType == 'relay' ? false : sleepMode,
         ),
         identity: currentIdentity,
@@ -275,9 +354,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
             Text('Interface: ${state.connection.name.toUpperCase()}'),
             Text(state.statusLine,
                 style: Theme.of(context).textTheme.bodySmall),
-            if (state.status?.licenseStatus ==
-                EdgezLicenseStatus.deviceNotLicensed)
-              Text('Device is not licensed. Provisioning is unavailable.',
+            if (state.status?.licenseStatus case final status?
+                when _isRejectedLicense(status))
+              Text('${status.label}. Provisioning is unavailable.',
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (error != null) ...<Widget>[
               const SizedBox(height: 8),
@@ -324,7 +403,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
 
   bool _canContinue(EdgezMeshState state) {
     if (saving || waitingForSettings) return false;
-    if (state.status?.licenseStatus == EdgezLicenseStatus.deviceNotLicensed) {
+    if (state.connection == EdgezConnectionType.ble &&
+        state.status != null &&
+        !state.status!.licenseStatus.isAuthorized) {
       return false;
     }
     return step != _ProvisionStep.selectBle || selectedBle != null;
@@ -414,63 +495,28 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           ],
         );
       case _ProvisionStep.network:
-        return Column(
+        return InfoCard(
+          title: 'HaLow network',
           children: <Widget>[
-            InfoCard(
-              title: 'HaLow network',
-              children: <Widget>[
-                SettingsTextField(
-                    label: 'Mesh ID / SSID',
-                    value: meshId,
-                    onChanged: (value) => setState(() => meshId = value)),
-                SettingsTextField(
-                    label: 'Passphrase',
-                    value: passphrase,
-                    obscureText: true,
-                    onChanged: (value) => setState(() => passphrase = value)),
-                SettingsTextField(
-                    label: 'Max hop',
-                    value: maxHop,
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) => setState(() => maxHop = value)),
-                SettingsTextField(
-                    label: 'Beacon interval (seconds)',
-                    value: beaconInterval,
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) =>
-                        setState(() => beaconInterval = value)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            InfoCard(
-              title: 'Upstream network',
-              children: <Widget>[
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Enable upstream network'),
-                  value: upstreamEnabled,
-                  onChanged: (value) => setState(() => upstreamEnabled = value),
-                ),
-                if (upstreamEnabled) ...<Widget>[
-                  SettingsTextField(
-                      label: 'Upstream Wi-Fi SSID',
-                      value: upstreamSsid,
-                      onChanged: (value) =>
-                          setState(() => upstreamSsid = value)),
-                  SettingsTextField(
-                      label: 'Upstream Wi-Fi passphrase',
-                      value: upstreamPassphrase,
-                      obscureText: true,
-                      onChanged: (value) =>
-                          setState(() => upstreamPassphrase = value)),
-                  SettingsTextField(
-                      label: 'Beacon multicast',
-                      value: beaconMulticast,
-                      onChanged: (value) =>
-                          setState(() => beaconMulticast = value)),
-                ],
-              ],
-            ),
+            SettingsTextField(
+                label: 'Mesh ID / SSID',
+                value: meshId,
+                onChanged: (value) => setState(() => meshId = value)),
+            SettingsTextField(
+                label: 'Passphrase',
+                value: passphrase,
+                obscureText: true,
+                onChanged: (value) => setState(() => passphrase = value)),
+            SettingsTextField(
+                label: 'Max hop',
+                value: maxHop,
+                keyboardType: TextInputType.number,
+                onChanged: (value) => setState(() => maxHop = value)),
+            SettingsTextField(
+                label: 'Beacon interval (seconds)',
+                value: beaconInterval,
+                keyboardType: TextInputType.number,
+                onChanged: (value) => setState(() => beaconInterval = value)),
           ],
         );
       case _ProvisionStep.location:
@@ -583,28 +629,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
       latitude = location.latitude.toStringAsFixed(6);
       longitude = location.longitude.toStringAsFixed(6);
     });
-  }
-
-  int _parseIpv4(String value) {
-    final parts = value.split('.');
-    if (parts.length != 4) return 0;
-    var result = 0;
-    for (final part in parts) {
-      final octet = int.tryParse(part);
-      if (octet == null || octet < 0 || octet > 255) return 0;
-      result = (result << 8) | octet;
-    }
-    return result;
-  }
-
-  String _formatIpv4(int value) {
-    if (value == 0) return '';
-    return <int>[
-      (value >> 24) & 0xff,
-      (value >> 16) & 0xff,
-      (value >> 8) & 0xff,
-      value & 0xff,
-    ].join('.');
   }
 
   String _uuid(int high, int low) {
