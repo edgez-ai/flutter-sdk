@@ -41,21 +41,49 @@ jobs:
         working-directory: example
         run: flutter pub get
 
-      - name: Build release app bundle
-        working-directory: example
-        run: flutter build appbundle --release
-
-      - name: Build release APK
+      - name: Build unsigned release APK
         working-directory: example
         run: flutter build apk --release
 
-      - name: Prepare release artifacts
+      - name: Save unsigned release APK
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-artifacts
-          cp example/build/app/outputs/bundle/release/app-release.aab release-artifacts/
-          cp example/build/app/outputs/flutter-apk/app-release.apk release-artifacts/
+          cp example/build/app/outputs/flutter-apk/app-release.apk release-artifacts/app-release-unsigned.apk
+
+      - name: Configure Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_KEYSTORE_BASE64:?Missing ANDROID_KEYSTORE_BASE64 secret}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?Missing ANDROID_KEYSTORE_PASSWORD secret}"
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > example/android/app/upload-keystore.jks
+          printf '%s\n' \
+            "storePassword=$ANDROID_KEYSTORE_PASSWORD" \
+            "keyPassword=$ANDROID_KEYSTORE_PASSWORD" \
+            "keyAlias=edgez-android-release" \
+            "storeFile=upload-keystore.jks" \
+            > example/android/key.properties
+
+      - name: Build signed release app bundle
+        working-directory: example
+        run: flutter build appbundle --release
+
+      - name: Build signed release APK
+        working-directory: example
+        run: flutter build apk --release
+
+      - name: Save signed release packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp example/build/app/outputs/bundle/release/app-release.aab release-artifacts/app-release-signed.aab
+          cp example/build/app/outputs/flutter-apk/app-release.apk release-artifacts/app-release-signed.apk
 
       - name: Upload Android release artifacts
         uses: actions/upload-artifact@v4
@@ -70,7 +98,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-artifacts/app-release.aab
-            release-artifacts/app-release.apk
+            release-artifacts/app-release-unsigned.apk
+            release-artifacts/app-release-signed.aab
+            release-artifacts/app-release-signed.apk
           fail_on_unmatched_files: true
           generate_release_notes: true

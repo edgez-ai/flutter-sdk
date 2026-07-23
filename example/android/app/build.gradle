@@ -4,6 +4,14 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { stream ->
+        keystoreProperties.load(stream)
+    }
+}
+
 android {
     namespace "ai.edgez.flutter_sdk_example"
     compileSdk flutter.compileSdkVersion
@@ -23,6 +31,25 @@ android {
         targetSdk flutter.targetSdkVersion
         versionCode flutter.versionCode
         versionName flutter.versionName
+    }
+
+    signingConfigs {
+        release {
+            if (!keystoreProperties.isEmpty()) {
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+                storeFile file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (!keystoreProperties.isEmpty()) {
+                signingConfig signingConfigs.release
+            }
+        }
     }
 }
 
