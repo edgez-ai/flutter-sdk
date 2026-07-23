@@ -66,7 +66,14 @@ The map-specific files are deliberately not part of this SDK/example split:
 
 ## Example
 
-The example app lives in `example/`. It keeps nodes, messages, selected conversation, and settings in widget state.
+The demo below shows the example application built from the Flutter SDK's
+`example/` project. It demonstrates peer-to-peer communication and sensor data
+collection over the EdgeZ mesh network.
+
+[![Watch the EdgeZ Flutter SDK example application demo](https://img.youtube.com/vi/PoI31k7hviY/maxresdefault.jpg)](https://youtu.be/PoI31k7hviY)
+
+The example app keeps nodes, messages, selected conversation, and settings in
+widget state.
 
 When Flutter tooling is available, run:
 

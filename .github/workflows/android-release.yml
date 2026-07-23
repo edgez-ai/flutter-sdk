@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-release-${{ github.ref }}
@@ -49,12 +49,28 @@ jobs:
         working-directory: example
         run: flutter build apk --release
 
+      - name: Prepare release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          cp example/build/app/outputs/bundle/release/app-release.aab release-artifacts/
+          cp example/build/app/outputs/flutter-apk/app-release.apk release-artifacts/
+
       - name: Upload Android release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-release-${{ github.run_number }}
-          path: |
-            example/build/app/outputs/bundle/release/app-release.aab
-            example/build/app/outputs/flutter-apk/app-release.apk
+          path: release-artifacts/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload Android packages to GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/app-release.aab
+            release-artifacts/app-release.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
