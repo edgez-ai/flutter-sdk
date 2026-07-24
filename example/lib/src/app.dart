@@ -86,7 +86,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   String maxHop = '4';
   int meshBandwidthMhz = 1;
   int meshFrequencyKhz = 902500;
-  String beaconIntervalSeconds = '30';
+  String beaconIntervalSeconds = '10';
   String userName = 'Flutter Demo';
   ExampleMarker userMarker = ExampleMarker.blue;
 
@@ -94,7 +94,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   ExampleMarker deviceMarker = ExampleMarker.green;
   String deviceMeshId = 'edgez';
   String deviceMaxHop = '4';
-  String deviceBeaconIntervalSeconds = '30';
+  String deviceBeaconIntervalSeconds = '10';
   bool deviceShareLocation = false;
   String deviceLatitude = '';
   String deviceLongitude = '';
@@ -424,7 +424,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         meshBandwidthMhz: meshBandwidthMhz,
         meshFrequencyKhz: meshFrequencyKhz,
         beacon: EdgezBeaconConfig(
-          intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 30,
+          intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 10,
           marker: userMarker.name,
           shareLocation: shareLocation,
           latitude: location?.latitude,
@@ -469,7 +469,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         shareLocation: deviceShareLocation,
         userName: deviceUserName.trim(),
         marker: deviceMarker.name,
-        beaconIntervalSeconds: int.tryParse(deviceBeaconIntervalSeconds) ?? 30,
+        beaconIntervalSeconds: int.tryParse(deviceBeaconIntervalSeconds) ?? 10,
         maxHop: int.tryParse(deviceMaxHop) ?? 0,
         latitude: deviceShareLocation ? latitude : null,
         longitude: deviceShareLocation ? longitude : null,
@@ -487,6 +487,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
             : 0,
         deviceType: deviceType,
         sleepModeEnabled: deviceSleepModeEnabled,
+        meshFrequencyKhz: meshFrequencyKhz,
+        meshBandwidthMhz: meshBandwidthMhz,
       ),
       scripts: scripts,
     );
@@ -982,6 +984,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                   defaultPassphrase: passphrase,
                   defaultMaxHop: maxHop,
                   defaultBeaconInterval: beaconIntervalSeconds,
+                  defaultMeshCountry: meshCountry,
+                  defaultMeshFrequencyKhz: meshFrequencyKhz,
+                  defaultMeshBandwidthMhz: meshBandwidthMhz,
                   onCancel: _closeProvisioning,
                   onComplete: _closeProvisioning,
                 )

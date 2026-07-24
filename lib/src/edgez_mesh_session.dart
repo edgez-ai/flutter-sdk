@@ -879,6 +879,8 @@ class EdgezMeshSession extends ChangeNotifier {
           beaconUnicast: settings.beaconUnicast.toInt(),
           deviceType: _deviceTypeLabel(settings.deviceType).toLowerCase(),
           sleepModeEnabled: settings.sleepModeEnabled,
+          meshFrequencyKhz: settings.meshFrequencyKhz,
+          meshBandwidthMhz: settings.meshBandwidthMhz,
           userIdHigh: settings.userIdHigh.toInt(),
           userIdLow: settings.userIdLow.toInt(),
           userPublicKey: settings.userPublicKey,

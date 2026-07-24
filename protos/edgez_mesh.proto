@@ -242,6 +242,8 @@ message DeviceSettings {
   uint64 beacon_unicast = 22;
   DeviceType device_type = 24;
   bool sleep_mode_enabled = 25;
+  uint32 mesh_frequency_khz = 26;
+  uint32 mesh_bandwidth_mhz = 27;
 }
 
 message ScriptConfig {

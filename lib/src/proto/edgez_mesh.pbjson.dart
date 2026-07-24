@@ -738,6 +738,20 @@ const DeviceSettings$json = {
       '5': 8,
       '10': 'sleepModeEnabled'
     },
+    {
+      '1': 'mesh_frequency_khz',
+      '3': 26,
+      '4': 1,
+      '5': 13,
+      '10': 'meshFrequencyKhz'
+    },
+    {
+      '1': 'mesh_bandwidth_mhz',
+      '3': 27,
+      '4': 1,
+      '5': 13,
+      '10': 'meshBandwidthMhz'
+    },
   ],
 };
 
@@ -761,7 +775,8 @@ final $typed_data.Uint8List deviceSettingsDescriptor = $convert.base64Decode(
     'Bhc3NwaHJhc2UYFSABKAlSFnVwc3RyZWFtV2lmaVBhc3NwaHJhc2USJQoOYmVhY29uX3VuaWNh'
     'c3QYFiABKARSDWJlYWNvblVuaWNhc3QSOwoLZGV2aWNlX3R5cGUYGCABKA4yGi5haS5lZGdlei'
     '5oYWxvdy5EZXZpY2VUeXBlUgpkZXZpY2VUeXBlEiwKEnNsZWVwX21vZGVfZW5hYmxlZBgZIAEo'
-    'CFIQc2xlZXBNb2RlRW5hYmxlZA==');
+    'CFIQc2xlZXBNb2RlRW5hYmxlZBIsChJtZXNoX2ZyZXF1ZW5jeV9raHoYGiABKA1SEG1lc2hGcm'
+    'VxdWVuY3lLaHoSLAoSbWVzaF9iYW5kd2lkdGhfbWh6GBsgASgNUhBtZXNoQmFuZHdpZHRoTWh6');
 
 @$core.Deprecated('Use scriptConfigDescriptor instead')
 const ScriptConfig$json = {

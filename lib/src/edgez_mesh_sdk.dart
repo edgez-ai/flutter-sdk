@@ -870,6 +870,8 @@ class EdgezMeshSdk {
       beaconUnicast: Int64(settings.beaconUnicast & 0xffffffffffff),
       deviceType: _deviceType(settings.deviceType),
       sleepModeEnabled: settings.sleepModeEnabled,
+      meshFrequencyKhz: max(0, settings.meshFrequencyKhz),
+      meshBandwidthMhz: settings.meshBandwidthMhz.clamp(0, 8),
     );
     if (identity != null) {
       deviceSettings

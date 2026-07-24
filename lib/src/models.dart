@@ -286,6 +286,8 @@ class EdgezDeviceSettings {
     this.beaconUnicast = 0,
     this.deviceType = 'relay',
     this.sleepModeEnabled = false,
+    this.meshFrequencyKhz = 0,
+    this.meshBandwidthMhz = 0,
     this.userIdHigh = 0,
     this.userIdLow = 0,
     this.userPublicKey = const <int>[],
@@ -311,6 +313,8 @@ class EdgezDeviceSettings {
   final int beaconUnicast;
   final String deviceType;
   final bool sleepModeEnabled;
+  final int meshFrequencyKhz;
+  final int meshBandwidthMhz;
   final int userIdHigh;
   final int userIdLow;
   final List<int> userPublicKey;
@@ -336,6 +340,8 @@ class EdgezDeviceSettings {
         'beaconUnicast': beaconUnicast,
         'deviceType': deviceType,
         'sleepModeEnabled': sleepModeEnabled,
+        'meshFrequencyKhz': meshFrequencyKhz,
+        'meshBandwidthMhz': meshBandwidthMhz,
         'userIdHigh': userIdHigh,
         'userIdLow': userIdLow,
         'userPublicKey': userPublicKey,

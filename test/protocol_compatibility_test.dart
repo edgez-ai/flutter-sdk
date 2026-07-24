@@ -120,6 +120,8 @@ void main() {
       beaconUnicast: 0x123456789abc,
       deviceType: 'sensor',
       sleepModeEnabled: true,
+      meshFrequencyKhz: 915000,
+      meshBandwidthMhz: 4,
     );
 
     await sdk.sendDeviceSettings(settings: settings, identity: identity);
@@ -132,6 +134,8 @@ void main() {
     expect(packet.deviceSettings.beaconUnicast.toInt(), 0x123456789abc);
     expect(packet.deviceSettings.deviceType, DeviceType.DEVICE_TYPE_SENSOR);
     expect(packet.deviceSettings.sleepModeEnabled, isTrue);
+    expect(packet.deviceSettings.meshFrequencyKhz, 915000);
+    expect(packet.deviceSettings.meshBandwidthMhz, 4);
     expect(
       (calls.single.arguments as Map<Object?, Object?>)['waitForDrainMs'],
       3000,

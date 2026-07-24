@@ -1429,6 +1429,8 @@ class DeviceSettings extends $pb.GeneratedMessage {
     $fixnum.Int64? beaconUnicast,
     DeviceType? deviceType,
     $core.bool? sleepModeEnabled,
+    $core.int? meshFrequencyKhz,
+    $core.int? meshBandwidthMhz,
   }) {
     final result = create();
     if (action != null) result.action = action;
@@ -1457,6 +1459,8 @@ class DeviceSettings extends $pb.GeneratedMessage {
     if (beaconUnicast != null) result.beaconUnicast = beaconUnicast;
     if (deviceType != null) result.deviceType = deviceType;
     if (sleepModeEnabled != null) result.sleepModeEnabled = sleepModeEnabled;
+    if (meshFrequencyKhz != null) result.meshFrequencyKhz = meshFrequencyKhz;
+    if (meshBandwidthMhz != null) result.meshBandwidthMhz = meshBandwidthMhz;
     return result;
   }
 
@@ -1510,6 +1514,10 @@ class DeviceSettings extends $pb.GeneratedMessage {
     ..aE<DeviceType>(24, _omitFieldNames ? '' : 'deviceType',
         enumValues: DeviceType.values)
     ..aOB(25, _omitFieldNames ? '' : 'sleepModeEnabled')
+    ..aI(26, _omitFieldNames ? '' : 'meshFrequencyKhz',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(27, _omitFieldNames ? '' : 'meshBandwidthMhz',
+        fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1750,6 +1758,24 @@ class DeviceSettings extends $pb.GeneratedMessage {
   $core.bool hasSleepModeEnabled() => $_has(23);
   @$pb.TagNumber(25)
   void clearSleepModeEnabled() => $_clearField(25);
+
+  @$pb.TagNumber(26)
+  $core.int get meshFrequencyKhz => $_getIZ(24);
+  @$pb.TagNumber(26)
+  set meshFrequencyKhz($core.int value) => $_setUnsignedInt32(24, value);
+  @$pb.TagNumber(26)
+  $core.bool hasMeshFrequencyKhz() => $_has(24);
+  @$pb.TagNumber(26)
+  void clearMeshFrequencyKhz() => $_clearField(26);
+
+  @$pb.TagNumber(27)
+  $core.int get meshBandwidthMhz => $_getIZ(25);
+  @$pb.TagNumber(27)
+  set meshBandwidthMhz($core.int value) => $_setUnsignedInt32(25, value);
+  @$pb.TagNumber(27)
+  $core.bool hasMeshBandwidthMhz() => $_has(25);
+  @$pb.TagNumber(27)
+  void clearMeshBandwidthMhz() => $_clearField(27);
 }
 
 class ScriptConfig extends $pb.GeneratedMessage {

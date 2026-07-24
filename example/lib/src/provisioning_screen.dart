@@ -41,6 +41,9 @@ class ProvisioningScreen extends StatefulWidget {
     required this.defaultPassphrase,
     required this.defaultMaxHop,
     required this.defaultBeaconInterval,
+    required this.defaultMeshCountry,
+    required this.defaultMeshFrequencyKhz,
+    required this.defaultMeshBandwidthMhz,
     required this.onCancel,
     required this.onComplete,
     super.key,
@@ -53,6 +56,9 @@ class ProvisioningScreen extends StatefulWidget {
   final String defaultPassphrase;
   final String defaultMaxHop;
   final String defaultBeaconInterval;
+  final String defaultMeshCountry;
+  final int defaultMeshFrequencyKhz;
+  final int defaultMeshBandwidthMhz;
   final VoidCallback onCancel;
   final VoidCallback onComplete;
 
@@ -79,6 +85,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   late String passphrase;
   late String maxHop;
   late String beaconInterval;
+  late String meshCountry;
+  late int meshFrequencyKhz;
+  late int meshBandwidthMhz;
   bool shareLocation = false;
   String latitude = '';
   String longitude = '';
@@ -95,6 +104,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     passphrase = widget.defaultPassphrase;
     maxHop = widget.defaultMaxHop;
     beaconInterval = widget.defaultBeaconInterval;
+    meshCountry = widget.defaultMeshCountry;
+    meshFrequencyKhz = widget.defaultMeshFrequencyKhz;
+    meshBandwidthMhz = widget.defaultMeshBandwidthMhz;
+    _normalizeRadioSelection();
     deviceIdentity = EdgezIdentityStore().createIdentity(name: userName);
     widget.session.addListener(_sessionChanged);
     unawaited(widget.session.startBleScan());
@@ -220,6 +233,13 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     uartI2cDriver = settings.uartI2cSensorType;
     rs485Driver = settings.rs485SensorType;
     sleepMode = settings.sleepModeEnabled;
+    if (settings.meshFrequencyKhz > 0) {
+      meshFrequencyKhz = settings.meshFrequencyKhz;
+    }
+    if (settings.meshBandwidthMhz > 0) {
+      meshBandwidthMhz = settings.meshBandwidthMhz;
+    }
+    _normalizeRadioSelection();
     if (settings.userPrivateKey.length == 32 &&
         (settings.userIdHigh != 0 || settings.userIdLow != 0)) {
       deviceIdentity = EdgezUserIdentity(
@@ -256,6 +276,31 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     setState(() {
       step = _ProvisionStep.values[step.index - 1];
       error = null;
+    });
+  }
+
+  void _normalizeRadioSelection() {
+    final bandwidths = halowBandwidthOptions(meshCountry);
+    if (!bandwidths.contains(meshBandwidthMhz)) {
+      meshBandwidthMhz = bandwidths.first;
+    }
+    final frequencies = halowFrequenciesKhz(meshCountry, meshBandwidthMhz);
+    if (!frequencies.contains(meshFrequencyKhz)) {
+      meshFrequencyKhz = frequencies.first;
+    }
+  }
+
+  void _setMeshCountry(String value) {
+    setState(() {
+      meshCountry = value;
+      _normalizeRadioSelection();
+    });
+  }
+
+  void _setMeshBandwidth(int value) {
+    setState(() {
+      meshBandwidthMhz = value;
+      _normalizeRadioSelection();
     });
   }
 
@@ -305,7 +350,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           userName: userName.trim(),
           marker: marker.name,
           maxHop: int.tryParse(maxHop) ?? 4,
-          beaconIntervalSeconds: int.tryParse(beaconInterval) ?? 30,
+          beaconIntervalSeconds: int.tryParse(beaconInterval) ?? 10,
           shareLocation: shareLocation,
           latitude: shareLocation ? double.tryParse(latitude) : null,
           longitude: shareLocation ? double.tryParse(longitude) : null,
@@ -314,6 +359,8 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           uartI2cSensorType: uartI2cDriver,
           rs485SensorType: rs485Driver,
           sleepModeEnabled: deviceType == 'relay' ? false : sleepMode,
+          meshFrequencyKhz: meshFrequencyKhz,
+          meshBandwidthMhz: meshBandwidthMhz,
         ),
         identity: currentIdentity,
         scripts: scripts,
@@ -498,6 +545,30 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         return InfoCard(
           title: 'HaLow network',
           children: <Widget>[
+            DropdownSetting<String>(
+              label: 'Country',
+              value: meshCountry,
+              values: const <String>['US', 'JP', 'EU'],
+              titleFor: (value) => value,
+              onChanged: _setMeshCountry,
+            ),
+            DropdownSetting<int>(
+              label: 'Bandwidth',
+              value: meshBandwidthMhz,
+              values: halowBandwidthOptions(meshCountry),
+              titleFor: (value) => '$value MHz',
+              onChanged: _setMeshBandwidth,
+            ),
+            DropdownSetting<int>(
+              label: 'Frequency',
+              value: meshFrequencyKhz,
+              values: halowFrequenciesKhz(
+                meshCountry,
+                meshBandwidthMhz,
+              ),
+              titleFor: (value) => halowFrequencyLabel(meshCountry, value),
+              onChanged: (value) => setState(() => meshFrequencyKhz = value),
+            ),
             SettingsTextField(
                 label: 'Mesh ID / SSID',
                 value: meshId,
