@@ -5,6 +5,12 @@ flutter sdk for edgez mesh
 
 This package is the Flutter-facing SDK boundary for the EdgeZ HaLow mesh app.
 
+For a structured feature overview and application setup, start with the
+[`docs/` documentation hub](docs/README.md) and the
+[`integration guide`](docs/integration-guide.md).
+Planned offline maps and libp2p cross-boundary mixed-mesh support are tracked in
+the [`roadmap`](docs/roadmap.md).
+
 The SDK owns BLE transport and mesh operations:
 
 - BLE connect/disconnect
@@ -20,7 +26,9 @@ Android BLE plugin through Flutter method and event channels. Tests can inject
 an `EdgezPlatformTransport` implementation to mock BLE commands and incoming
 events without hardware.
 
-The example app is intentionally in-memory only. It does not use SQLite and it does not include the map tab or Organic Maps dependencies.
+The example app persists nodes, conversations, sensor history, geofences, and
+dashboard preferences in SQLite. It does not include the map tab or Organic
+Maps dependencies.
 
 ## Flash Firmware
 
@@ -72,8 +80,8 @@ collection over the EdgeZ mesh network.
 
 [![Watch the EdgeZ Flutter SDK example application demo](https://img.youtube.com/vi/PoI31k7hviY/maxresdefault.jpg)](https://youtu.be/PoI31k7hviY)
 
-The example app keeps nodes, messages, selected conversation, and settings in
-widget state.
+The example app keeps current UI selections and settings in widget state while
+persisting mesh data and dashboard preferences in SQLite.
 
 When Flutter tooling is available, run:
 
