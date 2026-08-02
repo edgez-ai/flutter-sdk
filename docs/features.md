@@ -8,6 +8,27 @@ policy.
 
 ![EdgeZ topology showing two mobile apps connected over BLE to their companions, with both companions, a relay, and a sensor participating in the mesh while a beacon only broadcasts small data](assets/edgez-mesh-topology-v2.png)
 
+- **Text messages** — exchange encrypted peer-to-peer conversations across the
+  mesh with delivery acknowledgements.
+- **Voice messages** — record, send, receive, and replay encrypted audio
+  messages.
+- **Binary data** — carry compact device and sensor payloads across the mesh.
+- **Voice calls** — stream encrypted, bidirectional live audio between mesh
+  participants.
+- **Sensor telemetry** — collect location, environmental, vibration,
+  accelerometer, gyroscope, and custom binary sensor measurements.
+- **Geo fences** — associate nodes with named geographic areas and alert
+  conditions.
+
+### Coming soon
+
+- **Offline maps** — view cached maps, node locations, geo fences, and mesh
+  topology without an internet connection.
+- **Mixed mesh over libp2p** — connect eligible EdgeZ mesh gateways across
+  network boundaries while preserving local offline operation.
+
+See the [roadmap](roadmap.md) for the proposed scope and delivery phases.
+
 Each Mobile App controls and observes the mesh through a BLE connection to its
 Companion. Companion A, Companion B, the Relay Node, and the Sensor Node are
 full mesh participants, allowing text messages and voice calls to travel
