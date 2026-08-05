@@ -7,6 +7,16 @@ import 'edgez_mesh_sdk.dart';
 import 'models.dart';
 import 'proto/edgez_mesh.pb.dart' as proto;
 
+typedef EdgezIncomingMessageCallback = void Function(
+  EdgezConversationMessage message,
+  EdgezMeshNode sender,
+);
+
+typedef EdgezIncomingCallCallback = void Function(
+  EdgezVoiceCallState call,
+  EdgezMeshNode caller,
+);
+
 class EdgezMeshState {
   EdgezMeshState({
     required this.connection,
@@ -23,6 +33,7 @@ class EdgezMeshState {
     required this.voiceCall,
     required this.statusLine,
     required this.bleReady,
+    this.bleConnecting = false,
     this.deviceSettings,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
@@ -46,6 +57,7 @@ class EdgezMeshState {
       voiceCall: const EdgezVoiceCallState(),
       statusLine: 'Connect with BLE, then save mesh settings.',
       bleReady: false,
+      bleConnecting: false,
     );
   }
 
@@ -63,6 +75,7 @@ class EdgezMeshState {
   final EdgezVoiceCallState voiceCall;
   final String statusLine;
   final bool bleReady;
+  final bool bleConnecting;
   final EdgezDeviceSettings? deviceSettings;
 
   double get otaProgress =>
@@ -98,6 +111,7 @@ class EdgezMeshState {
     EdgezVoiceCallState? voiceCall,
     String? statusLine,
     bool? bleReady,
+    bool? bleConnecting,
     EdgezDeviceSettings? deviceSettings,
     bool clearDeviceSettings = false,
   }) {
@@ -116,6 +130,7 @@ class EdgezMeshState {
       voiceCall: voiceCall ?? this.voiceCall,
       statusLine: statusLine ?? this.statusLine,
       bleReady: bleReady ?? this.bleReady,
+      bleConnecting: bleConnecting ?? this.bleConnecting,
       deviceSettings:
           clearDeviceSettings ? null : deviceSettings ?? this.deviceSettings,
     );
@@ -149,15 +164,23 @@ class EdgezMeshState {
 }
 
 class EdgezMeshSession extends ChangeNotifier {
-  EdgezMeshSession({EdgezMeshSdk? sdk}) : sdk = sdk ?? EdgezMeshSdk() {
+  EdgezMeshSession({
+    EdgezMeshSdk? sdk,
+    this.onIncomingMessage,
+    this.onIncomingCall,
+  }) : sdk = sdk ?? EdgezMeshSdk() {
     _subscription = this.sdk.events.listen(_handleEvent);
   }
 
   final EdgezMeshSdk sdk;
+  final EdgezIncomingMessageCallback? onIncomingMessage;
+  final EdgezIncomingCallCallback? onIncomingCall;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
+  Timer? _deviceStatusTimeout;
+  Timer? _voiceCallTimeout;
   var _provisioning = false;
   var _initInFlight = false;
   String? _lastInitKey;
@@ -300,16 +323,18 @@ class EdgezMeshSession extends ChangeNotifier {
     final callId = Random.secure().nextInt(0x7fffffff) |
         (Random.secure().nextInt(0x7fffffff) << 31);
     _voiceCallSequence = 1;
+    final outgoingCall = EdgezVoiceCallState(
+      peerNodeNum: peerNodeNum,
+      callId: callId,
+      phase: EdgezVoiceCallPhase.outgoing,
+    );
     _setState(
       _state.copyWith(
-        voiceCall: EdgezVoiceCallState(
-          peerNodeNum: peerNodeNum,
-          callId: callId,
-          phase: EdgezVoiceCallPhase.outgoing,
-        ),
+        voiceCall: outgoingCall,
         statusLine: 'Calling ${peer.resolvedDisplayName}',
       ),
     );
+    _scheduleVoiceCallTimeout(outgoingCall);
     try {
       await _sendVoiceCallPacket(_callInvite);
     } catch (_) {
@@ -323,6 +348,7 @@ class EdgezMeshSession extends ChangeNotifier {
       throw StateError('No incoming voice call');
     }
     await _sendVoiceCallPacket(_callAccept);
+    _voiceCallTimeout?.cancel();
     _setState(
       _state.copyWith(
         voiceCall: EdgezVoiceCallState(
@@ -352,15 +378,29 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _resetVoiceCall() async {
+  Future<void> _resetVoiceCall({String statusLine = 'Voice call ended'}) async {
+    _voiceCallTimeout?.cancel();
     _pendingVoiceAudio = null;
     await sdk.stopLiveVoiceAudio();
     _setState(
       _state.copyWith(
         voiceCall: const EdgezVoiceCallState(),
-        statusLine: 'Voice call ended',
+        statusLine: statusLine,
       ),
     );
+  }
+
+  void _scheduleVoiceCallTimeout(EdgezVoiceCallState pendingCall) {
+    _voiceCallTimeout?.cancel();
+    _voiceCallTimeout = Timer(const Duration(seconds: 60), () {
+      final current = _state.voiceCall;
+      if (current.callId == pendingCall.callId &&
+          current.peerNodeNum == pendingCall.peerNodeNum &&
+          (current.phase == EdgezVoiceCallPhase.incoming ||
+              current.phase == EdgezVoiceCallPhase.outgoing)) {
+        unawaited(_resetVoiceCall(statusLine: 'Voice call timed out'));
+      }
+    });
   }
 
   Future<void> _sendVoiceCallPacket(int type,
@@ -415,26 +455,38 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> connectBle(String deviceId) async {
+    _deviceStatusTimeout?.cancel();
+    _setState(
+      _state.copyWith(
+        bleConnecting: true,
+        clearStatus: true,
+        clearDeviceSettings: true,
+        statusLine:
+            'Starting BLE connection to ${_state.bleDevices[deviceId]?.label ?? deviceId}',
+      ),
+    );
     try {
       await sdk.connectBle(deviceId);
       _bleReady = false;
       _setState(
         _state.copyWith(
-          connection: EdgezConnectionType.ble,
           bleReady: false,
-          clearStatus: true,
-          clearDeviceSettings: true,
-          statusLine:
-              'Connecting BLE ${_state.bleDevices[deviceId]?.label ?? deviceId}',
+          statusLine: 'BLE connection requested; waiting for Android',
         ),
       );
     } catch (error) {
-      _setState(_state.copyWith(statusLine: 'BLE connect failed: $error'));
+      _setState(
+        _state.copyWith(
+          bleConnecting: false,
+          statusLine: 'BLE connect failed: $error',
+        ),
+      );
     }
   }
 
   Future<void> disconnect() async {
     await sdk.disconnect();
+    _deviceStatusTimeout?.cancel();
     _bleReady = false;
     _lastInitKey = null;
     _setState(
@@ -709,6 +761,7 @@ class EdgezMeshSession extends ChangeNotifier {
   void _handleEvent(EdgezMeshEvent event) {
     switch (event.type) {
       case EdgezMeshEventType.connection:
+        _deviceStatusTimeout?.cancel();
         if (event.connection == EdgezConnectionType.none) {
           _bleReady = false;
           _lastInitKey = null;
@@ -719,6 +772,7 @@ class EdgezMeshSession extends ChangeNotifier {
         _setState(
           _state.copyWith(
             connection: event.connection,
+            bleConnecting: false,
             bleReady: event.connection == EdgezConnectionType.none
                 ? false
                 : _state.bleReady,
@@ -728,6 +782,9 @@ class EdgezMeshSession extends ChangeNotifier {
             voiceCall: event.connection == EdgezConnectionType.none
                 ? const EdgezVoiceCallState()
                 : _state.voiceCall,
+            statusLine: event.connection == EdgezConnectionType.ble
+                ? 'BLE link connected; setting up control channel'
+                : 'BLE disconnected',
           ),
         );
       case EdgezMeshEventType.bleDevice:
@@ -746,13 +803,19 @@ class EdgezMeshSession extends ChangeNotifier {
       case EdgezMeshEventType.ready:
         _bleReady = true;
         _setState(_state.copyWith(
-          statusLine: 'BLE control service ready',
+          statusLine: 'BLE control channel ready; requesting device status',
           bleReady: true,
         ));
         unawaited(_refreshOtaReadiness());
         if (!_provisioning) unawaited(_sendInitIfReady());
       case EdgezMeshEventType.status:
-        _setState(_state.copyWith(status: event.status));
+        _deviceStatusTimeout?.cancel();
+        _setState(
+          _state.copyWith(
+            status: event.status,
+            statusLine: 'Device status received',
+          ),
+        );
       case EdgezMeshEventType.node:
         final node = event.node;
         if (node == null) return;
@@ -786,6 +849,9 @@ class EdgezMeshSession extends ChangeNotifier {
           nodes: nodes,
           statusLine: 'Conversation message received',
         );
+        if (!message.mine) {
+          _dispatchIncomingMessage(message, nodes[message.nodeNum]!);
+        }
       case EdgezMeshEventType.voiceFrame:
         // BLE notifications are ordered. Keep decrypt + playback ordered too:
         // allowing asynchronous decryptions to overtake one another turns valid
@@ -833,8 +899,10 @@ class EdgezMeshSession extends ChangeNotifier {
     if (packet == null) return;
 
     if (packet.hasStatus()) {
+      _deviceStatusTimeout?.cancel();
       _setState(
         _state.copyWith(
+          statusLine: 'Device status received',
           status: EdgezMeshStatus(
             supported: packet.status.supported,
             stackInitialized: packet.status.stackInitialized,
@@ -1118,21 +1186,23 @@ class EdgezMeshSession extends ChangeNotifier {
         deviceType: 'User',
       ),
     );
+    final incomingMessage = EdgezConversationMessage(
+      nodeNum: fromNode,
+      text: text,
+      mine: false,
+      timestampMs: now,
+      messageUuid: messageUuid,
+      status: status,
+      voiceBytes: completedVoice?.bytes ?? const <int>[],
+      voiceCodec: completedVoice?.codec ?? 0,
+      durationMs: completedVoice?.durationMs ?? 0,
+    );
     _appendMessage(
-      EdgezConversationMessage(
-        nodeNum: fromNode,
-        text: text,
-        mine: false,
-        timestampMs: now,
-        messageUuid: messageUuid,
-        status: status,
-        voiceBytes: completedVoice?.bytes ?? const <int>[],
-        voiceCodec: completedVoice?.codec ?? 0,
-        durationMs: completedVoice?.durationMs ?? 0,
-      ),
+      incomingMessage,
       nodes: nodes,
       statusLine: 'Conversation message received',
     );
+    _dispatchIncomingMessage(incomingMessage, nodes[fromNode]!);
 
     final localNode = _state.status?.macAddress ?? 0;
     if (localNode != 0 &&
@@ -1244,9 +1314,14 @@ class EdgezMeshSession extends ChangeNotifier {
     try {
       await sdk.initializeMesh(config);
       _lastInitKey = initKey;
-      _setState(_state.copyWith(statusLine: 'User mesh settings sent'));
+      _setState(_state.copyWith(
+        statusLine: 'Device initialization sent; requesting status',
+      ));
       await sdk.requestDeviceSettings(identity: config.identity);
-      _setState(_state.copyWith(statusLine: 'Device settings requested'));
+      _setState(_state.copyWith(
+        statusLine: 'Waiting for device status response',
+      ));
+      _startDeviceStatusTimeout();
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
     } finally {
@@ -1266,6 +1341,23 @@ class EdgezMeshSession extends ChangeNotifier {
       config.identity.name,
       config.identity.publicKey.join(','),
     ].join('|');
+  }
+
+  void _startDeviceStatusTimeout() {
+    _deviceStatusTimeout?.cancel();
+    if (_state.status != null) return;
+    _deviceStatusTimeout = Timer(const Duration(seconds: 8), () {
+      if (_state.connection == EdgezConnectionType.ble &&
+          _bleReady &&
+          _state.status == null) {
+        _setState(
+          _state.copyWith(
+            statusLine: 'No device status received after 8 seconds. '
+                'The phone connected, but BLE notifications or the device response may have failed.',
+          ),
+        );
+      }
+    });
   }
 
   List<int> _encodeVoiceCallPacket({
@@ -1323,21 +1415,25 @@ class EdgezMeshSession extends ChangeNotifier {
         case _callInvite:
           if (call.isIdle) {
             _voiceCallSequence = 1;
+            final incomingCall = EdgezVoiceCallState(
+              peerNodeNum: fromNode,
+              callId: packet.callId,
+              phase: EdgezVoiceCallPhase.incoming,
+            );
             _setState(
               _state.copyWith(
-                voiceCall: EdgezVoiceCallState(
-                  peerNodeNum: fromNode,
-                  callId: packet.callId,
-                  phase: EdgezVoiceCallPhase.incoming,
-                ),
+                voiceCall: incomingCall,
                 statusLine: 'Incoming call from ${sender.resolvedDisplayName}',
               ),
             );
+            _scheduleVoiceCallTimeout(incomingCall);
+            _dispatchIncomingCall(incomingCall, sender);
           }
         case _callAccept:
           if (call.phase == EdgezVoiceCallPhase.outgoing &&
               call.callId == packet.callId &&
               call.peerNodeNum == fromNode) {
+            _voiceCallTimeout?.cancel();
             _setState(
               _state.copyWith(
                 voiceCall: EdgezVoiceCallState(
@@ -1511,8 +1607,46 @@ class EdgezMeshSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _dispatchIncomingMessage(
+    EdgezConversationMessage message,
+    EdgezMeshNode sender,
+  ) {
+    try {
+      onIncomingMessage?.call(message, sender);
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'edgez_flutter_sdk',
+          context: ErrorDescription('while handling an incoming message'),
+        ),
+      );
+    }
+  }
+
+  void _dispatchIncomingCall(
+    EdgezVoiceCallState call,
+    EdgezMeshNode caller,
+  ) {
+    try {
+      onIncomingCall?.call(call, caller);
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'edgez_flutter_sdk',
+          context: ErrorDescription('while handling an incoming call'),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
+    _deviceStatusTimeout?.cancel();
+    _voiceCallTimeout?.cancel();
     _pendingVoiceMessages.clear();
     _subscription.cancel();
     super.dispose();

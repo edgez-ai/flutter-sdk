@@ -47,6 +47,7 @@ import kotlin.concurrent.thread
 private const val BLE_PERMISSION_REQUEST = 9007
 private const val MICROPHONE_PERMISSION_REQUEST = 9008
 private const val LOCATION_PERMISSION_REQUEST = 9009
+private const val NOTIFICATION_PERMISSION_REQUEST = 9010
 private const val VOICE_CODEC_AMR_NB = 1
 private const val VOICE_CODEC_OPUS = 2
 private const val EDGEZ_HEADER_LEN = 4
@@ -61,6 +62,9 @@ private const val OTA_DATA_HEADER_SIZE = 5
 private const val OTA_DATA_MAX_CHUNK_SIZE = 220
 private const val OTA_WRITE_TIMEOUT_MS = 15_000L
 private const val CONTROL_SERVICE_READY_FALLBACK_MS = 750L
+private const val MTU_CALLBACK_FALLBACK_MS = 1_500L
+private const val SERVICE_DISCOVERY_TIMEOUT_MS = 5_000L
+private const val MAX_SERVICE_DISCOVERY_ATTEMPTS = 2
 private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 2)
 private const val EDGEZ_VOICE_NONCE_SIZE = 12
 private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
@@ -105,6 +109,11 @@ class EdgezFlutterSdkPlugin :
     private val notificationDescriptors = ArrayDeque<BluetoothGattDescriptor>()
     private var notificationDescriptorWriteInFlight = false
     private var serviceReadyPending = false
+    @Volatile private var serviceDiscoveryStarted = false
+    @Volatile private var serviceDiscoveryComplete = false
+    @Volatile private var serviceDiscoveryAttempts = 0
+    @Volatile private var controlNotificationWriteStarted = false
+    @Volatile private var controlNotificationFailed = false
     private var negotiatedMtu = 23
     private val otaWriteLock = Object()
     private var otaWriteStatus: Int? = null
@@ -113,6 +122,7 @@ class EdgezFlutterSdkPlugin :
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingMicrophoneResult: MethodChannel.Result? = null
     private var pendingLocationResult: MethodChannel.Result? = null
+    private var pendingNotificationResult: MethodChannel.Result? = null
     private var voicePlayer: MediaPlayer? = null
     private var voiceRecorder: MediaRecorder? = null
     private var voiceRecordingFile: File? = null
@@ -159,6 +169,7 @@ class EdgezFlutterSdkPlugin :
                 )
                 BluetoothDevice.BOND_NONE -> {
                     pendingBondDevice = null
+                    EdgezBleForegroundService.stop(context)
                     emit(mapOf("type" to "log", "log" to "BLE pairing failed or canceled ${device.address}"))
                     emit(mapOf("type" to "connection", "connection" to "none"))
                 }
@@ -268,6 +279,48 @@ class EdgezFlutterSdkPlugin :
             }
             "getBestKnownLocation" -> getBestKnownLocation(result)
             "requestMicrophonePermission" -> requestMicrophonePermission(result)
+            "requestNotificationPermission" -> requestNotificationPermission(result)
+            "notificationsAllowed" -> result.success(
+                EdgezBleForegroundService.notificationsAllowed(context),
+            )
+            "canUseFullScreenIntent" -> {
+                val allowed = if (Build.VERSION.SDK_INT >= 34) {
+                    context.getSystemService(android.app.NotificationManager::class.java)
+                        .canUseFullScreenIntent()
+                } else {
+                    true
+                }
+                result.success(allowed)
+            }
+            "showIncomingMessageNotification" -> {
+                result.success(
+                    EdgezBleForegroundService.showMessage(
+                        context = context,
+                        sender = call.argument<String>("sender").orEmpty(),
+                        body = call.argument<String>("body").orEmpty(),
+                        nodeNum = call.argument<Number>("nodeNum")?.toLong() ?: 0L,
+                        messageId = call.argument<String>("messageId").orEmpty(),
+                    ),
+                )
+            }
+            "showIncomingCallNotification" -> {
+                result.success(
+                    EdgezBleForegroundService.showIncomingCall(
+                        context = context,
+                        caller = call.argument<String>("caller").orEmpty(),
+                        nodeNum = call.argument<Number>("nodeNum")?.toLong() ?: 0L,
+                        callId = call.argument<Number>("callId")?.toLong() ?: 0L,
+                    ),
+                )
+            }
+            "cancelIncomingCallNotification" -> {
+                EdgezBleForegroundService.cancelIncomingCall(context)
+                result.success(null)
+            }
+            "clearCallLockScreenPresentation" -> {
+                clearLockScreenPresentation()
+                result.success(null)
+            }
             "startVoiceRecording" -> startVoiceRecording(result)
             "stopVoiceRecording" -> {
                 val send = call.argument<Boolean>("send") ?: true
@@ -447,6 +500,24 @@ class EdgezFlutterSdkPlugin :
                 }
                 return true
             }
+            NOTIFICATION_PERMISSION_REQUEST -> {
+                val result = pendingNotificationResult ?: return true
+                pendingNotificationResult = null
+                val granted = grantResults.isNotEmpty() &&
+                    grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to if (granted) {
+                            "Notification permission granted"
+                        } else {
+                            "Notification permission denied; background messages and calls cannot be shown"
+                        },
+                    ),
+                )
+                result.success(granted)
+                return true
+            }
             else -> return false
         }
     }
@@ -533,6 +604,46 @@ class EdgezFlutterSdkPlugin :
             MICROPHONE_PERMISSION_REQUEST,
         )
         emit(mapOf("type" to "log", "log" to "Requesting microphone permission"))
+    }
+
+    private fun requestNotificationPermission(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(EdgezBleForegroundService.notificationsAllowed(context))
+            return
+        }
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error(
+                "activity_missing",
+                "Notification permission requires a foreground activity",
+                null,
+            )
+            return
+        }
+        pendingNotificationResult = result
+        currentActivity.requestPermissions(
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            NOTIFICATION_PERMISSION_REQUEST,
+        )
+    }
+
+    private fun clearLockScreenPresentation() {
+        val currentActivity = activity ?: return
+        if (Build.VERSION.SDK_INT >= 27) {
+            currentActivity.setShowWhenLocked(false)
+            currentActivity.setTurnScreenOn(false)
+        } else {
+            @Suppress("DEPRECATION")
+            currentActivity.window.clearFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+            )
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -977,11 +1088,22 @@ class EdgezFlutterSdkPlugin :
         }
         stopBleScan()
         closeGatt()
+        runCatching {
+            EdgezBleForegroundService.start(context, "")
+        }.onFailure { error ->
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "BLE background service could not start: ${error.message}",
+                ),
+            )
+        }
         if (device.bondState != BluetoothDevice.BOND_BONDED) {
             pendingBondDevice = device
             emit(mapOf("type" to "log", "log" to "Starting BLE pairing ${device.address}"))
             if (!device.createBond()) {
                 pendingBondDevice = null
+                EdgezBleForegroundService.stop(context)
                 result.error("ble_pairing_failed", "BLE pairing could not start", null)
                 return
             }
@@ -1003,8 +1125,54 @@ class EdgezFlutterSdkPlugin :
     }
 
     @SuppressLint("MissingPermission")
+    private fun discoverServicesOnce(activeGatt: BluetoothGatt, reason: String) {
+        val attempt = synchronized(this) {
+            if (gatt !== activeGatt || serviceDiscoveryComplete || serviceDiscoveryStarted) {
+                return
+            }
+            serviceDiscoveryStarted = true
+            serviceDiscoveryAttempts += 1
+            serviceDiscoveryAttempts
+        }
+        emit(
+            mapOf(
+                "type" to "log",
+                "log" to "Discovering BLE services ($reason, attempt $attempt/$MAX_SERVICE_DISCOVERY_ATTEMPTS)",
+            ),
+        )
+        if (!activeGatt.discoverServices()) {
+            synchronized(this) { serviceDiscoveryStarted = false }
+            retryServiceDiscovery(activeGatt, "Android rejected service discovery")
+            return
+        }
+        mainHandler.postDelayed({
+            if (gatt === activeGatt && !serviceDiscoveryComplete && serviceDiscoveryStarted) {
+                synchronized(this) { serviceDiscoveryStarted = false }
+                retryServiceDiscovery(activeGatt, "BLE service discovery callback timed out")
+            }
+        }, SERVICE_DISCOVERY_TIMEOUT_MS)
+    }
+
+    private fun retryServiceDiscovery(activeGatt: BluetoothGatt, failure: String) {
+        if (serviceDiscoveryAttempts >= MAX_SERVICE_DISCOVERY_ATTEMPTS) {
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "$failure. BLE setup failed; disconnect, remove the pairing, and try again.",
+                ),
+            )
+            return
+        }
+        emit(mapOf("type" to "log", "log" to "$failure; retrying"))
+        mainHandler.postDelayed({
+            discoverServicesOnce(activeGatt, "retry after timeout")
+        }, CONTROL_SERVICE_READY_FALLBACK_MS)
+    }
+
+    @SuppressLint("MissingPermission")
     private fun closeGatt() {
         otaAbortRequested.set(true)
+        EdgezBleForegroundService.stop(context)
         liveVoiceAudio?.stop()
         pendingBondDevice = null
         rxCharacteristic = null
@@ -1018,6 +1186,11 @@ class EdgezFlutterSdkPlugin :
         notificationDescriptors.clear()
         notificationDescriptorWriteInFlight = false
         serviceReadyPending = false
+        serviceDiscoveryStarted = false
+        serviceDiscoveryComplete = false
+        serviceDiscoveryAttempts = 0
+        controlNotificationWriteStarted = false
+        controlNotificationFailed = false
         negotiatedMtu = 23
         rxLen = 0
         forwardRxLen = 0
@@ -1161,14 +1334,61 @@ class EdgezFlutterSdkPlugin :
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             emit(mapOf("type" to "log", "log" to "BLE connection status=$status state=$newState"))
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                serviceDiscoveryStarted = false
+                serviceDiscoveryComplete = false
+                serviceDiscoveryAttempts = 0
+                controlNotificationWriteStarted = false
+                controlNotificationFailed = false
                 val highPriorityRequested = gatt.requestConnectionPriority(
                     BluetoothGatt.CONNECTION_PRIORITY_HIGH,
                 )
                 emit(mapOf("type" to "log", "log" to "BLE high priority requested=$highPriorityRequested"))
                 emit(mapOf("type" to "connection", "connection" to "ble"))
-                gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
+                runCatching {
+                    EdgezBleForegroundService.start(
+                        context,
+                        gatt.device.name ?: gatt.device.address,
+                    )
+                }.onFailure { error ->
+                    emit(
+                        mapOf(
+                            "type" to "log",
+                            "log" to "BLE background service could not start: ${error.message}",
+                        ),
+                    )
+                }
+                val mtuRequestStarted = gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to if (mtuRequestStarted) {
+                            "BLE link connected; negotiating MTU"
+                        } else {
+                            "BLE MTU request was rejected; continuing with service discovery"
+                        },
+                    ),
+                )
+                if (!mtuRequestStarted) {
+                    discoverServicesOnce(gatt, "MTU request rejected")
+                } else {
+                    mainHandler.postDelayed({
+                        if (this@EdgezFlutterSdkPlugin.gatt === gatt &&
+                            !serviceDiscoveryStarted &&
+                            !serviceDiscoveryComplete
+                        ) {
+                            emit(
+                                mapOf(
+                                    "type" to "log",
+                                    "log" to "BLE MTU callback timed out; continuing with default MTU",
+                                ),
+                            )
+                            discoverServicesOnce(gatt, "MTU callback timeout")
+                        }
+                    }, MTU_CALLBACK_FALLBACK_MS)
+                }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 otaAbortRequested.set(true)
+                EdgezBleForegroundService.stop(context)
                 rxCharacteristic = null
                 txCharacteristic = null
                 forwardRxCharacteristic = null
@@ -1180,6 +1400,11 @@ class EdgezFlutterSdkPlugin :
                 notificationDescriptors.clear()
                 notificationDescriptorWriteInFlight = false
                 serviceReadyPending = false
+                serviceDiscoveryStarted = false
+                serviceDiscoveryComplete = false
+                serviceDiscoveryAttempts = 0
+                controlNotificationWriteStarted = false
+                controlNotificationFailed = false
                 negotiatedMtu = 23
                 rxLen = 0
                 forwardRxLen = 0
@@ -1192,17 +1417,30 @@ class EdgezFlutterSdkPlugin :
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             emit(mapOf("type" to "log", "log" to "BLE MTU mtu=$mtu status=$status"))
             if (status == BluetoothGatt.GATT_SUCCESS) negotiatedMtu = mtu
-            gatt.discoverServices()
+            discoverServicesOnce(gatt, "MTU callback")
         }
 
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             emit(mapOf("type" to "log", "log" to "BLE services status=$status"))
+            synchronized(this@EdgezFlutterSdkPlugin) {
+                serviceDiscoveryStarted = false
+            }
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                retryServiceDiscovery(gatt, "BLE service discovery failed with status $status")
+                return
+            }
+            serviceDiscoveryComplete = true
             val service: BluetoothGattService? = gatt.getService(EDGEZ_SERVICE_UUID)
             val rx = service?.getCharacteristic(EDGEZ_RX_UUID)
             val tx = service?.getCharacteristic(EDGEZ_TX_UUID)
             if (rx == null || tx == null) {
-                emit(mapOf("type" to "log", "log" to "BLE service missing rx=${rx != null} tx=${tx != null}"))
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "BLE setup failed: EdgeZ control service is missing rx=${rx != null} tx=${tx != null}. Check device firmware and clear the phone's Bluetooth cache.",
+                    ),
+                )
                 return
             }
 
@@ -1225,7 +1463,9 @@ class EdgezFlutterSdkPlugin :
             )
             notificationDescriptors.clear()
             notificationDescriptorWriteInFlight = false
-            queueNotification(gatt, tx)
+            controlNotificationWriteStarted = false
+            controlNotificationFailed = false
+            queueNotification(gatt, tx, requiredForControl = true)
             forwardTxCharacteristic?.let {
                 queueNotification(gatt, it)
                 emit(mapOf("type" to "log", "log" to "BLE forwarded-mesh channel available"))
@@ -1259,17 +1499,43 @@ class EdgezFlutterSdkPlugin :
         ) {
             if (descriptor.uuid != CCCD_UUID) return
             notificationDescriptorWriteInFlight = false
+            val isControlNotification = descriptor.characteristic.uuid == txCharacteristic?.uuid
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 emit(mapOf("type" to "log", "log" to "BLE notification subscription failed status=$status uuid=${descriptor.characteristic.uuid}"))
+                if (isControlNotification) controlNotificationFailed = true
             }
             writeNextNotificationDescriptor(gatt)
             maybeMarkControlServiceReady(gatt)
         }
 
         @SuppressLint("MissingPermission")
-        private fun queueNotification(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-            gatt.setCharacteristicNotification(characteristic, true)
-            characteristic.getDescriptor(CCCD_UUID)?.let { notificationDescriptors.addLast(it) }
+        private fun queueNotification(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            requiredForControl: Boolean = false,
+        ) {
+            if (!gatt.setCharacteristicNotification(characteristic, true)) {
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "BLE notification setup rejected uuid=${characteristic.uuid}",
+                    ),
+                )
+                if (requiredForControl) controlNotificationFailed = true
+                return
+            }
+            val descriptor = characteristic.getDescriptor(CCCD_UUID)
+            if (descriptor == null) {
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "BLE notification descriptor missing uuid=${characteristic.uuid}",
+                    ),
+                )
+                if (requiredForControl) controlNotificationFailed = true
+                return
+            }
+            notificationDescriptors.addLast(descriptor)
         }
 
         @SuppressLint("MissingPermission")
@@ -1277,6 +1543,7 @@ class EdgezFlutterSdkPlugin :
             if (notificationDescriptorWriteInFlight || notificationDescriptors.isEmpty()) return
             val descriptor = notificationDescriptors.removeFirst()
             notificationDescriptorWriteInFlight = true
+            val isControlNotification = descriptor.characteristic.uuid == txCharacteristic?.uuid
             val started = if (Build.VERSION.SDK_INT >= 33) {
                 gatt.writeDescriptor(
                     descriptor,
@@ -1289,7 +1556,10 @@ class EdgezFlutterSdkPlugin :
             if (!started) {
                 notificationDescriptorWriteInFlight = false
                 emit(mapOf("type" to "log", "log" to "BLE notification subscription failed to start uuid=${descriptor.characteristic.uuid}"))
+                if (isControlNotification) controlNotificationFailed = true
                 writeNextNotificationDescriptor(gatt)
+            } else if (isControlNotification) {
+                controlNotificationWriteStarted = true
             }
         }
 
@@ -1298,13 +1568,42 @@ class EdgezFlutterSdkPlugin :
             allowPendingNotifications: Boolean = false,
         ) {
             if (!serviceReadyPending) return
+            if (controlNotificationFailed) {
+                serviceReadyPending = false
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "BLE setup failed: the phone could not enable device-status notifications. Disconnect, remove the pairing, and try again.",
+                    ),
+                )
+                return
+            }
             if (!allowPendingNotifications &&
                 (notificationDescriptorWriteInFlight || notificationDescriptors.isNotEmpty())
             ) {
                 return
             }
+            if (!controlNotificationWriteStarted) {
+                serviceReadyPending = false
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "BLE setup failed: device-status notifications were not started.",
+                    ),
+                )
+                return
+            }
             serviceReadyPending = false
-            emit(mapOf("type" to "log", "log" to "BLE control service ready"))
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to if (allowPendingNotifications && notificationDescriptorWriteInFlight) {
+                        "BLE notification confirmation timed out; requesting device status anyway"
+                    } else {
+                        "BLE control channel ready; requesting device status"
+                    },
+                ),
+            )
             emit(mapOf("type" to "ready"))
             writeNextFrame(gatt, rxCharacteristic)
         }

@@ -20,6 +20,7 @@ import 'nodes_tab.dart';
 import 'provisioning_screen.dart';
 import 'settings_tab.dart';
 import 'topology_screen.dart';
+import 'voice_call_screen.dart';
 
 enum AppDestination {
   dashboard('Dashboard', Icons.dashboard_outlined, Icons.dashboard),
@@ -44,7 +45,10 @@ class EdgezExampleApp extends StatefulWidget {
   State<EdgezExampleApp> createState() => _EdgezExampleAppState();
 }
 
-class _EdgezExampleAppState extends State<EdgezExampleApp> {
+class _EdgezExampleAppState extends State<EdgezExampleApp>
+    with WidgetsBindingObserver {
+  final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
   late final EdgezMeshSession session;
   late final ExampleDatabase database;
   late final EdgezIdentityStore identityStore;
@@ -109,21 +113,159 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
   String deviceUpstreamWifiPassphrase = '';
   String deviceBeaconMulticast = '';
   bool deviceSleepModeEnabled = false;
+  EdgezVoiceCallPhase lastVoiceCallPhase = EdgezVoiceCallPhase.idle;
+  AppLifecycleState appLifecycleState = AppLifecycleState.resumed;
 
   @override
   void initState() {
     super.initState();
-    session = EdgezMeshSession();
+    WidgetsBinding.instance.addObserver(this);
+    session = EdgezMeshSession(
+      onIncomingMessage: _showIncomingMessage,
+      onIncomingCall: _showIncomingCall,
+    );
     database = ExampleDatabase();
     identityStore = EdgezIdentityStore();
     bleConfigurationStore = EdgezBleConfigurationStore();
     driverStore = EdgezDriverStore();
     appLinks = AppLinks();
     session.addListener(_persistSessionSnapshot);
+    session.addListener(_handleCallNotificationState);
     unawaited(_loadIdentityAndBleConfiguration());
     unawaited(_hydrateFromDatabase());
     unawaited(_loadInstalledDrivers());
-    _listenForDriverLinks();
+    _listenForAppLinks();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    appLifecycleState = state;
+  }
+
+  void _showIncomingMessage(
+    EdgezConversationMessage message,
+    EdgezMeshNode sender,
+  ) {
+    unawaited(_notifyIncomingMessage(message, sender));
+  }
+
+  void _showIncomingCall(EdgezVoiceCallState call, EdgezMeshNode caller) {
+    unawaited(_notifyIncomingCall(call, caller));
+  }
+
+  Future<void> _notifyIncomingMessage(
+    EdgezConversationMessage message,
+    EdgezMeshNode sender,
+  ) async {
+    var shown = false;
+    try {
+      shown = await session.sdk
+          .showIncomingMessageNotification(message: message, sender: sender);
+    } on MissingPluginException {
+      // A full rebuild is required after adding the native notification API.
+    } on PlatformException {
+      // Fall back to an in-app notice if Android rejects the notification.
+    }
+    if (!shown) {
+      _showForegroundFallback(
+        title: sender.resolvedDisplayName,
+        detail: message.voiceBytes.isNotEmpty ? 'Voice message' : message.text,
+        nodeNum: sender.nodeNum,
+      );
+    }
+  }
+
+  Future<void> _notifyIncomingCall(
+    EdgezVoiceCallState call,
+    EdgezMeshNode caller,
+  ) async {
+    // The dedicated Flutter call screen is already visible in the foreground.
+    // Native CallStyle is needed only to bring a background/locked app forward.
+    if (appLifecycleState == AppLifecycleState.resumed) return;
+    var shown = false;
+    try {
+      shown = await session.sdk
+          .showIncomingCallNotification(call: call, caller: caller);
+    } on MissingPluginException {
+      // A full rebuild is required after adding the native notification API.
+    } on PlatformException {
+      // Fall back to an in-app notice if Android rejects the notification.
+    }
+    if (!shown) {
+      _showForegroundFallback(
+        title: 'Incoming call from ${caller.resolvedDisplayName}',
+        detail: 'Open the conversation to answer or decline.',
+        nodeNum: caller.nodeNum,
+        duration: const Duration(seconds: 30),
+      );
+    }
+  }
+
+  void _showForegroundFallback({
+    required String title,
+    required String detail,
+    required int nodeNum,
+    Duration duration = const Duration(seconds: 8),
+  }) {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = scaffoldMessengerKey.currentState;
+      if (messenger == null) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            duration: duration,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+            action: SnackBarAction(
+              label: 'Open',
+              onPressed: () => _openIncomingConversation(nodeNum),
+            ),
+          ),
+        );
+    });
+  }
+
+  void _handleCallNotificationState() {
+    final next = session.state.voiceCall.phase;
+    if (lastVoiceCallPhase == EdgezVoiceCallPhase.incoming &&
+        next != EdgezVoiceCallPhase.incoming) {
+      unawaited(session.sdk.cancelIncomingCallNotification());
+    }
+    if (lastVoiceCallPhase != EdgezVoiceCallPhase.idle &&
+        next == EdgezVoiceCallPhase.idle) {
+      unawaited(session.sdk.clearCallLockScreenPresentation());
+    }
+    lastVoiceCallPhase = next;
+  }
+
+  Future<void> _answerCall() async {
+    await session.sdk.cancelIncomingCallNotification();
+    await session.acceptVoiceCall();
+  }
+
+  Future<void> _endCall() async {
+    await session.endVoiceCall();
+  }
+
+  void _openIncomingConversation(int nodeNum) {
+    if (!mounted) return;
+    setState(() {
+      provisionMode = false;
+      destination = AppDestination.nodes;
+      showTopology = false;
+      selectedNodeNum = nodeNum;
+    });
   }
 
   Future<void> _loadInstalledDrivers() async {
@@ -140,10 +282,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     }
   }
 
-  void _listenForDriverLinks() {
+  void _listenForAppLinks() {
     try {
+      unawaited(appLinks.getInitialLink().then((uri) {
+        if (uri != null) _handleAppLink(uri);
+      }));
       driverLinkSubscription = appLinks.uriLinkStream.listen(
-        _handleDriverLink,
+        _handleAppLink,
         onError: (_) {},
       );
     } catch (_) {
@@ -151,7 +296,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     }
   }
 
-  void _handleDriverLink(Uri uri) {
+  void _handleAppLink(Uri uri) {
+    if (uri.scheme == 'edgez' &&
+        (uri.host == 'message' || uri.host == 'call')) {
+      _handleNotificationLink(uri);
+      return;
+    }
     final request = MarketplaceDriverInstallRequest.fromUri(uri);
     if (request == null || !mounted) return;
     setState(() {
@@ -159,6 +309,43 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       destination = AppDestination.drivers;
       provisionMode = false;
     });
+  }
+
+  void _handleNotificationLink(Uri uri) {
+    final nodeNum = int.tryParse(uri.queryParameters['node'] ?? '');
+    if (nodeNum == null) return;
+    _openIncomingConversation(nodeNum);
+    if (uri.host != 'call') return;
+    // Once the full-screen activity is visible, remove the system call banner;
+    // the dedicated Flutter screen becomes the single call interface.
+    unawaited(session.sdk.cancelIncomingCallNotification());
+    final action = uri.queryParameters['action'];
+    if (action == 'answer' || action == 'decline') {
+      final callId = int.tryParse(uri.queryParameters['call'] ?? '');
+      if (callId != null) {
+        unawaited(_handleIncomingCallAction(nodeNum, callId, action!));
+      }
+    }
+  }
+
+  Future<void> _handleIncomingCallAction(
+    int nodeNum,
+    int callId,
+    String action,
+  ) async {
+    await session.sdk.cancelIncomingCallNotification();
+    final call = session.state.voiceCall;
+    if (call.phase != EdgezVoiceCallPhase.incoming ||
+        call.peerNodeNum != nodeNum ||
+        call.callId != callId) {
+      await session.sdk.clearCallLockScreenPresentation();
+      return;
+    }
+    if (action == 'answer') {
+      await _answerCall();
+    } else {
+      await _endCall();
+    }
   }
 
   void _driverInstallHandled() {
@@ -203,10 +390,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(driverLinkSubscription?.cancel());
     persistDebounce?.cancel();
     persistenceEnabled = false;
     session.removeListener(_persistSessionSnapshot);
+    session.removeListener(_handleCallNotificationState);
     session.dispose();
     unawaited(database.close());
     super.dispose();
@@ -394,6 +583,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
     // Match the Android flow: make the current mesh configuration available
     // before BLE service discovery emits its ready event.
     await _saveAppSettings();
+    try {
+      await session.sdk.requestNotificationPermission();
+    } on MissingPluginException {
+      // Notification support requires a full rebuild after native changes.
+    }
     await session.connectBle(deviceId);
   }
 
@@ -710,6 +904,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
       animation: session,
       builder: (context, _) {
         final meshState = session.state;
+        final callPeerNodeNum = meshState.voiceCall.peerNodeNum;
+        final callPeer =
+            callPeerNodeNum == null ? null : meshState.nodes[callPeerNodeNum];
         final selected =
             selectedNodeNum == null ? null : meshState.nodes[selectedNodeNum!];
         final body = switch (destination) {
@@ -740,8 +937,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                       callState: meshState.voiceCall,
                       onStartCall: () =>
                           session.startVoiceCall(selected.nodeNum),
-                      onAcceptCall: session.acceptVoiceCall,
-                      onEndCall: session.endVoiceCall,
                     )
                   : DeviceDetailScreen(
                       user: selected,
@@ -787,8 +982,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                           callState: meshState.voiceCall,
                           onStartCall: () =>
                               session.startVoiceCall(selected.nodeNum),
-                          onAcceptCall: session.acceptVoiceCall,
-                          onEndCall: session.endVoiceCall,
                         )
                       : DeviceDetailScreen(
                           user: selected,
@@ -820,6 +1013,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
                 )
               : SettingsScreen(
                   activeConnection: meshState.connection,
+                  bleConnecting: meshState.bleConnecting,
+                  bleReady: meshState.bleReady,
                   shareLocation: shareLocation,
                   autoReplayReceivedVoice: autoReplayReceivedVoice,
                   deviceModeEnabled: deviceModeEnabled,
@@ -969,48 +1164,57 @@ class _EdgezExampleAppState extends State<EdgezExampleApp> {
         };
 
         return MaterialApp(
+          scaffoldMessengerKey: scaffoldMessengerKey,
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             colorSchemeSeed: Colors.teal,
             useMaterial3: true,
             cardTheme: const CardThemeData(margin: EdgeInsets.zero),
           ),
-          home: provisionMode
-              ? ProvisioningScreen(
-                  session: session,
-                  drivers: drivers,
-                  excludedBleDeviceId: selectedBleDevice?.id,
-                  defaultMeshId: meshId,
-                  defaultPassphrase: passphrase,
-                  defaultMaxHop: maxHop,
-                  defaultBeaconInterval: beaconIntervalSeconds,
-                  defaultMeshCountry: meshCountry,
-                  defaultMeshFrequencyKhz: meshFrequencyKhz,
-                  defaultMeshBandwidthMhz: meshBandwidthMhz,
-                  onCancel: _closeProvisioning,
-                  onComplete: _closeProvisioning,
+          home: !meshState.voiceCall.isIdle
+              ? VoiceCallScreen(
+                  call: meshState.voiceCall,
+                  peer: callPeer,
+                  onAnswer: _answerCall,
+                  onEnd: _endCall,
                 )
-              : Scaffold(
-                  body: body,
-                  bottomNavigationBar: NavigationBar(
-                    selectedIndex: AppDestination.values.indexOf(destination),
-                    onDestinationSelected: (index) => setState(() {
-                      destination = AppDestination.values[index];
-                      showDebug = false;
-                      if (destination != AppDestination.nodes) {
-                        selectedNodeNum = null;
-                        showTopology = false;
-                      }
-                    }),
-                    destinations: AppDestination.values.map((item) {
-                      return NavigationDestination(
-                        icon: Icon(item.icon),
-                        selectedIcon: Icon(item.selectedIcon),
-                        label: item.label,
-                      );
-                    }).toList(),
-                  ),
-                ),
+              : provisionMode
+                  ? ProvisioningScreen(
+                      session: session,
+                      drivers: drivers,
+                      excludedBleDeviceId: selectedBleDevice?.id,
+                      defaultMeshId: meshId,
+                      defaultPassphrase: passphrase,
+                      defaultMaxHop: maxHop,
+                      defaultBeaconInterval: beaconIntervalSeconds,
+                      defaultMeshCountry: meshCountry,
+                      defaultMeshFrequencyKhz: meshFrequencyKhz,
+                      defaultMeshBandwidthMhz: meshBandwidthMhz,
+                      onCancel: _closeProvisioning,
+                      onComplete: _closeProvisioning,
+                    )
+                  : Scaffold(
+                      body: body,
+                      bottomNavigationBar: NavigationBar(
+                        selectedIndex:
+                            AppDestination.values.indexOf(destination),
+                        onDestinationSelected: (index) => setState(() {
+                          destination = AppDestination.values[index];
+                          showDebug = false;
+                          if (destination != AppDestination.nodes) {
+                            selectedNodeNum = null;
+                            showTopology = false;
+                          }
+                        }),
+                        destinations: AppDestination.values.map((item) {
+                          return NavigationDestination(
+                            icon: Icon(item.icon),
+                            selectedIcon: Icon(item.selectedIcon),
+                            label: item.label,
+                          );
+                        }).toList(),
+                      ),
+                    ),
         );
       },
     );

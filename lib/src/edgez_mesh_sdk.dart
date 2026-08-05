@@ -113,6 +113,63 @@ class EdgezMeshSdk {
         false;
   }
 
+  Future<bool> requestNotificationPermission() async {
+    return await _transport
+            .invokeMethod<bool>('requestNotificationPermission') ??
+        false;
+  }
+
+  Future<bool> get notificationsAllowed async {
+    return await _transport.invokeMethod<bool>('notificationsAllowed') ?? false;
+  }
+
+  Future<bool> get canUseFullScreenIntent async {
+    return await _transport.invokeMethod<bool>('canUseFullScreenIntent') ??
+        false;
+  }
+
+  Future<bool> showIncomingMessageNotification({
+    required EdgezConversationMessage message,
+    required EdgezMeshNode sender,
+  }) async {
+    return await _transport.invokeMethod<bool>(
+          'showIncomingMessageNotification',
+          <String, Object?>{
+            'sender': sender.resolvedDisplayName,
+            'body':
+                message.voiceBytes.isNotEmpty ? 'Voice message' : message.text,
+            'nodeNum': sender.nodeNum,
+            'messageId': message.messageUuid,
+          },
+        ) ??
+        false;
+  }
+
+  Future<bool> showIncomingCallNotification({
+    required EdgezVoiceCallState call,
+    required EdgezMeshNode caller,
+  }) async {
+    return await _transport.invokeMethod<bool>(
+          'showIncomingCallNotification',
+          <String, Object?>{
+            'caller': caller.resolvedDisplayName,
+            'nodeNum': caller.nodeNum,
+            'callId': call.callId,
+          },
+        ) ??
+        false;
+  }
+
+  Future<void> cancelIncomingCallNotification() {
+    return _transport.invokeMethod<void>('cancelIncomingCallNotification');
+  }
+
+  /// Allows the host activity to return to normal lock-screen behavior after
+  /// a call has ended or been declined.
+  Future<void> clearCallLockScreenPresentation() {
+    return _transport.invokeMethod<void>('clearCallLockScreenPresentation');
+  }
+
   Future<void> startVoiceRecording() async {
     final permitted = await requestMicrophonePermission();
     if (!permitted) {

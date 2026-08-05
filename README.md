@@ -18,6 +18,7 @@ The SDK owns BLE transport and mesh operations:
 - mesh status events
 - node/beacon events
 - text and voice message send APIs
+- background message notifications and lock-screen incoming-call notifications
 - device settings send APIs
 - BLE firmware OTA with acknowledged writes, progress events, and cancellation
 
@@ -29,6 +30,21 @@ events without hardware.
 The example app persists nodes, conversations, sensor history, geofences, and
 dashboard preferences in SQLite. It does not include the map tab or Organic
 Maps dependencies.
+
+## Background messages and calls
+
+While BLE is connected, the Android plugin runs a `connectedDevice` foreground
+service. Incoming messages can be posted as Android conversation notifications;
+incoming calls use a high-importance call notification with Answer and Decline
+intents and a dedicated call screen that remains usable over the lock screen
+after Answer. Android 13+
+requires notification permission, and Android 14+ lets the user separately
+control full-screen intent access.
+
+See [Background notifications and calls](docs/background-notifications.md) for
+host manifest requirements, Dart callbacks, notification channels, lock-screen
+behavior, and lifecycle limitations. Native changes require a full stop,
+rebuild, and reinstall; hot reload is not sufficient.
 
 ## Flash Firmware
 

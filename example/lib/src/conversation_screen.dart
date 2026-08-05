@@ -18,8 +18,6 @@ class ConversationScreen extends StatefulWidget {
     required this.onReplayVoiceMessage,
     required this.callState,
     required this.onStartCall,
-    required this.onAcceptCall,
-    required this.onEndCall,
     super.key,
   });
 
@@ -34,8 +32,6 @@ class ConversationScreen extends StatefulWidget {
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
   final EdgezVoiceCallState callState;
   final Future<void> Function() onStartCall;
-  final Future<void> Function() onAcceptCall;
-  final Future<void> Function() onEndCall;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
@@ -95,7 +91,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
         widget.user.opensConversation &&
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
-    final callForThisUser = widget.callState.peerNodeNum == widget.user.nodeNum;
     final displayName = widget.user.resolvedDisplayName.trim();
     final avatarText = displayName.isEmpty ? '?' : displayName[0].toUpperCase();
     EdgezSensorSample? latestLocation;
@@ -158,23 +153,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   ),
                 ),
                 IconButton(
-                  tooltip: widget.callState.isIdle
-                      ? 'Start voice call'
-                      : callForThisUser
-                          ? 'End voice call'
-                          : 'Another call is active',
-                  onPressed: !canSendVoice
-                      ? null
-                      : widget.callState.isIdle
-                          ? () => unawaited(widget.onStartCall())
-                          : callForThisUser
-                              ? () => unawaited(widget.onEndCall())
-                              : null,
-                  icon: Icon(
-                    widget.callState.isIdle
-                        ? Icons.call_outlined
-                        : Icons.call_end,
-                  ),
+                  tooltip: 'Start voice call',
+                  onPressed: canSendVoice && widget.callState.isIdle
+                      ? () => unawaited(widget.onStartCall())
+                      : null,
+                  icon: const Icon(Icons.call_outlined),
                 ),
               ],
             ),
@@ -223,41 +206,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            if (callForThisUser && !widget.callState.isIdle) ...<Widget>[
-              Card(
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          switch (widget.callState.phase) {
-                            EdgezVoiceCallPhase.outgoing => 'Calling...',
-                            EdgezVoiceCallPhase.incoming =>
-                              'Incoming voice call',
-                            EdgezVoiceCallPhase.active => 'Voice call active',
-                            EdgezVoiceCallPhase.idle => '',
-                          },
-                        ),
-                      ),
-                      if (widget.callState.phase ==
-                          EdgezVoiceCallPhase.incoming)
-                        FilledButton(
-                          onPressed: () => unawaited(widget.onAcceptCall()),
-                          child: const Text('Accept'),
-                        ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: () => unawaited(widget.onEndCall()),
-                        child: const Text('End'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
             Align(
               alignment: Alignment.centerLeft,
               child: Text(

@@ -11,6 +11,7 @@ integration.
 | [Feature guide](features.md) | Understand the SDK capabilities, platform support, and example coverage. |
 | [Integration guide](integration-guide.md) | Add the SDK to a Flutter app and implement the BLE-to-mesh lifecycle. |
 | [API map](api-reference.md) | Find the main public classes and choose between the session and low-level APIs. |
+| [Background notifications and calls](background-notifications.md) | Keep BLE active in the background and display message/call notifications on the lock screen. |
 | [Roadmap](roadmap.md) | Review planned offline maps and libp2p cross-boundary mixed-mesh work. |
 
 ## Repository map
@@ -24,6 +25,7 @@ integration.
 | [`example/lib/src/app.dart`](../example/lib/src/app.dart) | Complete session lifecycle, settings, OTA, and app-level persistence wiring. |
 | [`example/lib/src/provisioning_screen.dart`](../example/lib/src/provisioning_screen.dart) | Device authorization and provisioning flow. |
 | [`example/lib/src/marketplace_driver_install.dart`](../example/lib/src/marketplace_driver_install.dart) | Marketplace link validation and driver download boundary. |
+| [`android/src/main/kotlin/ai/edgez/flutter_sdk/EdgezBleForegroundService.kt`](../android/src/main/kotlin/ai/edgez/flutter_sdk/EdgezBleForegroundService.kt) | Foreground BLE lifetime and native message/call notifications. |
 
 ## Supported platform
 

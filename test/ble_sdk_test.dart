@@ -117,6 +117,70 @@ void main() {
       expect(ble.callsFor('getBestKnownLocation'), hasLength(1));
     });
 
+    test('forwards background notification commands to Android', () async {
+      ble.results['requestNotificationPermission'] = true;
+      ble.results['notificationsAllowed'] = true;
+      ble.results['canUseFullScreenIntent'] = true;
+      ble.results['showIncomingMessageNotification'] = true;
+      ble.results['showIncomingCallNotification'] = true;
+      const sender = EdgezMeshNode(
+        nodeNum: 0x1234,
+        userUuid: 'sender',
+        displayName: 'Remote user',
+        route: 'BLE',
+        lastSeenMs: 1,
+        marker: 'blue',
+      );
+      const message = EdgezConversationMessage(
+        nodeNum: 0x1234,
+        text: 'Hello from the mesh',
+        mine: false,
+        timestampMs: 2,
+        messageUuid: 'message-1',
+      );
+      const call = EdgezVoiceCallState(
+        peerNodeNum: 0x1234,
+        callId: 99,
+        phase: EdgezVoiceCallPhase.incoming,
+      );
+
+      expect(await sdk.requestNotificationPermission(), isTrue);
+      expect(await sdk.notificationsAllowed, isTrue);
+      expect(await sdk.canUseFullScreenIntent, isTrue);
+      expect(
+        await sdk.showIncomingMessageNotification(
+          message: message,
+          sender: sender,
+        ),
+        isTrue,
+      );
+      expect(
+        await sdk.showIncomingCallNotification(call: call, caller: sender),
+        isTrue,
+      );
+      await sdk.cancelIncomingCallNotification();
+      await sdk.clearCallLockScreenPresentation();
+
+      expect(
+        ble.calls.map((item) => item.method),
+        containsAllInOrder(<String>[
+          'requestNotificationPermission',
+          'notificationsAllowed',
+          'canUseFullScreenIntent',
+          'showIncomingMessageNotification',
+          'showIncomingCallNotification',
+          'cancelIncomingCallNotification',
+          'clearCallLockScreenPresentation',
+        ]),
+      );
+      final messageCall =
+          ble.callsFor('showIncomingMessageNotification').single;
+      expect(messageCall.argumentMap['sender'], 'Remote user');
+      expect(messageCall.argumentMap['body'], 'Hello from the mesh');
+      final callCommand = ble.callsFor('showIncomingCallNotification').single;
+      expect(callCommand.argumentMap['callId'], 99);
+    });
+
     test('forwards OTA readiness, image, progress, and cancellation', () async {
       ble.results['isOtaReady'] = true;
       ble.results['performOta'] = 'Firmware uploaded; the device is restarting';
@@ -231,13 +295,23 @@ void main() {
       await session.connectBle('11:22:33:44:55:66');
       expect(ble.callsFor('connectBle'), hasLength(1));
       expect(ble.callsFor('initializeMesh'), isEmpty);
+      expect(session.state.connection, EdgezConnectionType.none);
+      expect(session.state.bleConnecting, isTrue);
+      expect(session.state.statusLine, contains('waiting for Android'));
 
       ble.emitConnection(EdgezConnectionType.ble);
+      await ble.flushEvents();
+      expect(session.state.connection, EdgezConnectionType.ble);
+      expect(session.state.bleConnecting, isFalse);
+      expect(session.state.bleReady, isFalse);
+      expect(session.state.statusLine, contains('setting up control channel'));
+
       ble.emitReady();
       await ble.flushEvents();
       await ble.flushEvents();
 
       expect(session.state.connection, EdgezConnectionType.ble);
+      expect(session.state.bleReady, isTrue);
       expect(ble.callsFor('initializeMesh'), hasLength(1));
       final initPacket = ble.callsFor('initializeMesh').single.packet;
       expect(initPacket.init.meshId, 'mock-mesh');
@@ -250,6 +324,19 @@ void main() {
       );
       expect(ble.callsFor('sendPacket'), hasLength(1));
 
+      session.dispose();
+    });
+
+    test('session clears the connecting state when BLE connect fails',
+        () async {
+      ble.errors['connectBle'] = StateError('mock connection failed');
+      final session = EdgezMeshSession(sdk: sdk);
+
+      await session.connectBle('unreachable');
+
+      expect(session.state.connection, EdgezConnectionType.none);
+      expect(session.state.bleConnecting, isFalse);
+      expect(session.state.statusLine, contains('BLE connect failed'));
       session.dispose();
     });
 
@@ -421,7 +508,15 @@ void main() {
 
     test('voice call decrypts and plays BLE audio frames in order', () async {
       final voiceSdk = _OrderedVoiceSdk();
-      final session = EdgezMeshSession(sdk: voiceSdk);
+      EdgezVoiceCallState? incomingCall;
+      EdgezMeshNode? incomingCaller;
+      final session = EdgezMeshSession(
+        sdk: voiceSdk,
+        onIncomingCall: (call, caller) {
+          incomingCall = call;
+          incomingCaller = caller;
+        },
+      );
       const remoteNode = 0x223344556677;
       const localNode = 0x112233445566;
       const identity = EdgezUserIdentity(
@@ -463,6 +558,15 @@ void main() {
         ),
       );
       await voiceSdk.flush();
+
+      voiceSdk.plaintexts[9] = _voicePacket(1, 1234, 9);
+      voiceSdk.emitVoice(remoteNode, 9);
+      await voiceSdk.flush();
+      expect(incomingCall?.phase, EdgezVoiceCallPhase.incoming);
+      expect(incomingCall?.callId, 1234);
+      expect(incomingCaller?.nodeNum, remoteNode);
+      await session.endVoiceCall();
+      voiceSdk.decryptStarted.clear();
 
       await session.startVoiceCall(remoteNode);
       final callId = session.state.voiceCall.callId;
@@ -571,6 +675,43 @@ void main() {
         payload: packet.msg.payload,
       );
       expect(cleartext, 'hello over mocked BLE');
+
+      EdgezConversationMessage? incomingMessage;
+      EdgezMeshNode? incomingSender;
+      final receiverSession = EdgezMeshSession(
+        sdk: receiverSdk,
+        onIncomingMessage: (message, senderNode) {
+          incomingMessage = message;
+          incomingSender = senderNode;
+        },
+      );
+      await receiverSession.initializeMesh(
+        EdgezMeshConfig(identity: receiver),
+      );
+      receiverBle.emitPacket(
+        NetworkPacket(
+          from: Int64(0x100),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(sender.userIdHigh),
+            userIdLow: Int64(sender.userIdLow),
+            userName: sender.name,
+            userPublicKey: sender.publicKey,
+          ),
+        ),
+      );
+      await receiverBle.flushEvents();
+      receiverBle.emitRawPacketBytes(packet.writeToBuffer());
+      for (var attempt = 0;
+          attempt < 10 && incomingMessage == null;
+          attempt++) {
+        await receiverBle.flushEvents();
+      }
+      expect(incomingMessage?.text, 'hello over mocked BLE');
+      expect(incomingMessage?.mine, isFalse);
+      expect(incomingSender?.displayName, sender.name);
+      receiverSession.dispose();
       await receiverBle.close();
     });
 

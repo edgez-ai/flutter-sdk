@@ -22,6 +22,7 @@ read-only `state` snapshot.
 | Mesh | `initializeMesh`, `restoreCachedMeshData`, `removeNode` |
 | Messaging | `sendTextMessage`, `startVoiceMessage`, `finishVoiceMessage`, `cancelVoiceMessage`, `playVoiceMessage` |
 | Live voice | `startVoiceCall`, `acceptVoiceCall`, `endVoiceCall` |
+| Incoming events | `onIncomingMessage`, `onIncomingCall` constructor callbacks |
 | Provisioning | `beginProvisioning`, `endProvisioning`, `authorizeSession`, `requestDeviceSettings`, `sendDeviceSettings` |
 | OTA | `isOtaReady`, `performOta`, `abortOta` |
 
@@ -38,6 +39,15 @@ device settings, OTA progress, and a user-facing status line.
 Sends commands to the native transport, publishes `EdgezMeshEvent` objects,
 encodes protobuf packets, and handles conversation encryption. Use it when a
 custom reducer or architecture cannot use `EdgezMeshSession`.
+
+Android notification members are `requestNotificationPermission`,
+`notificationsAllowed`, `canUseFullScreenIntent`,
+`showIncomingMessageNotification`, `showIncomingCallNotification`, and
+`cancelIncomingCallNotification`. Use `clearCallLockScreenPresentation` only
+when the call is idle; notification cancellation and lock-screen visibility
+are intentionally separate. They are low-level host integration APIs;
+the session reports the authenticated incoming message/call before the host
+chooses whether and how to notify.
 
 ### `EdgezPlatformTransport`
 
@@ -76,4 +86,3 @@ The public barrel also exports generated types from
 the session and model APIs unless implementing protocol-level behavior. The
 schema is [`protos/edgez_mesh.proto`](../protos/edgez_mesh.proto); regeneration
 instructions are in the root README.
-

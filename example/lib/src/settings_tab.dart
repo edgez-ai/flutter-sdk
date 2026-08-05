@@ -55,6 +55,8 @@ enum _SettingsTab { user, meshNetwork, others }
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     required this.activeConnection,
+    required this.bleConnecting,
+    required this.bleReady,
     required this.shareLocation,
     required this.autoReplayReceivedVoice,
     required this.deviceModeEnabled,
@@ -148,6 +150,8 @@ class SettingsScreen extends StatefulWidget {
   });
 
   final EdgezConnectionType activeConnection;
+  final bool bleConnecting;
+  final bool bleReady;
   final bool shareLocation;
   final bool autoReplayReceivedVoice;
   final bool deviceModeEnabled;
@@ -332,8 +336,12 @@ class SettingsScreen extends StatefulWidget {
                           ),
                         Text(
                           activeConnection == EdgezConnectionType.ble
-                              ? 'BLE connected'
-                              : 'BLE disconnected',
+                              ? bleReady
+                                  ? 'BLE connected; control channel ready'
+                                  : 'BLE connected; setting up control channel'
+                              : bleConnecting
+                                  ? 'BLE pairing or connecting'
+                                  : 'BLE disconnected',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         if (activeConnection == EdgezConnectionType.ble &&
@@ -360,7 +368,20 @@ class SettingsScreen extends StatefulWidget {
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
-                                'License: ${meshStatus?.licenseStatus.label ?? 'Waiting for device status'}',
+                                'License: ${meshStatus?.licenseStatus.label ?? switch ((
+                                      activeConnection,
+                                      bleConnecting,
+                                      bleReady
+                                    )) {
+                                      (_, true, _) =>
+                                        'Waiting for BLE connection',
+                                      (EdgezConnectionType.none, false, _) =>
+                                        'Connect a BLE device',
+                                      (EdgezConnectionType.ble, false, false) =>
+                                        'Waiting for BLE control channel',
+                                      (EdgezConnectionType.ble, false, true) =>
+                                        'Waiting for device status',
+                                    }}',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ),
@@ -371,15 +392,19 @@ class SettingsScreen extends StatefulWidget {
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: activeConnection == EdgezConnectionType.ble
-                        ? onDisconnect
-                        : selectedBle == null
-                            ? null
-                            : () => onConnectBleDevice(selectedBle.id),
+                    onPressed: bleConnecting
+                        ? null
+                        : activeConnection == EdgezConnectionType.ble
+                            ? onDisconnect
+                            : selectedBle == null
+                                ? null
+                                : () => onConnectBleDevice(selectedBle.id),
                     child: Text(
-                      activeConnection == EdgezConnectionType.ble
-                          ? 'Disconnect'
-                          : 'Connect',
+                      bleConnecting
+                          ? 'Connecting...'
+                          : activeConnection == EdgezConnectionType.ble
+                              ? 'Disconnect'
+                              : 'Connect',
                     ),
                   ),
                 ],

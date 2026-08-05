@@ -19,7 +19,8 @@ flutter pub get
 ```
 
 The package currently supports Android with `minSdk 26`. The plugin declares
-Bluetooth scan/connect, location, and microphone permissions in its manifest.
+Bluetooth scan/connect, location, microphone, notification, foreground-service,
+and full-screen-intent permissions in its manifest.
 Add `INTERNET` in the host application when it downloads OTA or marketplace
 assets. Android still requires runtime grants for protected permissions; the
 native plugin requests the permissions needed by its operations.
@@ -170,6 +171,12 @@ Use `cancelVoiceMessage` to discard a recording and `playVoiceMessage` to replay
 a received message. Live calls use `startVoiceCall`, `acceptVoiceCall`, and
 `endVoiceCall`; render the current phase from `state.voiceCall`.
 
+For Android system notifications while backgrounded or locked, construct the
+session with `onIncomingMessage` and `onIncomingCall`, request notification
+permission before connecting, and invoke the native notification helpers from
+those callbacks. See [Background notifications and calls](background-notifications.md)
+for the complete manifest, deep-link, call-action, and lifecycle setup.
+
 ## 8. Provision a device
 
 Provisioning is a separate control flow from normal mesh use:
@@ -254,4 +261,4 @@ or signature verification if the firmware service provides it.
 - Remote OTA and marketplace responses are authenticated and validated.
 - Cached telemetry and voice data have explicit retention and deletion rules.
 - Hardware tests cover scan, reconnect, messaging, provisioning, and OTA cancel.
-
+- Locked-screen hardware tests cover message delivery and call Answer/Decline.

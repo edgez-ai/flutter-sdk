@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:edgez_flutter_sdk_example/src/app.dart';
 import 'package:edgez_flutter_sdk_example/src/provisioning_screen.dart';
+import 'package:edgez_flutter_sdk_example/src/voice_call_screen.dart';
 
 Finder findVerticalScrollable() => find.byWidgetPredicate(
       (widget) =>
@@ -267,8 +268,6 @@ void main() {
             onStopVoiceMessage: (_) async {},
             onReplayVoiceMessage: (_) {},
             onStartCall: () async {},
-            onAcceptCall: () async {},
-            onEndCall: () async {},
           ),
         ),
       ),
@@ -277,5 +276,52 @@ void main() {
     expect(find.text('Latest sensor location'), findsOneWidget);
     expect(find.text('59.329323, 18.068581'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('voice call stays full screen and shows the answered-call timer',
+      (tester) async {
+    var call = const EdgezVoiceCallState(
+      peerNodeNum: 0x112233445566,
+      callId: 42,
+      phase: EdgezVoiceCallPhase.incoming,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) => VoiceCallScreen(
+            call: call,
+            peer: const EdgezMeshNode(
+              nodeNum: 0x112233445566,
+              userUuid: 'remote-user',
+              displayName: 'Remote user',
+              route: 'BLE',
+              lastSeenMs: 1,
+              marker: 'green',
+            ),
+            onAnswer: () async {
+              setState(() {
+                call = const EdgezVoiceCallState(
+                  peerNodeNum: 0x112233445566,
+                  callId: 42,
+                  phase: EdgezVoiceCallPhase.active,
+                );
+              });
+            },
+            onEnd: () async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Incoming voice call'), findsOneWidget);
+    expect(find.text('Answer'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.call));
+    await tester.pump();
+
+    expect(find.text('Answer'), findsNothing);
+    expect(find.text('End'), findsOneWidget);
+    expect(find.text('00:00'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }
