@@ -17,6 +17,108 @@ abstract interface class EdgezPlatformTransport {
   Future<T?> invokeMethod<T>(String method, [Object? arguments]);
 }
 
+enum EdgezSpeedTestFrameType { start, data, end }
+
+class EdgezSpeedTestFrame {
+  const EdgezSpeedTestFrame._({
+    required this.type,
+    required this.transferId,
+    required this.totalBytes,
+    required this.totalChunks,
+    required this.chunkIndex,
+    required this.data,
+  });
+
+  factory EdgezSpeedTestFrame.start({
+    required int transferId,
+    required int totalBytes,
+    required int totalChunks,
+  }) =>
+      EdgezSpeedTestFrame._(
+        type: EdgezSpeedTestFrameType.start,
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+        chunkIndex: 0,
+        data: Uint8List(0),
+      );
+
+  factory EdgezSpeedTestFrame.data({
+    required int transferId,
+    required int totalBytes,
+    required int totalChunks,
+    required int chunkIndex,
+    required Uint8List data,
+  }) =>
+      EdgezSpeedTestFrame._(
+        type: EdgezSpeedTestFrameType.data,
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+        chunkIndex: chunkIndex,
+        data: data,
+      );
+
+  factory EdgezSpeedTestFrame.end({
+    required int transferId,
+    required int totalBytes,
+    required int totalChunks,
+  }) =>
+      EdgezSpeedTestFrame._(
+        type: EdgezSpeedTestFrameType.end,
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+        chunkIndex: totalChunks,
+        data: Uint8List(0),
+      );
+
+  static const _headerBytes = 26;
+  static const _magic = <int>[0x45, 0x5a, 0x53, 0x54];
+  final EdgezSpeedTestFrameType type;
+  final int transferId;
+  final int totalBytes;
+  final int totalChunks;
+  final int chunkIndex;
+  final Uint8List data;
+
+  Uint8List encode() {
+    final output = Uint8List(_headerBytes + data.length);
+    output.setRange(0, _magic.length, _magic);
+    output[4] = 1;
+    output[5] = type.index + 1;
+    final bytes = ByteData.sublistView(output);
+    bytes.setUint64(6, transferId, Endian.big);
+    bytes.setUint32(14, totalBytes, Endian.big);
+    bytes.setUint32(18, totalChunks, Endian.big);
+    bytes.setUint32(22, chunkIndex, Endian.big);
+    output.setRange(_headerBytes, output.length, data);
+    return output;
+  }
+
+  static EdgezSpeedTestFrame? tryDecode(List<int> payload) {
+    if (payload.length < _headerBytes) return null;
+    for (var i = 0; i < _magic.length; i++) {
+      if (payload[i] != _magic[i]) return null;
+    }
+    if (payload[4] != 1 || payload[5] < 1 || payload[5] > 3) return null;
+    final raw = Uint8List.fromList(payload);
+    final bytes = ByteData.sublistView(raw);
+    final totalBytes = bytes.getUint32(14, Endian.big);
+    final totalChunks = bytes.getUint32(18, Endian.big);
+    final chunkIndex = bytes.getUint32(22, Endian.big);
+    if (totalBytes == 0 || totalChunks == 0) return null;
+    return EdgezSpeedTestFrame._(
+      type: EdgezSpeedTestFrameType.values[payload[5] - 1],
+      transferId: bytes.getUint64(6, Endian.big),
+      totalBytes: totalBytes,
+      totalChunks: totalChunks,
+      chunkIndex: chunkIndex,
+      data: Uint8List.fromList(payload.sublist(_headerBytes)),
+    );
+  }
+}
+
 class EdgezChannelTransport implements EdgezPlatformTransport {
   EdgezChannelTransport({
     MethodChannel? methodChannel,
@@ -55,6 +157,8 @@ class EdgezMeshSdk {
   final EdgezPlatformTransport _transport;
   final EdgezSdkReleaseCredential _releaseCredential;
   static const _voiceChunkAudioBytes = 290;
+  static const speedTestBytes = 2 * 1024 * 1024;
+  static const _speedTestChunkBytes = 384;
   final Map<String, Future<SecretKey>> _conversationKeyCache =
       <String, Future<SecretKey>>{};
 
@@ -506,6 +610,79 @@ class EdgezMeshSdk {
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
     return _formatUuid(messageId.$1, messageId.$2);
+  }
+
+  Future<String> sendSpeedTest({
+    required int toNode,
+    required int fromNode,
+    int totalBytes = speedTestBytes,
+    void Function(int sentBytes, int totalBytes)? onProgress,
+  }) async {
+    if (totalBytes <= 0) {
+      throw ArgumentError.value(totalBytes, 'totalBytes', 'Must be positive');
+    }
+    final messageId = _newMessageId();
+    final transferId =
+        DateTime.now().microsecondsSinceEpoch & 0x7fffffffffffffff;
+    final totalChunks = (totalBytes / _speedTestChunkBytes).ceil();
+
+    Future<void> sendFrame(EdgezSpeedTestFrame frame, int sequence) async {
+      final packet = proto.NetworkPacket(
+        from: Int64(fromNode),
+        to: Int64(toNode),
+        operation: proto.Operation.STREAMING,
+        interface: proto.Interface.HALOW,
+        msg: proto.MessageBody(
+          messageIdHigh: Int64(messageId.$1),
+          messageIdLow: Int64(messageId.$2),
+          sequence: sequence,
+          mime: proto.Mime.MIME_BINARY,
+          payload: frame.encode(),
+        ),
+      );
+      await _transport.invokeMethod<void>('sendPacket', {
+        'label': 'Speed test',
+        'packet': Uint8List.fromList(packet.writeToBuffer()),
+      });
+    }
+
+    await sendFrame(
+      EdgezSpeedTestFrame.start(
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+      ),
+      1,
+    );
+    var sentBytes = 0;
+    for (var index = 0; index < totalChunks; index++) {
+      final length = min(_speedTestChunkBytes, totalBytes - sentBytes);
+      final data = Uint8List(length);
+      for (var offset = 0; offset < length; offset++) {
+        data[offset] = (index + offset) & 0xff;
+      }
+      await sendFrame(
+        EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: totalBytes,
+          totalChunks: totalChunks,
+          chunkIndex: index,
+          data: data,
+        ),
+        index + 2,
+      );
+      sentBytes += length;
+      onProgress?.call(sentBytes, totalBytes);
+    }
+    await sendFrame(
+      EdgezSpeedTestFrame.end(
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+      ),
+      totalChunks + 2,
+    );
+    return transferId.toRadixString(16).padLeft(16, '0');
   }
 
   Future<String> decryptTextMessage({

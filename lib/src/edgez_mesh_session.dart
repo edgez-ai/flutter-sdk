@@ -17,6 +17,22 @@ typedef EdgezIncomingCallCallback = void Function(
   EdgezMeshNode caller,
 );
 
+class EdgezLinkStats {
+  const EdgezLinkStats({
+    required this.bitsPerSecond,
+    required this.packetLossPercent,
+    required this.receivedPackets,
+    required this.expectedPackets,
+    required this.updatedAtMs,
+  });
+
+  final double bitsPerSecond;
+  final double packetLossPercent;
+  final int receivedPackets;
+  final int expectedPackets;
+  final int updatedAtMs;
+}
+
 class EdgezMeshState {
   EdgezMeshState({
     required this.connection,
@@ -26,6 +42,7 @@ class EdgezMeshState {
     required Map<int, List<EdgezSensorSample>> sensorSamples,
     required List<EdgezTopologyLink> topologyLinks,
     required Map<int, List<EdgezConversationMessage>> conversations,
+    required Map<int, EdgezLinkStats> linkStats,
     required this.otaInProgress,
     required this.otaReady,
     required this.otaSentBytes,
@@ -39,7 +56,8 @@ class EdgezMeshState {
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         sensorSamples = _freezeSensorSamples(sensorSamples),
         topologyLinks = List<EdgezTopologyLink>.unmodifiable(topologyLinks),
-        conversations = _freezeConversations(conversations);
+        conversations = _freezeConversations(conversations),
+        linkStats = Map<int, EdgezLinkStats>.unmodifiable(linkStats);
 
   factory EdgezMeshState.initial() {
     return EdgezMeshState(
@@ -50,6 +68,7 @@ class EdgezMeshState {
       sensorSamples: const <int, List<EdgezSensorSample>>{},
       topologyLinks: const <EdgezTopologyLink>[],
       conversations: const <int, List<EdgezConversationMessage>>{},
+      linkStats: const <int, EdgezLinkStats>{},
       otaInProgress: false,
       otaReady: false,
       otaSentBytes: 0,
@@ -68,6 +87,7 @@ class EdgezMeshState {
   final Map<int, List<EdgezSensorSample>> sensorSamples;
   final List<EdgezTopologyLink> topologyLinks;
   final Map<int, List<EdgezConversationMessage>> conversations;
+  final Map<int, EdgezLinkStats> linkStats;
   final bool otaInProgress;
   final bool otaReady;
   final int otaSentBytes;
@@ -104,6 +124,7 @@ class EdgezMeshState {
     Map<int, List<EdgezSensorSample>>? sensorSamples,
     List<EdgezTopologyLink>? topologyLinks,
     Map<int, List<EdgezConversationMessage>>? conversations,
+    Map<int, EdgezLinkStats>? linkStats,
     bool? otaInProgress,
     bool? otaReady,
     int? otaSentBytes,
@@ -123,6 +144,7 @@ class EdgezMeshState {
       sensorSamples: sensorSamples ?? this.sensorSamples,
       topologyLinks: topologyLinks ?? this.topologyLinks,
       conversations: conversations ?? this.conversations,
+      linkStats: linkStats ?? this.linkStats,
       otaInProgress: otaInProgress ?? this.otaInProgress,
       otaReady: otaReady ?? this.otaReady,
       otaSentBytes: otaSentBytes ?? this.otaSentBytes,
@@ -192,6 +214,8 @@ class EdgezMeshSession extends ChangeNotifier {
   List<int>? _pendingVoiceAudio;
   final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
       <String, _PendingVoiceMessage>{};
+  final Map<String, _PendingSpeedTest> _pendingSpeedTests =
+      <String, _PendingSpeedTest>{};
   static const Set<String> _knownMarkerIds = <String>{
     'default',
     'red',
@@ -709,6 +733,29 @@ class EdgezMeshSession extends ChangeNotifier {
         status: 'Failed: $error',
         statusLine: 'Voice send failed: $error',
       );
+    }
+  }
+
+  Future<void> sendSpeedTest({
+    required int toNode,
+    int totalBytes = EdgezMeshSdk.speedTestBytes,
+  }) async {
+    final node = _state.nodes[toNode];
+    final fromNode = _state.status?.macAddress ?? 0;
+    if (!(node?.opensConversation ?? false) || fromNode == 0) {
+      throw StateError('Save settings and wait for a reachable user node');
+    }
+    _setState(_state.copyWith(statusLine: 'Sending link measurement'));
+    try {
+      await sdk.sendSpeedTest(
+        toNode: toNode,
+        fromNode: fromNode,
+        totalBytes: totalBytes,
+      );
+      _setState(_state.copyWith(statusLine: 'Link measurement sent'));
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'Link measurement failed: $error'));
+      rethrow;
     }
   }
 
@@ -1234,6 +1281,10 @@ class EdgezMeshSession extends ChangeNotifier {
     }
     if (!packet.hasMsg()) return;
     final message = packet.msg;
+    if (message.mime == proto.Mime.MIME_BINARY) {
+      _handleSpeedTestFrame(packet.from.toInt(), message.payload);
+      return;
+    }
     if (message.mime != proto.Mime.MIME_TEXT &&
         message.mime != proto.Mime.MIME_VOICE) {
       return;
@@ -1334,6 +1385,77 @@ class EdgezMeshSession extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  void _handleSpeedTestFrame(int fromNode, List<int> payload) {
+    if (fromNode == 0) return;
+    final frame = EdgezSpeedTestFrame.tryDecode(payload);
+    if (frame == null) return;
+    final key = '$fromNode:${frame.transferId}';
+    if (frame.type == EdgezSpeedTestFrameType.start) {
+      _pendingSpeedTests.remove(key)?.timer?.cancel();
+    }
+    final pending = _pendingSpeedTests.putIfAbsent(
+      key,
+      () => _PendingSpeedTest(
+        totalBytes: frame.totalBytes,
+        totalChunks: frame.totalChunks,
+      ),
+    );
+    if (pending.totalBytes != frame.totalBytes ||
+        pending.totalChunks != frame.totalChunks) {
+      return;
+    }
+    if (frame.type == EdgezSpeedTestFrameType.data) {
+      pending.put(frame.chunkIndex, frame.data.length);
+      if (pending.shouldPublish) {
+        _publishLinkStats(fromNode, pending, finalResult: false);
+      }
+    }
+    pending.timer?.cancel();
+    if (pending.complete) {
+      _finishSpeedTest(key, fromNode);
+      return;
+    }
+    final grace = frame.type == EdgezSpeedTestFrameType.end
+        ? const Duration(seconds: 1)
+        : const Duration(seconds: 2);
+    pending.timer = Timer(
+      grace,
+      () => _finishSpeedTest(key, fromNode),
+    );
+  }
+
+  void _finishSpeedTest(String key, int fromNode) {
+    final pending = _pendingSpeedTests.remove(key);
+    if (pending == null) return;
+    pending.timer?.cancel();
+    _publishLinkStats(fromNode, pending, finalResult: true);
+  }
+
+  void _publishLinkStats(
+    int fromNode,
+    _PendingSpeedTest pending, {
+    required bool finalResult,
+  }) {
+    final elapsedMs = max(1, pending.elapsedMilliseconds);
+    final bitsPerSecond = pending.receivedBytes * 8 * 1000 / elapsedMs;
+    final expectedPackets = finalResult
+        ? pending.totalChunks
+        : max(1, pending.highestChunkIndex + 1);
+    final lost = max(0, expectedPackets - pending.receivedChunks);
+    final lossPercent = lost * 100 / expectedPackets;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    pending.lastPublishedMs = now;
+    final linkStats = Map<int, EdgezLinkStats>.of(_state.linkStats);
+    linkStats[fromNode] = EdgezLinkStats(
+      bitsPerSecond: bitsPerSecond,
+      packetLossPercent: lossPercent,
+      receivedPackets: pending.receivedChunks,
+      expectedPackets: expectedPackets,
+      updatedAtMs: now,
+    );
+    _setState(_state.copyWith(linkStats: linkStats));
   }
 
   _CompletedVoiceMessage? _storeVoiceChunk(int nodeNum, EdgezVoiceChunk chunk) {
@@ -1795,6 +1917,10 @@ class EdgezMeshSession extends ChangeNotifier {
     _stopLocationTracking();
     _voiceCallTimeout?.cancel();
     _pendingVoiceMessages.clear();
+    for (final pending in _pendingSpeedTests.values) {
+      pending.timer?.cancel();
+    }
+    _pendingSpeedTests.clear();
     _subscription.cancel();
     super.dispose();
   }
@@ -1834,6 +1960,47 @@ class _PendingVoiceMessage {
       codec: codec,
       durationMs: durationMs,
     );
+  }
+}
+
+class _PendingSpeedTest {
+  _PendingSpeedTest({
+    required this.totalBytes,
+    required this.totalChunks,
+  });
+
+  final int totalBytes;
+  final int totalChunks;
+  final Set<int> chunks = <int>{};
+  int receivedBytes = 0;
+  int? firstDataMs;
+  int? lastDataMs;
+  int lastPublishedMs = 0;
+  int highestChunkIndex = -1;
+  Timer? timer;
+
+  int get receivedChunks => chunks.length;
+  bool get complete => receivedChunks >= totalChunks;
+  bool get shouldPublish =>
+      lastDataMs != null && lastDataMs! - lastPublishedMs >= 250;
+  int get elapsedMilliseconds {
+    final first = firstDataMs;
+    final last = lastDataMs;
+    if (first == null || last == null) return 1;
+    return max(1, last - first);
+  }
+
+  void put(int index, int byteCount) {
+    if (index < 0 || index >= totalChunks || byteCount < 0) return;
+    if (!chunks.add(index)) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (firstDataMs == null) {
+      firstDataMs = now;
+      lastPublishedMs = now;
+    }
+    lastDataMs = now;
+    highestChunkIndex = max(highestChunkIndex, index);
+    receivedBytes += byteCount;
   }
 }
 

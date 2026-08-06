@@ -912,6 +912,112 @@ void main() {
       await receiverBle.close();
     });
 
+    test('speed test sends exactly 2 MiB as binary streaming frames', () async {
+      await sdk.sendSpeedTest(toNode: 0x200, fromNode: 0x100);
+
+      final packets = ble.callsFor('sendPacket').map((call) => call.packet);
+      final frames = packets
+          .map((packet) => EdgezSpeedTestFrame.tryDecode(packet.msg.payload))
+          .whereType<EdgezSpeedTestFrame>()
+          .toList();
+      expect(frames.first.type, EdgezSpeedTestFrameType.start);
+      expect(frames.last.type, EdgezSpeedTestFrameType.end);
+      expect(
+        frames
+            .where((frame) => frame.type == EdgezSpeedTestFrameType.data)
+            .fold<int>(0, (total, frame) => total + frame.data.length),
+        EdgezMeshSdk.speedTestBytes,
+      );
+      expect(
+        packets.every((packet) =>
+            packet.operation == Operation.STREAMING &&
+            packet.msg.mime == Mime.MIME_BINARY),
+        isTrue,
+      );
+    });
+
+    test('receiver updates link indicators without adding chat messages',
+        () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      const fromNode = 0x100;
+      const transferId = 42;
+
+      void emit(EdgezSpeedTestFrame frame, int sequence) {
+        ble.emitPacket(
+          NetworkPacket(
+            from: Int64(fromNode),
+            to: Int64(0x200),
+            operation: Operation.STREAMING,
+            interface: Interface.HALOW,
+            msg: MessageBody(
+              messageIdHigh: Int64(1),
+              messageIdLow: Int64(2),
+              sequence: sequence,
+              mime: Mime.MIME_BINARY,
+              payload: frame.encode(),
+            ),
+          ),
+        );
+      }
+
+      emit(
+        EdgezSpeedTestFrame.start(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+        ),
+        1,
+      );
+      emit(
+        EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+          chunkIndex: 0,
+          data: Uint8List.fromList(<int>[1, 2, 3]),
+        ),
+        2,
+      );
+      await ble.flushEvents();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      emit(
+        EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+          chunkIndex: 2,
+          data: Uint8List.fromList(<int>[7, 8, 9]),
+        ),
+        4,
+      );
+      await ble.flushEvents();
+
+      final rolling = session.state.linkStats[fromNode];
+      expect(rolling, isNotNull);
+      expect(rolling?.packetLossPercent, closeTo(33.33, 0.01));
+      expect(rolling?.receivedPackets, 2);
+      expect(session.state.conversations[fromNode], isNull);
+
+      emit(
+        EdgezSpeedTestFrame.end(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+        ),
+        5,
+      );
+      await ble.flushEvents();
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+      final completed = session.state.linkStats[fromNode];
+      expect(completed?.bitsPerSecond, greaterThan(0));
+      expect(completed?.packetLossPercent, closeTo(33.33, 0.01));
+      expect(completed?.receivedPackets, 2);
+      expect(completed?.expectedPackets, 3);
+      expect(session.state.conversations[fromNode], isNull);
+      session.dispose();
+    });
+
     test('surfaces failures returned by the mocked BLE layer', () async {
       ble.errors['connectBle'] = StateError('mock connection failed');
 

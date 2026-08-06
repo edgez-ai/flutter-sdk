@@ -11,11 +11,13 @@ class ConversationScreen extends StatefulWidget {
     required this.user,
     required this.messages,
     required this.sensorSamples,
+    required this.linkStats,
     required this.onBack,
     required this.onSendMessage,
     required this.onStartVoiceMessage,
     required this.onStopVoiceMessage,
     required this.onReplayVoiceMessage,
+    required this.onStartSpeedTest,
     required this.callState,
     required this.onStartCall,
     super.key,
@@ -25,11 +27,13 @@ class ConversationScreen extends StatefulWidget {
   final EdgezMeshNode user;
   final List<EdgezConversationMessage> messages;
   final List<EdgezSensorSample> sensorSamples;
+  final EdgezLinkStats? linkStats;
   final VoidCallback onBack;
   final ValueChanged<String> onSendMessage;
   final Future<bool> Function() onStartVoiceMessage;
   final Future<void> Function(bool send) onStopVoiceMessage;
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
+  final Future<void> Function() onStartSpeedTest;
   final EdgezVoiceCallState callState;
   final Future<void> Function() onStartCall;
 
@@ -43,6 +47,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   bool recording = false;
   bool voicePressed = false;
   bool voiceStarting = false;
+  bool speedTesting = false;
 
   @override
   void dispose() {
@@ -85,12 +90,29 @@ class _ConversationScreenState extends State<ConversationScreen> {
     if (shouldSend) setState(() => status = 'Voice sent');
   }
 
+  Future<void> _startSpeedTest() async {
+    if (speedTesting) return;
+    setState(() {
+      speedTesting = true;
+      status = 'Sending 2 MiB binary speed test';
+    });
+    try {
+      await widget.onStartSpeedTest();
+      if (mounted) setState(() => status = 'Speed test sent');
+    } catch (error) {
+      if (mounted) setState(() => status = 'Speed test failed: $error');
+    } finally {
+      if (mounted) setState(() => speedTesting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final canSend = widget.activeConnection != EdgezConnectionType.none &&
         widget.user.opensConversation &&
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
+    final canSpeedTest = canSendVoice && widget.user.opensConversation;
     final displayName = widget.user.resolvedDisplayName.trim();
     final avatarText = displayName.isEmpty ? '?' : displayName[0].toUpperCase();
     EdgezSensorSample? latestLocation;
@@ -160,6 +182,31 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   icon: const Icon(Icons.call_outlined),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.speed,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        widget.linkStats == null
+                            ? 'Speed: — · Packet loss: —'
+                            : 'Speed: ${_formatBitRate(widget.linkStats!.bitsPerSecond)} · '
+                                'Packet loss: ${widget.linkStats!.packetLossPercent.toStringAsFixed(2)}%',
+                        key: const ValueKey<String>('conversation-link-stats'),
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 12),
             Card(
@@ -277,6 +324,23 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: canSpeedTest && !speedTesting
+                    ? () => unawaited(_startSpeedTest())
+                    : null,
+                icon: speedTesting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.speed),
+                label: Text(
+                    speedTesting ? 'Sending 2 MiB…' : 'Speed test (2 MiB)'),
+              ),
+            ),
+            const SizedBox(height: 12),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: canSendVoice ? (_) => _startVoicePress() : null,
@@ -328,6 +392,16 @@ String _formatLocationTime(int timestampMs) {
   String twoDigits(int number) => number.toString().padLeft(2, '0');
   return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)} '
       '${twoDigits(value.hour)}:${twoDigits(value.minute)}:${twoDigits(value.second)}';
+}
+
+String _formatBitRate(double bitsPerSecond) {
+  if (bitsPerSecond >= 1000000) {
+    return '${(bitsPerSecond / 1000000).toStringAsFixed(2)} Mbps';
+  }
+  if (bitsPerSecond >= 1000) {
+    return '${(bitsPerSecond / 1000).toStringAsFixed(1)} kbps';
+  }
+  return '${bitsPerSecond.toStringAsFixed(0)} bps';
 }
 
 class ConversationBubble extends StatelessWidget {

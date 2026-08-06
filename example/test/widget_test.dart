@@ -261,12 +261,20 @@ void main() {
                 ),
               ),
             ],
+            linkStats: const EdgezLinkStats(
+              bitsPerSecond: 842300,
+              packetLossPercent: 1.25,
+              receivedPackets: 5394,
+              expectedPackets: 5462,
+              updatedAtMs: 1700000001000,
+            ),
             callState: const EdgezVoiceCallState(),
             onBack: () {},
             onSendMessage: (_) {},
             onStartVoiceMessage: () async => true,
             onStopVoiceMessage: (_) async {},
             onReplayVoiceMessage: (_) {},
+            onStartSpeedTest: () async {},
             onStartCall: () async {},
           ),
         ),
@@ -275,6 +283,12 @@ void main() {
 
     expect(find.text('Latest sensor location'), findsOneWidget);
     expect(find.text('59.329323, 18.068581'), findsOneWidget);
+    expect(
+      find.text(
+        'Speed: 842.3 kbps · Packet loss: 1.25%',
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 

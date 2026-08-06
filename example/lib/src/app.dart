@@ -885,6 +885,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     return session.startVoiceMessage();
   }
 
+  Future<void> _startSpeedTest() async {
+    final nodeNum = selectedNodeNum;
+    if (nodeNum == null) return;
+    await session.sendSpeedTest(toNode: nodeNum);
+  }
+
   Future<void> _stopVoiceMessage(bool send) async {
     final nodeNum = selectedNodeNum;
     if (!send || nodeNum == null) {
@@ -929,11 +935,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       sensorSamples:
                           meshState.sensorSamples[selected.nodeNum] ??
                               const <EdgezSensorSample>[],
+                      linkStats: meshState.linkStats[selected.nodeNum],
                       onBack: () => setState(() => selectedNodeNum = null),
                       onSendMessage: _sendMessage,
                       onStartVoiceMessage: _startVoiceMessage,
                       onStopVoiceMessage: _stopVoiceMessage,
                       onReplayVoiceMessage: session.playVoiceMessage,
+                      onStartSpeedTest: _startSpeedTest,
                       callState: meshState.voiceCall,
                       onStartCall: () =>
                           session.startVoiceCall(selected.nodeNum),
@@ -974,11 +982,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                           sensorSamples:
                               meshState.sensorSamples[selected.nodeNum] ??
                                   const <EdgezSensorSample>[],
+                          linkStats: meshState.linkStats[selected.nodeNum],
                           onBack: () => setState(() => selectedNodeNum = null),
                           onSendMessage: _sendMessage,
                           onStartVoiceMessage: _startVoiceMessage,
                           onStopVoiceMessage: _stopVoiceMessage,
                           onReplayVoiceMessage: session.playVoiceMessage,
+                          onStartSpeedTest: _startSpeedTest,
                           callState: meshState.voiceCall,
                           onStartCall: () =>
                               session.startVoiceCall(selected.nodeNum),
