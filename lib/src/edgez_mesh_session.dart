@@ -751,6 +751,10 @@ class EdgezMeshSession extends ChangeNotifier {
         toNode: toNode,
         fromNode: fromNode,
         totalBytes: totalBytes,
+        maxHop: _lastMeshConfig?.maxHop ?? 0,
+        compactTransport: _supportsCompactSpeedTest(
+          _state.status?.firmwareVersion ?? '',
+        ),
       );
       _setState(_state.copyWith(statusLine: 'Link measurement sent'));
     } catch (error) {
@@ -955,6 +959,13 @@ class EdgezMeshSession extends ChangeNotifier {
         _voiceFramePipeline = _voiceFramePipeline.then(
           (_) => _handleVoiceCallFrame(event.packet),
         );
+      case EdgezMeshEventType.speedTestFrame:
+        if (event.packet.length <= 6) return;
+        var fromNode = 0;
+        for (var index = 0; index < 6; index++) {
+          fromNode = (fromNode << 8) | event.packet[index];
+        }
+        _handleSpeedTestFrame(fromNode, event.packet.sublist(6));
       case EdgezMeshEventType.voiceAudio:
         if (_state.voiceCall.isActive && event.packet.isNotEmpty) {
           _queueVoiceAudio(event.packet);
@@ -1417,9 +1428,12 @@ class EdgezMeshSession extends ChangeNotifier {
       _finishSpeedTest(key, fromNode);
       return;
     }
+    // Slow or congested links can pause for several seconds while the sender
+    // is still active. Only END should use a short reordering grace period;
+    // otherwise retain the transfer until a genuine inactivity timeout.
     final grace = frame.type == EdgezSpeedTestFrameType.end
         ? const Duration(seconds: 1)
-        : const Duration(seconds: 2);
+        : const Duration(seconds: 30);
     pending.timer = Timer(
       grace,
       () => _finishSpeedTest(key, fromNode),
@@ -1963,6 +1977,15 @@ class _PendingVoiceMessage {
   }
 }
 
+bool _supportsCompactSpeedTest(String firmwareVersion) {
+  final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)').firstMatch(firmwareVersion);
+  if (match == null) return false;
+  final major = int.parse(match.group(1)!);
+  final minor = int.parse(match.group(2)!);
+  final patch = int.parse(match.group(3)!);
+  return major > 0 || minor > 5 || (minor == 5 && patch >= 6);
+}
+
 class _PendingSpeedTest {
   _PendingSpeedTest({
     required this.totalBytes,
@@ -1981,8 +2004,10 @@ class _PendingSpeedTest {
 
   int get receivedChunks => chunks.length;
   bool get complete => receivedChunks >= totalChunks;
+  // Link statistics are presentation data; updating them more frequently
+  // competes with BLE event processing during the measurement itself.
   bool get shouldPublish =>
-      lastDataMs != null && lastDataMs! - lastPublishedMs >= 250;
+      lastDataMs != null && lastDataMs! - lastPublishedMs >= 10000;
   int get elapsedMilliseconds {
     final first = firstDataMs;
     final last = lastDataMs;

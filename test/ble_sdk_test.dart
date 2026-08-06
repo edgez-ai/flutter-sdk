@@ -913,11 +913,19 @@ void main() {
     });
 
     test('speed test sends exactly 2 MiB as binary streaming frames', () async {
-      await sdk.sendSpeedTest(toNode: 0x200, fromNode: 0x100);
+      final progressUpdates = <(int, int)>[];
+      await sdk.sendSpeedTest(
+        toNode: 0x200,
+        fromNode: 0x100,
+        compactTransport: true,
+        onProgress: (sent, total) => progressUpdates.add((sent, total)),
+      );
 
-      final packets = ble.callsFor('sendPacket').map((call) => call.packet);
-      final frames = packets
-          .map((packet) => EdgezSpeedTestFrame.tryDecode(packet.msg.payload))
+      final calls = ble.callsFor('sendSpeedTestFrame').toList(growable: false);
+      final frames = calls
+          .map((call) => EdgezSpeedTestFrame.tryDecode(
+                call.argumentMap['payload']! as List<int>,
+              ))
           .whereType<EdgezSpeedTestFrame>()
           .toList();
       expect(frames.first.type, EdgezSpeedTestFrameType.start);
@@ -928,12 +936,40 @@ void main() {
             .fold<int>(0, (total, frame) => total + frame.data.length),
         EdgezMeshSdk.speedTestBytes,
       );
-      expect(
-        packets.every((packet) =>
-            packet.operation == Operation.STREAMING &&
-            packet.msg.mime == Mime.MIME_BINARY),
-        isTrue,
+      expect(calls.every((call) => call.argumentMap['to'] == 0x200), isTrue);
+      final drainCalls = calls
+          .where((call) => call.argumentMap.containsKey('waitForDrainMs'))
+          .toList(growable: false);
+      expect(drainCalls, isNotEmpty);
+      expect(drainCalls.first.argumentMap['sequence'], 7);
+      expect(drainCalls.last.argumentMap['sequence'], frames.length);
+      expect(drainCalls.last.argumentMap['waitForDrainMs'], 10000);
+      // A transfer completing inside ten seconds publishes only its final
+      // progress value instead of rebuilding UI state for every data frame.
+      expect(progressUpdates, <(int, int)>[
+        (EdgezMeshSdk.speedTestBytes, EdgezMeshSdk.speedTestBytes),
+      ]);
+    });
+
+    test('speed test retains protobuf transport for older firmware', () async {
+      await sdk.sendSpeedTest(
+        toNode: 0x200,
+        fromNode: 0x100,
+        totalBytes: 384,
       );
+
+      final calls = ble.callsFor('sendPacket').toList(growable: false);
+      expect(calls, hasLength(3));
+      final frames = calls
+          .map((call) => EdgezSpeedTestFrame.tryDecode(call.packet.msg.payload))
+          .whereType<EdgezSpeedTestFrame>()
+          .toList(growable: false);
+      expect(frames.map((frame) => frame.type), <EdgezSpeedTestFrameType>[
+        EdgezSpeedTestFrameType.start,
+        EdgezSpeedTestFrameType.data,
+        EdgezSpeedTestFrameType.end,
+      ]);
+      expect(calls.last.argumentMap['waitForDrainMs'], 10000);
     });
 
     test('receiver updates link indicators without adding chat messages',
@@ -942,22 +978,8 @@ void main() {
       const fromNode = 0x100;
       const transferId = 42;
 
-      void emit(EdgezSpeedTestFrame frame, int sequence) {
-        ble.emitPacket(
-          NetworkPacket(
-            from: Int64(fromNode),
-            to: Int64(0x200),
-            operation: Operation.STREAMING,
-            interface: Interface.HALOW,
-            msg: MessageBody(
-              messageIdHigh: Int64(1),
-              messageIdLow: Int64(2),
-              sequence: sequence,
-              mime: Mime.MIME_BINARY,
-              payload: frame.encode(),
-            ),
-          ),
-        );
+      void emit(EdgezSpeedTestFrame frame, int _) {
+        ble.emitSpeedTestFrame(fromNode: fromNode, frame: frame);
       }
 
       emit(
@@ -979,7 +1001,9 @@ void main() {
         2,
       );
       await ble.flushEvents();
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      // A congested link may pause for longer than the old two-second timeout.
+      // The receiver must retain earlier chunks until END arrives.
+      await Future<void>.delayed(const Duration(milliseconds: 2100));
       emit(
         EdgezSpeedTestFrame.data(
           transferId: transferId,
@@ -992,10 +1016,9 @@ void main() {
       );
       await ble.flushEvents();
 
-      final rolling = session.state.linkStats[fromNode];
-      expect(rolling, isNotNull);
-      expect(rolling?.packetLossPercent, closeTo(33.33, 0.01));
-      expect(rolling?.receivedPackets, 2);
+      // Rolling presentation updates are throttled to ten seconds so they do
+      // not contend with BLE packet processing. Final results remain prompt.
+      expect(session.state.linkStats[fromNode], isNull);
       expect(session.state.conversations[fromNode], isNull);
 
       emit(

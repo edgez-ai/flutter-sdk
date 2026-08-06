@@ -19,6 +19,7 @@ enum EdgezMeshEventType {
   node,
   message,
   voiceFrame,
+  speedTestFrame,
   voiceAudio,
   otaProgress,
   log;

@@ -71,9 +71,11 @@ private const val MTU_CALLBACK_FALLBACK_MS = 1_500L
 private const val SERVICE_DISCOVERY_TIMEOUT_MS = 5_000L
 private const val MAX_SERVICE_DISCOVERY_ATTEMPTS = 2
 private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 2)
+private val EDGEZ_SPEED_PROTOCOL_MAGIC = byteArrayOf('S'.code.toByte(), 'T'.code.toByte(), 2)
 private const val EDGEZ_VOICE_NONCE_SIZE = 12
 private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
 private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
+private const val EDGEZ_SPEED_TX_QUEUE_DEPTH = 8
 private val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
@@ -86,6 +88,11 @@ private val EDGEZ_OTA_STATUS_UUID: UUID = UUID.fromString("0000fff6-0000-1000-80
 private val EDGEZ_VOICE_RX_UUID: UUID = UUID.fromString("0000fff7-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_VOICE_TX_UUID: UUID = UUID.fromString("0000fff8-0000-1000-8000-00805f9b34fb")
 private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
+private data class EdgezBleWrite(
+    val frame: ByteArray,
+    val writeType: Int,
+)
 
 class EdgezFlutterSdkPlugin :
     FlutterPlugin,
@@ -140,8 +147,8 @@ class EdgezFlutterSdkPlugin :
     private var rxLen = 0
     private val forwardRxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
     private var forwardRxLen = 0
-    private val txQueue = ArrayDeque<ByteArray>()
-    private val voiceTxQueue = ArrayDeque<ByteArray>()
+    private val txQueue = ArrayDeque<EdgezBleWrite>()
+    private val voiceTxQueue = ArrayDeque<EdgezBleWrite>()
     private var txWriteInFlight = false
     private var voiceTxWriteInFlight = false
     private var dataWriteInFlight = false
@@ -358,6 +365,44 @@ class EdgezFlutterSdkPlugin :
                     },
                 )
             }
+            "sendSpeedTestFrame" -> {
+                val payload = call.argument<ByteArray>("payload")
+                if (payload == null) {
+                    result.error("speed_frame_invalid", "Speed-test payload is missing", null)
+                    return
+                }
+                val waitForDrainMs = call.argument<Int>("waitForDrainMs") ?: 0
+                sendSpeedTestFrame(
+                    to = call.argument<Long>("to") ?: 0L,
+                    maxHop = call.argument<Int>("maxHop") ?: 0,
+                    sequence = call.argument<Int>("sequence") ?: 1,
+                    payload = payload,
+                ).fold(
+                    onSuccess = {
+                        if (waitForDrainMs <= 0) {
+                            result.success(null)
+                        } else {
+                            thread(name = "edgez-speed-tx-drain") {
+                                waitForVoiceTxDrain(waitForDrainMs).fold(
+                                    onSuccess = { mainHandler.post { result.success(null) } },
+                                    onFailure = {
+                                        mainHandler.post {
+                                            result.error(
+                                                "ble_write_timeout",
+                                                it.message ?: "Speed-test write did not complete",
+                                                null,
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    },
+                    onFailure = {
+                        result.error("speed_write_failed", it.message ?: "Speed-test write failed", null)
+                    },
+                )
+            }
             "startLiveVoiceAudio" -> {
                 if (ContextCompat.checkSelfPermission(
                         context,
@@ -417,6 +462,8 @@ class EdgezFlutterSdkPlugin :
                 val packet = call.argument<ByteArray>("packet")
                 val label = call.argument<String>("label") ?: "Packet"
                 val waitForDrainMs = call.argument<Int>("waitForDrainMs") ?: 0
+                val writeWithoutResponse =
+                    call.argument<Boolean>("writeWithoutResponse") ?: false
                 if (packet == null) {
                     result.error("missing_packet", "Missing packet", null)
                     return
@@ -425,7 +472,7 @@ class EdgezFlutterSdkPlugin :
                     Log.i(LOG_TAG, "GPS TX label=$label bytes=${packet.size}")
                     logGpsPacket(packet, "tx")
                 }
-                sendFrame(packet).fold(
+                sendFrame(packet, writeWithoutResponse).fold(
                     onSuccess = {
                         emit(mapOf("type" to "log", "log" to "$label queued"))
                         if (waitForDrainMs <= 0) {
@@ -974,14 +1021,49 @@ class EdgezFlutterSdkPlugin :
         return sendVoicePacket(packet.array())
     }
 
+    private fun sendSpeedTestFrame(
+        to: Long,
+        maxHop: Int,
+        sequence: Int,
+        payload: ByteArray,
+    ): Result<String> {
+        if (to == 0L || sequence <= 0 || payload.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Invalid speed-test route or payload"))
+        }
+        val packet = ByteBuffer.allocate(EDGEZ_VOICE_ROUTE_SIZE + payload.size)
+            .order(ByteOrder.BIG_ENDIAN)
+        for (shift in 40 downTo 0 step 8) packet.put((to ushr shift).toByte())
+        packet.put(maxHop.coerceIn(0, 255).toByte())
+        packet.putInt(sequence)
+        packet.put(payload)
+        return sendRealtimePacket(
+            protocolMagic = EDGEZ_SPEED_PROTOCOL_MAGIC,
+            packet = packet.array(),
+            dropStale = false,
+        )
+    }
+
     @SuppressLint("MissingPermission")
     private fun sendVoicePacket(packet: ByteArray): Result<String> {
+        return sendRealtimePacket(
+            protocolMagic = EDGEZ_VOICE_PROTOCOL_MAGIC,
+            packet = packet,
+            dropStale = true,
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendRealtimePacket(
+        protocolMagic: ByteArray,
+        packet: ByteArray,
+        dropStale: Boolean,
+    ): Result<String> {
         val activeGatt = gatt
             ?: return Result.failure(IllegalStateException("BLE is not connected"))
         val voice = voiceRxCharacteristic ?: return Result.failure(
             IllegalStateException("BLE voice characteristics FFF7/FFF8 are unavailable"),
         )
-        val frame = EDGEZ_VOICE_PROTOCOL_MAGIC + packet
+        val frame = protocolMagic + packet
         val maxVoiceFrame = minOf(negotiatedMtu - 3, EDGEZ_MAX_PAYLOAD)
         if (frame.size > maxVoiceFrame) {
             return Result.failure(
@@ -989,13 +1071,22 @@ class EdgezFlutterSdkPlugin :
             )
         }
         synchronized(this) {
-            if (voiceTxQueue.size >= EDGEZ_VOICE_TX_QUEUE_DEPTH) {
+            val queueDepth =
+                if (dropStale) EDGEZ_VOICE_TX_QUEUE_DEPTH else EDGEZ_SPEED_TX_QUEUE_DEPTH
+            if (voiceTxQueue.size >= queueDepth) {
+                if (!dropStale) {
+                    return Result.failure(IllegalStateException("BLE realtime queue is full"))
+                }
                 if (voiceTxWriteInFlight) voiceTxQueue.pollLast() else voiceTxQueue.pollFirst()
             }
-            voiceTxQueue.addLast(frame)
-            transmittedVoiceFrames++
+            voiceTxQueue.addLast(
+                EdgezBleWrite(frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT),
+            )
+            if (dropStale) transmittedVoiceFrames++
         }
-        if (transmittedVoiceFrames == 1 || transmittedVoiceFrames % 25 == 0) {
+        if (dropStale &&
+            (transmittedVoiceFrames == 1 || transmittedVoiceFrames % 25 == 0)
+        ) {
             emit(
                 mapOf(
                     "type" to "log",
@@ -1006,9 +1097,29 @@ class EdgezFlutterSdkPlugin :
         return if (writeNextVoiceFrame(activeGatt, voice)) {
             Result.success("BLE voice queued")
         } else {
-            synchronized(this) { voiceTxQueue.remove(frame) }
+            synchronized(this) {
+                voiceTxQueue.removeIf { queued -> queued.frame === frame }
+            }
             Result.failure(IllegalStateException("BLE voice write failed"))
         }
+    }
+
+    private fun waitForVoiceTxDrain(timeoutMs: Int): Result<String> {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            synchronized(this) {
+                if (!voiceTxWriteInFlight && voiceTxQueue.isEmpty()) {
+                    return Result.success("BLE realtime TX complete")
+                }
+            }
+            try {
+                Thread.sleep(5)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return Result.failure(IllegalStateException("BLE realtime TX interrupted"))
+            }
+        }
+        return Result.failure(IllegalStateException("BLE realtime TX not complete after ${timeoutMs}ms"))
     }
 
     private fun requiredBlePermissions(): Array<String> {
@@ -1266,7 +1377,10 @@ class EdgezFlutterSdkPlugin :
         gatt = null
     }
 
-    private fun sendFrame(payload: ByteArray): Result<String> {
+    private fun sendFrame(
+        payload: ByteArray,
+        writeWithoutResponse: Boolean = false,
+    ): Result<String> {
         val activeGatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
         val rx = rxCharacteristic ?: return Result.failure(IllegalStateException("BLE control service is not ready"))
         if (payload.size > EDGEZ_MAX_PAYLOAD) {
@@ -1280,14 +1394,23 @@ class EdgezFlutterSdkPlugin :
         tx.put(payload)
 
         val frame = tx.array()
+        val supportsWriteWithoutResponse =
+            rx.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
+        val writeType =
+            if (writeWithoutResponse && supportsWriteWithoutResponse) {
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            } else {
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            }
+        val write = EdgezBleWrite(frame, writeType)
         synchronized(this) {
-            txQueue.add(frame)
+            txQueue.add(write)
         }
         return if (writeNextFrame(activeGatt, rx)) {
             Result.success("BLE queued protobuf")
         } else {
             synchronized(this) {
-                txQueue.remove(frame)
+                txQueue.remove(write)
             }
             Result.failure(IllegalStateException("BLE write failed"))
         }
@@ -1329,10 +1452,10 @@ class EdgezFlutterSdkPlugin :
         }
 
         val ok = if (Build.VERSION.SDK_INT >= 33) {
-            currentGatt.writeCharacteristic(rx, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
+            currentGatt.writeCharacteristic(rx, frame.frame, frame.writeType) == BluetoothGatt.GATT_SUCCESS
         } else {
-            rx.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            rx.value = frame
+            rx.writeType = frame.writeType
+            rx.value = frame.frame
             currentGatt.writeCharacteristic(rx)
         }
         if (!ok) {
@@ -1361,12 +1484,12 @@ class EdgezFlutterSdkPlugin :
         val ok = if (Build.VERSION.SDK_INT >= 33) {
             currentGatt.writeCharacteristic(
                 voice,
-                frame,
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                frame.frame,
+                frame.writeType,
             ) == BluetoothGatt.GATT_SUCCESS
         } else {
-            voice.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            voice.value = frame
+            voice.writeType = frame.writeType
+            voice.value = frame.frame
             currentGatt.writeCharacteristic(voice)
         }
         if (!ok) {
@@ -1410,6 +1533,14 @@ class EdgezFlutterSdkPlugin :
                     BluetoothGatt.CONNECTION_PRIORITY_HIGH,
                 )
                 emit(mapOf("type" to "log", "log" to "BLE high priority requested=$highPriorityRequested"))
+                if (Build.VERSION.SDK_INT >= 26) {
+                    gatt.setPreferredPhy(
+                        BluetoothDevice.PHY_LE_2M_MASK,
+                        BluetoothDevice.PHY_LE_2M_MASK,
+                        BluetoothDevice.PHY_OPTION_NO_PREFERRED,
+                    )
+                    emit(mapOf("type" to "log", "log" to "BLE 2M PHY requested"))
+                }
                 emit(mapOf("type" to "connection", "connection" to "ble"))
                 runCatching {
                     EdgezBleForegroundService.start(
@@ -1487,6 +1618,20 @@ class EdgezFlutterSdkPlugin :
             discoverServicesOnce(gatt, "MTU callback")
         }
 
+        override fun onPhyUpdate(
+            gatt: BluetoothGatt,
+            txPhy: Int,
+            rxPhy: Int,
+            status: Int,
+        ) {
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "BLE PHY tx=$txPhy rx=$rxPhy status=$status",
+                ),
+            )
+        }
+
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             emit(mapOf("type" to "log", "log" to "BLE services status=$status"))
@@ -1523,6 +1668,7 @@ class EdgezFlutterSdkPlugin :
                 mapOf(
                     "type" to "log",
                     "log" to "BLE characteristics control=true " +
+                        "rxWriteNoResponse=${rx.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0} " +
                         "forwardRx=${forwardRxCharacteristic != null} forwardTx=${forwardTxCharacteristic != null} " +
                         "ota=${otaCharacteristic != null} otaStatus=${otaStatusCharacteristic != null} " +
                         "voiceRx=${voiceRxCharacteristic != null} voiceTx=${voiceTxCharacteristic != null}",
@@ -1961,6 +2107,15 @@ class EdgezFlutterSdkPlugin :
             return
         }
         val payload = bytes.copyOfRange(EDGEZ_VOICE_PROTOCOL_MAGIC.size, bytes.size)
+        if (payload.size > 9 &&
+            payload[6] == 'E'.code.toByte() &&
+            payload[7] == 'Z'.code.toByte() &&
+            payload[8] == 'S'.code.toByte() &&
+            payload[9] == 'T'.code.toByte()
+        ) {
+            emit(mapOf("type" to "speedTestFrame", "packet" to payload))
+            return
+        }
         if (payload.size < 6 + 4 + EDGEZ_VOICE_NONCE_SIZE + 1 ||
             payload.size > EDGEZ_MAX_PAYLOAD
         ) {

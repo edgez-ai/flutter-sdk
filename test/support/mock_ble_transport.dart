@@ -112,6 +112,19 @@ class MockBleTransport implements EdgezPlatformTransport {
     });
   }
 
+  void emitSpeedTestFrame({
+    required int fromNode,
+    required EdgezSpeedTestFrame frame,
+  }) {
+    _events.add(<Object?, Object?>{
+      'type': 'speedTestFrame',
+      'packet': Uint8List.fromList(<int>[
+        for (var shift = 40; shift >= 0; shift -= 8) (fromNode >> shift) & 0xff,
+        ...frame.encode(),
+      ]),
+    });
+  }
+
   void emitFrame(List<int> frame) {
     final packet = decodeFrame(frame);
     _events.add(<Object?, Object?>{

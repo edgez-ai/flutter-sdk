@@ -158,7 +158,13 @@ class EdgezMeshSdk {
   final EdgezSdkReleaseCredential _releaseCredential;
   static const _voiceChunkAudioBytes = 290;
   static const speedTestBytes = 2 * 1024 * 1024;
-  static const _speedTestChunkBytes = 384;
+  // 448 data bytes + the 26-byte speed header exactly fills the firmware's
+  // 512-byte HaLow vendor payload after its 38-byte route prefix. This avoids
+  // leaving radio airtime unused without triggering link-layer fragmentation.
+  static const _speedTestChunkBytes = 448;
+  static const _speedTestDrainBatchChunks = 6;
+  static const _speedTestDrainTimeoutMs = 10000;
+  static const _speedTestProgressInterval = Duration(seconds: 10);
   final Map<String, Future<SecretKey>> _conversationKeyCache =
       <String, Future<SecretKey>>{};
 
@@ -616,24 +622,40 @@ class EdgezMeshSdk {
     required int toNode,
     required int fromNode,
     int totalBytes = speedTestBytes,
+    int maxHop = 0,
+    bool compactTransport = false,
     void Function(int sentBytes, int totalBytes)? onProgress,
   }) async {
     if (totalBytes <= 0) {
       throw ArgumentError.value(totalBytes, 'totalBytes', 'Must be positive');
     }
-    final messageId = _newMessageId();
     final transferId =
         DateTime.now().microsecondsSinceEpoch & 0x7fffffffffffffff;
     final totalChunks = (totalBytes / _speedTestChunkBytes).ceil();
+    final messageId = compactTransport ? null : _newMessageId();
 
-    Future<void> sendFrame(EdgezSpeedTestFrame frame, int sequence) async {
+    Future<void> sendFrame(
+      EdgezSpeedTestFrame frame,
+      int sequence, {
+      bool waitForDrain = false,
+    }) async {
+      if (compactTransport) {
+        await _transport.invokeMethod<void>('sendSpeedTestFrame', {
+          'to': toNode,
+          'maxHop': maxHop.clamp(0, 255),
+          'sequence': sequence,
+          'payload': frame.encode(),
+          if (waitForDrain) 'waitForDrainMs': _speedTestDrainTimeoutMs,
+        });
+        return;
+      }
       final packet = proto.NetworkPacket(
         from: Int64(fromNode),
         to: Int64(toNode),
         operation: proto.Operation.STREAMING,
         interface: proto.Interface.HALOW,
         msg: proto.MessageBody(
-          messageIdHigh: Int64(messageId.$1),
+          messageIdHigh: Int64(messageId!.$1),
           messageIdLow: Int64(messageId.$2),
           sequence: sequence,
           mime: proto.Mime.MIME_BINARY,
@@ -643,6 +665,7 @@ class EdgezMeshSdk {
       await _transport.invokeMethod<void>('sendPacket', {
         'label': 'Speed test',
         'packet': Uint8List.fromList(packet.writeToBuffer()),
+        if (waitForDrain) 'waitForDrainMs': _speedTestDrainTimeoutMs,
       });
     }
 
@@ -655,6 +678,7 @@ class EdgezMeshSdk {
       1,
     );
     var sentBytes = 0;
+    var lastProgressAt = DateTime.now();
     for (var index = 0; index < totalChunks; index++) {
       final length = min(_speedTestChunkBytes, totalBytes - sentBytes);
       final data = Uint8List(length);
@@ -670,9 +694,17 @@ class EdgezMeshSdk {
           data: data,
         ),
         index + 2,
+        // Bound the native BLE queue. A successful method-channel call only
+        // means that Android queued the frame, not that the GATT write drained.
+        waitForDrain: (index + 1) % _speedTestDrainBatchChunks == 0,
       );
       sentBytes += length;
-      onProgress?.call(sentBytes, totalBytes);
+      final now = DateTime.now();
+      if (sentBytes == totalBytes ||
+          now.difference(lastProgressAt) >= _speedTestProgressInterval) {
+        onProgress?.call(sentBytes, totalBytes);
+        lastProgressAt = now;
+      }
     }
     await sendFrame(
       EdgezSpeedTestFrame.end(
@@ -681,6 +713,7 @@ class EdgezMeshSdk {
         totalChunks: totalChunks,
       ),
       totalChunks + 2,
+      waitForDrain: true,
     );
     return transferId.toRadixString(16).padLeft(16, '0');
   }
