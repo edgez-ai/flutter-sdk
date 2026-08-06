@@ -338,6 +338,38 @@ class EdgezMeshSdk {
     });
   }
 
+  /// Sends a fresh phone location through the dedicated device protocol.
+  Future<void> sendLocationUpdate({
+    required EdgezLocation location,
+  }) async {
+    final latitude = location.latitude;
+    final longitude = location.longitude;
+    if (!latitude.isFinite ||
+        !longitude.isFinite ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180 ||
+        (latitude == 0 && longitude == 0)) {
+      throw ArgumentError(
+          'Location update requires valid non-zero coordinates');
+    }
+
+    final updatePacket = proto.NetworkPacket(
+      operation: proto.Operation.REQUEST,
+      interface: proto.Interface.HALOW,
+      locationUpdate: proto.LocationUpdate(
+        latitude: latitude,
+        longitude: longitude,
+        timestampMs: Int64(location.timestampMs),
+      ),
+    );
+    return _transport.invokeMethod<void>('sendPacket', {
+      'label': 'GPS location update',
+      'packet': Uint8List.fromList(updatePacket.writeToBuffer()),
+    });
+  }
+
   String _take(String value, int maxLength) {
     return value.length > maxLength ? value.substring(0, maxLength) : value;
   }

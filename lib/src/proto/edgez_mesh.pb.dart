@@ -214,6 +214,7 @@ enum NetworkPacket_Body {
   scriptConfig,
   beacon,
   report,
+  locationUpdate,
   notSet
 }
 
@@ -231,6 +232,7 @@ class NetworkPacket extends $pb.GeneratedMessage {
     ScriptConfig? scriptConfig,
     Beacon? beacon,
     Report? report,
+    LocationUpdate? locationUpdate,
   }) {
     final result = create();
     if (from != null) result.from = from;
@@ -245,6 +247,7 @@ class NetworkPacket extends $pb.GeneratedMessage {
     if (scriptConfig != null) result.scriptConfig = scriptConfig;
     if (beacon != null) result.beacon = beacon;
     if (report != null) result.report = report;
+    if (locationUpdate != null) result.locationUpdate = locationUpdate;
     return result;
   }
 
@@ -267,13 +270,14 @@ class NetworkPacket extends $pb.GeneratedMessage {
     105: NetworkPacket_Body.scriptConfig,
     106: NetworkPacket_Body.beacon,
     107: NetworkPacket_Body.report,
+    108: NetworkPacket_Body.locationUpdate,
     0: NetworkPacket_Body.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'NetworkPacket',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
       createEmptyInstance: create)
-    ..oo(0, [100, 101, 102, 103, 104, 105, 106, 107])
+    ..oo(0, [100, 101, 102, 103, 104, 105, 106, 107, 108])
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'from', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'to', $pb.PbFieldType.OU6,
@@ -298,6 +302,8 @@ class NetworkPacket extends $pb.GeneratedMessage {
         subBuilder: Beacon.create)
     ..aOM<Report>(107, _omitFieldNames ? '' : 'report',
         subBuilder: Report.create)
+    ..aOM<LocationUpdate>(108, _omitFieldNames ? '' : 'locationUpdate',
+        subBuilder: LocationUpdate.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -329,6 +335,7 @@ class NetworkPacket extends $pb.GeneratedMessage {
   @$pb.TagNumber(105)
   @$pb.TagNumber(106)
   @$pb.TagNumber(107)
+  @$pb.TagNumber(108)
   NetworkPacket_Body whichBody() => _NetworkPacket_BodyByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(100)
   @$pb.TagNumber(101)
@@ -338,6 +345,7 @@ class NetworkPacket extends $pb.GeneratedMessage {
   @$pb.TagNumber(105)
   @$pb.TagNumber(106)
   @$pb.TagNumber(107)
+  @$pb.TagNumber(108)
   void clearBody() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -461,6 +469,102 @@ class NetworkPacket extends $pb.GeneratedMessage {
   void clearReport() => $_clearField(107);
   @$pb.TagNumber(107)
   Report ensureReport() => $_ensure(11);
+
+  @$pb.TagNumber(108)
+  LocationUpdate get locationUpdate => $_getN(12);
+  @$pb.TagNumber(108)
+  set locationUpdate(LocationUpdate value) => $_setField(108, value);
+  @$pb.TagNumber(108)
+  $core.bool hasLocationUpdate() => $_has(12);
+  @$pb.TagNumber(108)
+  void clearLocationUpdate() => $_clearField(108);
+  @$pb.TagNumber(108)
+  LocationUpdate ensureLocationUpdate() => $_ensure(12);
+}
+
+/// A transient phone position update. Devices keep this in RAM and use it for
+/// subsequent periodic beacons; it is intentionally separate from settings so
+/// frequent tracking does not write flash.
+class LocationUpdate extends $pb.GeneratedMessage {
+  factory LocationUpdate({
+    $core.double? latitude,
+    $core.double? longitude,
+    $fixnum.Int64? timestampMs,
+  }) {
+    final result = create();
+    if (latitude != null) result.latitude = latitude;
+    if (longitude != null) result.longitude = longitude;
+    if (timestampMs != null) result.timestampMs = timestampMs;
+    return result;
+  }
+
+  LocationUpdate._();
+
+  factory LocationUpdate.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory LocationUpdate.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'LocationUpdate',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
+      createEmptyInstance: create)
+    ..aD(1, _omitFieldNames ? '' : 'latitude', fieldType: $pb.PbFieldType.OF)
+    ..aD(2, _omitFieldNames ? '' : 'longitude', fieldType: $pb.PbFieldType.OF)
+    ..a<$fixnum.Int64>(
+        3, _omitFieldNames ? '' : 'timestampMs', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  LocationUpdate clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  LocationUpdate copyWith(void Function(LocationUpdate) updates) =>
+      super.copyWith((message) => updates(message as LocationUpdate))
+          as LocationUpdate;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static LocationUpdate create() => LocationUpdate._();
+  @$core.override
+  LocationUpdate createEmptyInstance() => create();
+  static $pb.PbList<LocationUpdate> createRepeated() =>
+      $pb.PbList<LocationUpdate>();
+  @$core.pragma('dart2js:noInline')
+  static LocationUpdate getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<LocationUpdate>(create);
+  static LocationUpdate? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.double get latitude => $_getN(0);
+  @$pb.TagNumber(1)
+  set latitude($core.double value) => $_setFloat(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasLatitude() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearLatitude() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.double get longitude => $_getN(1);
+  @$pb.TagNumber(2)
+  set longitude($core.double value) => $_setFloat(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasLongitude() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearLongitude() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $fixnum.Int64 get timestampMs => $_getI64(2);
+  @$pb.TagNumber(3)
+  set timestampMs($fixnum.Int64 value) => $_setInt64(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasTimestampMs() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearTimestampMs() => $_clearField(3);
 }
 
 class GeoFence extends $pb.GeneratedMessage {

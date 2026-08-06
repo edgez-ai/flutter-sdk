@@ -85,6 +85,39 @@ void main() {
     expect(packet.init.sdkReleaseSignature, hasLength(64));
   });
 
+  test('new firmware location update uses the dedicated message', () async {
+    const location = EdgezLocation(
+      latitude: 59.3293,
+      longitude: 18.0686,
+      timestampMs: 123456,
+    );
+
+    await sdk.sendLocationUpdate(
+      location: location,
+    );
+
+    final packet = _packetFrom(calls.single);
+    expect(packet.hasLocationUpdate(), isTrue);
+    expect(packet.locationUpdate.latitude, closeTo(59.3293, 0.0001));
+    expect(packet.locationUpdate.longitude, closeTo(18.0686, 0.0001));
+    expect(packet.locationUpdate.timestampMs.toInt(), 123456);
+    expect((calls.single.arguments as Map)['label'], 'GPS location update');
+  });
+
+  test('location update rejects the zero sentinel before transport', () async {
+    expect(
+      () => sdk.sendLocationUpdate(
+        location: const EdgezLocation(
+          latitude: 0,
+          longitude: 0,
+          timestampMs: 1,
+        ),
+      ),
+      throwsArgumentError,
+    );
+    expect(calls, isEmpty);
+  });
+
   test('unsigned source checkout fails closed before transport', () async {
     final unsignedSdk = EdgezMeshSdk(
       methodChannel: channel,

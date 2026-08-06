@@ -21,6 +21,8 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.media.MediaPlayer
 import android.media.MediaRecorder
@@ -28,6 +30,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
+import android.util.Log
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -48,6 +51,8 @@ private const val BLE_PERMISSION_REQUEST = 9007
 private const val MICROPHONE_PERMISSION_REQUEST = 9008
 private const val LOCATION_PERMISSION_REQUEST = 9009
 private const val NOTIFICATION_PERMISSION_REQUEST = 9010
+private const val LOCATION_REFRESH_TIMEOUT_MS = 10_000L
+private const val LOG_TAG = "EdgezFlutterSdk"
 private const val VOICE_CODEC_AMR_NB = 1
 private const val VOICE_CODEC_OPUS = 2
 private const val EDGEZ_HEADER_LEN = 4
@@ -416,6 +421,10 @@ class EdgezFlutterSdkPlugin :
                     result.error("missing_packet", "Missing packet", null)
                     return
                 }
+                if (label.contains("location", ignoreCase = true)) {
+                    Log.i(LOG_TAG, "GPS TX label=$label bytes=${packet.size}")
+                    logGpsPacket(packet, "tx")
+                }
                 sendFrame(packet).fold(
                     onSuccess = {
                         emit(mapOf("type" to "log", "log" to "$label queued"))
@@ -544,6 +553,7 @@ class EdgezFlutterSdkPlugin :
     }
 
     @SuppressLint("MissingPermission")
+    @Suppress("DEPRECATION")
     private fun returnBestKnownLocation(result: MethodChannel.Result) {
         val hasFine = ContextCompat.checkSelfPermission(
             context,
@@ -558,7 +568,7 @@ class EdgezFlutterSdkPlugin :
             result.success(null)
             return
         }
-        val providers = if (hasFine) {
+        val cachedProviders = if (hasFine) {
             listOf(
                 LocationManager.GPS_PROVIDER,
                 LocationManager.NETWORK_PROVIDER,
@@ -567,7 +577,7 @@ class EdgezFlutterSdkPlugin :
         } else {
             listOf(LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
         }
-        val location = providers.mapNotNull { provider ->
+        val cachedLocation = cachedProviders.mapNotNull { provider ->
             runCatching {
                 if (manager.isProviderEnabled(provider)) {
                     manager.getLastKnownLocation(provider)
@@ -576,6 +586,63 @@ class EdgezFlutterSdkPlugin :
                 }
             }.getOrNull()
         }.maxByOrNull { it.time }
+
+        val refreshProviders = buildList {
+            if (hasFine && runCatching {
+                    manager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                }.getOrDefault(false)
+            ) {
+                add(LocationManager.GPS_PROVIDER)
+            }
+            if (runCatching {
+                    manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                }.getOrDefault(false)
+            ) {
+                add(LocationManager.NETWORK_PROVIDER)
+            }
+        }
+        if (refreshProviders.isEmpty()) {
+            returnLocation(result, cachedLocation)
+            return
+        }
+
+        var completed = false
+        var timeout: Runnable? = null
+        lateinit var listener: LocationListener
+        val complete: (Location?) -> Unit = { freshLocation ->
+            if (!completed) {
+                completed = true
+                timeout?.let(mainHandler::removeCallbacks)
+                runCatching { manager.removeUpdates(listener) }
+                returnLocation(result, freshLocation ?: cachedLocation)
+            }
+        }
+        listener = LocationListener { location -> complete(location) }
+        timeout = Runnable { complete(null) }
+        mainHandler.postDelayed(timeout, LOCATION_REFRESH_TIMEOUT_MS)
+
+        var refreshRequested = false
+        for (provider in refreshProviders) {
+            val requested = runCatching {
+                manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+            }.isSuccess
+            refreshRequested = refreshRequested || requested
+        }
+        if (!refreshRequested) complete(null)
+    }
+
+    private fun returnLocation(result: MethodChannel.Result, location: Location?) {
+        if (location == null) {
+            Log.w(LOG_TAG, "GPS local refresh result=none")
+        } else {
+            Log.i(
+                LOG_TAG,
+                "GPS local refresh provider=${location.provider} " +
+                    "lat=${location.latitude} lon=${location.longitude} " +
+                    "accuracy=${location.accuracy}m timestamp=${location.time} " +
+                    "zero=${location.latitude == 0.0 && location.longitude == 0.0}",
+            )
+        }
         result.success(
             location?.let {
                 mapOf(
@@ -1710,6 +1777,7 @@ class EdgezFlutterSdkPlugin :
             val frameLen = EDGEZ_HEADER_LEN + payloadLen
             if (rxLen < frameLen) return
             val payload = rxBuffer.copyOfRange(EDGEZ_HEADER_LEN, frameLen)
+            logGpsPacket(payload, "control")
             emit(mapOf("type" to "packet", "packet" to payload))
             val remaining = rxLen - frameLen
             if (remaining > 0) {
@@ -1746,6 +1814,7 @@ class EdgezFlutterSdkPlugin :
             val frameLen = EDGEZ_HEADER_LEN + payloadLen
             if (forwardRxLen < frameLen) return
             val payload = forwardRxBuffer.copyOfRange(EDGEZ_HEADER_LEN, frameLen)
+            logGpsPacket(payload, "forward")
             emit(mapOf("type" to "packet", "packet" to payload, "route" to "ble_forward"))
             val remaining = forwardRxLen - frameLen
             if (remaining > 0) {
@@ -1754,6 +1823,134 @@ class EdgezFlutterSdkPlugin :
             forwardRxLen = remaining
         }
     }
+
+    private fun logGpsPacket(payload: ByteArray, route: String) {
+        runCatching {
+            var fromNode = 0L
+            var beaconBytes: ByteArray? = null
+            var reportBytes: ByteArray? = null
+            var locationUpdateBytes: ByteArray? = null
+            ProtoReader(payload).forEachField { field ->
+                when (field.number) {
+                    1 -> field.varint?.let { fromNode = it }
+                    106 -> beaconBytes = field.bytes
+                    107 -> reportBytes = field.bytes
+                    108 -> locationUpdateBytes = field.bytes
+                }
+            }
+
+            locationUpdateBytes?.let { update ->
+                var latitude: Float? = null
+                var longitude: Float? = null
+                var timestampMs = 0L
+                ProtoReader(update).forEachField { field ->
+                    when (field.number) {
+                        1 -> latitude = field.float
+                        2 -> longitude = field.float
+                        3 -> field.varint?.let { timestampMs = it }
+                    }
+                }
+                Log.i(
+                    LOG_TAG,
+                    "GPS ${if (route == "tx") "TX" else "RX"} route=$route " +
+                        "body=location_update location=${formatLocation(latitude, longitude)} " +
+                        "timestamp=$timestampMs zero=${isZeroLocation(latitude, longitude)}",
+                )
+            }
+
+            beaconBytes?.let { beacon ->
+                var topLatitude: Float? = null
+                var topLongitude: Float? = null
+                var sensorLatitude: Float? = null
+                var sensorLongitude: Float? = null
+                ProtoReader(beacon).forEachField { field ->
+                    when (field.number) {
+                        5 -> topLatitude = field.float
+                        6 -> topLongitude = field.float
+                        101 -> field.bytes?.let { sensor ->
+                            val reading = decodeGpsSensor(sensor)
+                            when (reading?.first) {
+                                3 -> sensorLatitude = reading.second
+                                4 -> sensorLongitude = reading.second
+                            }
+                        }
+                    }
+                }
+                Log.i(
+                    LOG_TAG,
+                    "GPS RX route=$route body=beacon from=${formatNode(fromNode)} " +
+                        "top=${formatLocation(topLatitude, topLongitude)} " +
+                        "sensor=${formatLocation(sensorLatitude, sensorLongitude)} " +
+                        "zero=${isZeroLocation(sensorLatitude, sensorLongitude)}",
+                )
+            }
+
+            reportBytes?.let { report ->
+                var peerCount = 0
+                var gpsPeerCount = 0
+                val gpsDetails = mutableListOf<String>()
+                ProtoReader(report).forEachField { field ->
+                    if (field.number != 1 || field.bytes == null) return@forEachField
+                    peerCount++
+                    var peerNode = 0L
+                    var latitude: Float? = null
+                    var longitude: Float? = null
+                    ProtoReader(field.bytes).forEachField { peerField ->
+                        when (peerField.number) {
+                            1 -> peerField.varint?.let { peerNode = it }
+                            3 -> peerField.bytes?.let { sensor ->
+                                val reading = decodeGpsSensor(sensor)
+                                when (reading?.first) {
+                                    3 -> latitude = reading.second
+                                    4 -> longitude = reading.second
+                                }
+                            }
+                        }
+                    }
+                    if (latitude != null || longitude != null) {
+                        gpsPeerCount++
+                        gpsDetails += "${formatNode(peerNode)}=${formatLocation(latitude, longitude)}" +
+                            " zero=${isZeroLocation(latitude, longitude)}"
+                    }
+                }
+                Log.i(
+                    LOG_TAG,
+                    "GPS RX route=$route body=report from=${formatNode(fromNode)} " +
+                        "peers=$peerCount gpsPeers=$gpsPeerCount" +
+                        if (gpsDetails.isEmpty()) "" else " gps=${gpsDetails.joinToString()}",
+                )
+            }
+        }.onFailure { error ->
+            Log.w(LOG_TAG, "GPS packet inspection failed route=$route len=${payload.size}", error)
+        }
+    }
+
+    private fun decodeGpsSensor(sensor: ByteArray): Pair<Int, Float>? {
+        var type: Int? = null
+        var value: Float? = null
+        ProtoReader(sensor).forEachField { field ->
+            when (field.number) {
+                1 -> type = field.varint?.toInt()
+                4 -> value = field.float
+            }
+        }
+        val resolvedType = type
+        val resolvedValue = value
+        return if ((resolvedType == 3 || resolvedType == 4) && resolvedValue != null) {
+            resolvedType to resolvedValue
+        } else {
+            null
+        }
+    }
+
+    private fun formatNode(node: Long): String =
+        "0x${java.lang.Long.toHexString(node and 0xffffffffffffL).padStart(12, '0')}"
+
+    private fun formatLocation(latitude: Float?, longitude: Float?): String =
+        "(${latitude?.toString() ?: "missing"},${longitude?.toString() ?: "missing"})"
+
+    private fun isZeroLocation(latitude: Float?, longitude: Float?): Boolean =
+        latitude == 0.0f && longitude == 0.0f
 
     private fun handleVoiceBytes(bytes: ByteArray) {
         if (bytes.size <= EDGEZ_VOICE_PROTOCOL_MAGIC.size ||
@@ -1797,5 +1994,73 @@ class EdgezFlutterSdkPlugin :
         mainHandler.post {
             eventSink?.success(event)
         }
+    }
+}
+
+private data class ProtoField(
+    val number: Int,
+    val varint: Long? = null,
+    val fixed32: Int? = null,
+    val bytes: ByteArray? = null,
+) {
+    val float: Float?
+        get() = fixed32?.let(Float::fromBits)
+}
+
+private class ProtoReader(private val data: ByteArray) {
+    private var offset = 0
+
+    fun forEachField(block: (ProtoField) -> Unit) {
+        while (offset < data.size) {
+            val key = readVarint()
+            val number = (key ushr 3).toInt()
+            require(number > 0) { "Invalid protobuf field number" }
+            when ((key and 0x07).toInt()) {
+                0 -> block(ProtoField(number = number, varint = readVarint()))
+                1 -> skip(8)
+                2 -> {
+                    val length = readVarint().toInt()
+                    require(length >= 0 && offset + length <= data.size) {
+                        "Invalid protobuf field length"
+                    }
+                    block(
+                        ProtoField(
+                            number = number,
+                            bytes = data.copyOfRange(offset, offset + length),
+                        ),
+                    )
+                    offset += length
+                }
+                5 -> block(ProtoField(number = number, fixed32 = readFixed32()))
+                else -> throw IllegalArgumentException("Unsupported protobuf wire type")
+            }
+        }
+    }
+
+    private fun readVarint(): Long {
+        var result = 0L
+        var shift = 0
+        while (offset < data.size && shift < 64) {
+            val byte = data[offset++].toInt() and 0xff
+            result = result or ((byte and 0x7f).toLong() shl shift)
+            if ((byte and 0x80) == 0) return result
+            shift += 7
+        }
+        throw IllegalArgumentException("Invalid protobuf varint")
+    }
+
+    private fun readFixed32(): Int {
+        require(offset + 4 <= data.size) { "Invalid protobuf fixed32" }
+        val value = (data[offset].toInt() and 0xff) or
+            ((data[offset + 1].toInt() and 0xff) shl 8) or
+            ((data[offset + 2].toInt() and 0xff) shl 16) or
+            ((data[offset + 3].toInt() and 0xff) shl 24)
+        offset += 4
+        return value
+    }
+
+    private fun skip(length: Int) {
+        require(offset + length <= data.size) { "Invalid protobuf field" }
+        offset += length
     }
 }

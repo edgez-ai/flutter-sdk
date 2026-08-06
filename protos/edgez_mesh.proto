@@ -106,7 +106,17 @@ message NetworkPacket {
     ScriptConfig script_config = 105;
     Beacon beacon = 106;
     Report report = 107;
+    LocationUpdate location_update = 108;
   }
+}
+
+// A transient phone position update. Devices keep this in RAM and use it for
+// subsequent periodic beacons; it is intentionally separate from settings so
+// frequent tracking does not write flash.
+message LocationUpdate {
+  float latitude = 1;
+  float longitude = 2;
+  uint64 timestamp_ms = 3;
 }
 
 enum DeviceType {

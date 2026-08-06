@@ -30,8 +30,12 @@ integration.
 ## Supported platform
 
 The package currently registers an **Android** Flutter plugin. Its Android
-library requires API 26 or newer, Java 17, and compile SDK 36. Other Flutter
-platforms do not currently have a registered native transport implementation.
+library requires API 26 or newer, Java 17, and compile SDK 34 or newer. The
+plugin uses the host `:app` module's compile SDK by default. Standalone builds
+fall back to SDK 36, and `edgez.compileSdkVersion=35` in the root
+`gradle.properties` provides an explicit override. The host application
+continues to own its target SDK. Other Flutter platforms do not currently have
+a registered native transport implementation.
 
 ## Recommended integration boundary
 

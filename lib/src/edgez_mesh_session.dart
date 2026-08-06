@@ -180,9 +180,11 @@ class EdgezMeshSession extends ChangeNotifier {
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
   Timer? _deviceStatusTimeout;
+  Timer? _locationUpdateTimer;
   Timer? _voiceCallTimeout;
   var _provisioning = false;
   var _initInFlight = false;
+  var _locationUpdateInFlight = false;
   String? _lastInitKey;
   var _voiceCallSequence = 1;
   Future<void> _voiceFramePipeline = Future<void>.value();
@@ -487,6 +489,7 @@ class EdgezMeshSession extends ChangeNotifier {
   Future<void> disconnect() async {
     await sdk.disconnect();
     _deviceStatusTimeout?.cancel();
+    _stopLocationTracking();
     _bleReady = false;
     _lastInitKey = null;
     _setState(
@@ -496,7 +499,46 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> initializeMesh(EdgezMeshConfig config) async {
     _lastMeshConfig = config;
+    if (!config.beacon.shareLocation) _stopLocationTracking();
     await _sendInitIfReady(force: true);
+  }
+
+  /// Requests a current phone fix and broadcasts it through the connected
+  /// EdgeZ device. Returns false when sharing/link state/location is invalid.
+  Future<bool> refreshSharedLocation() async {
+    final config = _lastMeshConfig;
+    if (config == null ||
+        !config.beacon.shareLocation ||
+        !_bleReady ||
+        _state.connection != EdgezConnectionType.ble ||
+        _locationUpdateInFlight) {
+      return false;
+    }
+    final status = _state.status;
+    if (status != null &&
+        (!status.supported || !status.stackInitialized || !status.meshMode)) {
+      return false;
+    }
+
+    _locationUpdateInFlight = true;
+    try {
+      final location = await sdk.getBestKnownLocation();
+      if (location == null || !_isValidSharedLocation(location)) return false;
+      await sdk.sendLocationUpdate(location: location);
+      return true;
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'edgez_flutter_sdk',
+          context: ErrorDescription('while refreshing shared location'),
+        ),
+      );
+      return false;
+    } finally {
+      _locationUpdateInFlight = false;
+    }
   }
 
   Future<void> authorizeSession() async {
@@ -765,6 +807,7 @@ class EdgezMeshSession extends ChangeNotifier {
         if (event.connection == EdgezConnectionType.none) {
           _bleReady = false;
           _lastInitKey = null;
+          _stopLocationTracking();
           if (!_state.voiceCall.isIdle) {
             unawaited(sdk.stopLiveVoiceAudio());
           }
@@ -978,6 +1021,8 @@ class EdgezMeshSession extends ChangeNotifier {
     final now = DateTime.now().millisecondsSinceEpoch;
     const windowMs = 5 * 60 * 1000;
     final latestByPair = <String, EdgezTopologyLink>{};
+    final sensorSamples =
+        Map<int, List<EdgezSensorSample>>.of(_state.sensorSamples);
     for (final link in _state.topologyLinks) {
       if (link.lastSeenMs >= now - windowMs) {
         latestByPair[link.undirectedKey] = link;
@@ -985,7 +1030,19 @@ class EdgezMeshSession extends ChangeNotifier {
     }
     for (final peer in packet.report.peers) {
       final peerNode = peer.id.toInt();
-      if (peerNode == 0 || peerNode == reporter) continue;
+      if (peerNode == 0) continue;
+      final sensorData = _sensorData(peer.sensorData);
+      if (sensorData != null) {
+        sensorSamples[peerNode] = <EdgezSensorSample>[
+          ...(sensorSamples[peerNode] ?? const <EdgezSensorSample>[]),
+          EdgezSensorSample(
+            nodeNum: peerNode,
+            timestampMs: now,
+            data: sensorData,
+          ),
+        ];
+      }
+      if (peerNode == reporter) continue;
       final link = EdgezTopologyLink(
         reporterNodeNum: reporter,
         peerNodeNum: peerNode,
@@ -999,6 +1056,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _setState(
       _state.copyWith(
         topologyLinks: links,
+        sensorSamples: sensorSamples,
         statusLine: 'Topology report received',
       ),
     );
@@ -1089,7 +1147,7 @@ class EdgezMeshSession extends ChangeNotifier {
         sensorSamples[nodeNum] = previousSamples;
       }
     }
-    final sensorData = _sensorData(beacon);
+    final sensorData = _sensorData(beacon.sensorData);
     if (sensorData != null) {
       sensorSamples[nodeNum] = <EdgezSensorSample>[
         ...(sensorSamples[nodeNum] ?? const <EdgezSensorSample>[]),
@@ -1322,11 +1380,40 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Waiting for device status response',
       ));
       _startDeviceStatusTimeout();
+      _startLocationTracking();
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
     } finally {
       _initInFlight = false;
     }
+  }
+
+  void _startLocationTracking() {
+    _stopLocationTracking();
+    final config = _lastMeshConfig;
+    if (config == null || !config.beacon.shareLocation || !_bleReady) return;
+    unawaited(refreshSharedLocation());
+    _locationUpdateTimer = Timer.periodic(
+      Duration(seconds: config.beacon.normalizedIntervalSeconds),
+      (_) => unawaited(refreshSharedLocation()),
+    );
+  }
+
+  void _stopLocationTracking() {
+    _locationUpdateTimer?.cancel();
+    _locationUpdateTimer = null;
+  }
+
+  bool _isValidSharedLocation(EdgezLocation location) {
+    final latitude = location.latitude;
+    final longitude = location.longitude;
+    return latitude.isFinite &&
+        longitude.isFinite &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        longitude >= -180 &&
+        longitude <= 180 &&
+        (latitude != 0 || longitude != 0);
   }
 
   String _initKey(EdgezMeshConfig config) {
@@ -1481,10 +1568,9 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  EdgezSensorData? _sensorData(proto.Beacon beacon) {
-    if (beacon.sensorData.isEmpty) return null;
+  EdgezSensorData? _sensorData(Iterable<proto.SensorData> values) {
     double? floatValue(proto.SensorType type) {
-      for (final value in beacon.sensorData) {
+      for (final value in values) {
         if (value.type == type && value.hasFloatValue()) {
           return value.floatValue;
         }
@@ -1493,15 +1579,18 @@ class EdgezMeshSession extends ChangeNotifier {
     }
 
     int? intValue(proto.SensorType type) {
-      for (final value in beacon.sensorData) {
+      for (final value in values) {
         if (value.type == type && value.hasIntValue()) return value.intValue;
       }
       return null;
     }
 
+    final latitude = floatValue(proto.SensorType.SENSOR_LATITUDE);
+    final longitude = floatValue(proto.SensorType.SENSOR_LONGITUDE);
+    final hasInvalidZeroLocation = latitude == 0 && longitude == 0;
     final data = EdgezSensorData(
-      latitude: floatValue(proto.SensorType.SENSOR_LATITUDE),
-      longitude: floatValue(proto.SensorType.SENSOR_LONGITUDE),
+      latitude: hasInvalidZeroLocation ? null : latitude,
+      longitude: hasInvalidZeroLocation ? null : longitude,
       temperature: floatValue(proto.SensorType.SENSOR_TEMPERATURE),
       humidity: floatValue(proto.SensorType.SENSOR_HUMIDITY),
       accelX: floatValue(proto.SensorType.SENSOR_ACCEL_X),
@@ -1646,6 +1735,7 @@ class EdgezMeshSession extends ChangeNotifier {
   @override
   void dispose() {
     _deviceStatusTimeout?.cancel();
+    _stopLocationTracking();
     _voiceCallTimeout?.cancel();
     _pendingVoiceMessages.clear();
     _subscription.cancel();

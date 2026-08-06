@@ -368,6 +368,15 @@ const NetworkPacket$json = {
       '9': 0,
       '10': 'report'
     },
+    {
+      '1': 'location_update',
+      '3': 108,
+      '4': 1,
+      '5': 11,
+      '6': '.ai.edgez.halow.LocationUpdate',
+      '9': 0,
+      '10': 'locationUpdate'
+    },
   ],
   '8': [
     {'1': 'body'},
@@ -386,8 +395,24 @@ final $typed_data.Uint8List networkPacketDescriptor = $convert.base64Decode(
     '5haS5lZGdlei5oYWxvdy5EZXZpY2VTZXR0aW5nc0gAUg5kZXZpY2VTZXR0aW5ncxJDCg1zY3Jp'
     'cHRfY29uZmlnGGkgASgLMhwuYWkuZWRnZXouaGFsb3cuU2NyaXB0Q29uZmlnSABSDHNjcmlwdE'
     'NvbmZpZxIwCgZiZWFjb24YaiABKAsyFi5haS5lZGdlei5oYWxvdy5CZWFjb25IAFIGYmVhY29u'
-    'EjAKBnJlcG9ydBhrIAEoCzIWLmFpLmVkZ2V6LmhhbG93LlJlcG9ydEgAUgZyZXBvcnRCBgoEYm'
-    '9keQ==');
+    'EjAKBnJlcG9ydBhrIAEoCzIWLmFpLmVkZ2V6LmhhbG93LlJlcG9ydEgAUgZyZXBvcnQSSQoPbG'
+    '9jYXRpb25fdXBkYXRlGGwgASgLMh4uYWkuZWRnZXouaGFsb3cuTG9jYXRpb25VcGRhdGVIAFIO'
+    'bG9jYXRpb25VcGRhdGVCBgoEYm9keQ==');
+
+@$core.Deprecated('Use locationUpdateDescriptor instead')
+const LocationUpdate$json = {
+  '1': 'LocationUpdate',
+  '2': [
+    {'1': 'latitude', '3': 1, '4': 1, '5': 2, '10': 'latitude'},
+    {'1': 'longitude', '3': 2, '4': 1, '5': 2, '10': 'longitude'},
+    {'1': 'timestamp_ms', '3': 3, '4': 1, '5': 4, '10': 'timestampMs'},
+  ],
+};
+
+/// Descriptor for `LocationUpdate`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List locationUpdateDescriptor = $convert.base64Decode(
+    'Cg5Mb2NhdGlvblVwZGF0ZRIaCghsYXRpdHVkZRgBIAEoAlIIbGF0aXR1ZGUSHAoJbG9uZ2l0dW'
+    'RlGAIgASgCUglsb25naXR1ZGUSIQoMdGltZXN0YW1wX21zGAMgASgEUgt0aW1lc3RhbXBNcw==');
 
 @$core.Deprecated('Use geoFenceDescriptor instead')
 const GeoFence$json = {

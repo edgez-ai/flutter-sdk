@@ -327,6 +327,53 @@ void main() {
       session.dispose();
     });
 
+    test('session sends periodic GPS with the dedicated protocol', () async {
+      ble.results['getBestKnownLocation'] = <Object?, Object?>{
+        'latitude': 59.3293,
+        'longitude': 18.0686,
+        'timestampMs': 123456,
+      };
+      final session = EdgezMeshSession(sdk: sdk);
+      final identity = await _newIdentity('Tracking user', 30, 40);
+
+      ble.emitConnection(EdgezConnectionType.ble);
+      ble.emitReady();
+      await ble.flushEvents();
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(
+            supported: true,
+            stackInitialized: true,
+            meshMode: true,
+            firmwareVersion: '0.5.5',
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      await session.initializeMesh(
+        EdgezMeshConfig(
+          identity: identity,
+          beacon: const EdgezBeaconConfig(
+            shareLocation: true,
+            intervalSeconds: 3600,
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      final locationCalls = ble.callsFor('sendPacket').where(
+            (call) => call.argumentMap['label'] == 'GPS location update',
+          );
+      expect(locationCalls, hasLength(1));
+      expect(locationCalls.single.packet.hasLocationUpdate(), isTrue);
+      expect(
+        locationCalls.single.packet.locationUpdate.latitude,
+        closeTo(59.3293, 0.0001),
+      );
+      session.dispose();
+    });
+
     test('session clears the connecting state when BLE connect fails',
         () async {
       ble.errors['connectBle'] = StateError('mock connection failed');
@@ -365,6 +412,14 @@ void main() {
               type: SensorType.SENSOR_LENGTH,
               intValue: 4096,
             ),
+            SensorData(
+              type: SensorType.SENSOR_LATITUDE,
+              floatValue: 0,
+            ),
+            SensorData(
+              type: SensorType.SENSOR_LONGITUDE,
+              floatValue: 0,
+            ),
           ],
         ),
       );
@@ -381,6 +436,75 @@ void main() {
       expect(sample.temperature, closeTo(21.5, 0.001));
       expect(sample.accelX, closeTo(9.81, 0.001));
       expect(sample.binaryLengthBytes, 4096);
+      expect(sample.latitude, isNull);
+      expect(sample.longitude, isNull);
+
+      session.dispose();
+    });
+
+    test('session decodes GPS sensor values from topology peers', () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final packet = NetworkPacket(
+        from: Int64(0x112233445566),
+        operation: Operation.RESPONSE,
+        interface: Interface.HALOW,
+        report: Report(
+          peers: <Peer>[
+            Peer(
+              id: Int64(0x223344556677),
+              rssi: 950,
+              sensorData: <SensorData>[
+                SensorData(
+                  type: SensorType.SENSOR_LATITUDE,
+                  floatValue: 59.3293,
+                ),
+                SensorData(
+                  type: SensorType.SENSOR_LONGITUDE,
+                  floatValue: 18.0686,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      ble.emitPacket(packet);
+      await ble.flushEvents();
+
+      final samples = session.state.sensorSamples[0x223344556677];
+      expect(samples, hasLength(1));
+      expect(samples!.single.data.latitude, closeTo(59.3293, 0.001));
+      expect(samples.single.data.longitude, closeTo(18.0686, 0.001));
+      expect(session.state.topologyLinks, hasLength(1));
+
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(0x112233445566),
+          operation: Operation.RESPONSE,
+          interface: Interface.HALOW,
+          report: Report(
+            peers: <Peer>[
+              Peer(
+                id: Int64(0x223344556677),
+                rssi: 950,
+                sensorData: <SensorData>[
+                  SensorData(
+                    type: SensorType.SENSOR_LATITUDE,
+                    floatValue: 0,
+                  ),
+                  SensorData(
+                    type: SensorType.SENSOR_LONGITUDE,
+                    floatValue: 0,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      expect(session.state.sensorSamples[0x223344556677], hasLength(1));
 
       session.dispose();
     });

@@ -49,6 +49,12 @@ are intentionally separate. They are low-level host integration APIs;
 the session reports the authenticated incoming message/call before the host
 chooses whether and how to notify.
 
+`EdgezMeshSession.refreshSharedLocation()` requests a current platform fix and
+sends it when location sharing is enabled. The session also refreshes
+automatically at `EdgezBeaconConfig.intervalSeconds` using
+`NetworkPacket.location_update`. Invalid coordinates, including `(0,0)`, are
+not transmitted. Location tracking requires firmware `0.5.5` or newer.
+
 ### `EdgezPlatformTransport`
 
 Interface with an event stream and generic method invocation. Production uses

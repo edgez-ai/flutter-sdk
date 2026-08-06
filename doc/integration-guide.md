@@ -18,9 +18,13 @@ Then fetch packages:
 flutter pub get
 ```
 
-The package currently supports Android with `minSdk 26`. The plugin declares
-Bluetooth scan/connect, location, microphone, notification, foreground-service,
-and full-screen-intent permissions in its manifest.
+The package currently supports Android with `minSdk 26`. The plugin uses the
+host `:app` module's compile SDK by default and requires SDK 34 or newer. A
+standalone plugin build falls back to SDK 36; set `edgez.compileSdkVersion=35`
+in the root `gradle.properties` only when an explicit override is needed. The
+host app owns its target SDK. The plugin declares Bluetooth scan/connect,
+location, microphone, notification, foreground-service, and full-screen-intent
+permissions in its manifest.
 Add `INTERNET` in the host application when it downloads OTA or marketplace
 assets. Android still requires runtime grants for protected permissions; the
 native plugin requests the permissions needed by its operations.
@@ -117,6 +121,12 @@ that service discovery and mesh initialization are complete.
 
 For reconnect support, `EdgezBleConfigurationStore` can persist the selected
 device, auto-connect choice, and location-sharing choice.
+
+When sharing location, keep `EdgezMeshSession` alive while BLE is connected.
+It refreshes Android location at the configured beacon interval and sends the
+dedicated `NetworkPacket.location_update` message. Firmware `0.5.5` or newer is
+required. Incoming `(0,0)` coordinates are ignored, so a missing device fix
+cannot overwrite the last valid position.
 
 ## 6. Render live state
 

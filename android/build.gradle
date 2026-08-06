@@ -24,9 +24,20 @@ allprojects {
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
+def hostAndroid = rootProject.findProject(':app')?.extensions?.findByName('android')
+def hostCompileSdkVersion = hostAndroid?.compileSdk
+def edgezCompileSdkVersion = (
+    findProperty('edgez.compileSdkVersion') ?: hostCompileSdkVersion ?: 36
+) as int
+if (edgezCompileSdkVersion < 34) {
+    throw new GradleException(
+        "edgez.compileSdkVersion must be at least 34 (was ${edgezCompileSdkVersion})"
+    )
+}
+
 android {
     namespace 'ai.edgez.flutter_sdk'
-    compileSdk 36
+    compileSdk edgezCompileSdkVersion
 
     defaultConfig {
         minSdk 26
