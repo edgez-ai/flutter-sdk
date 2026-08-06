@@ -526,6 +526,62 @@ void main() {
       session.dispose();
     });
 
+    test('session excludes the local device from discovered nodes', () async {
+      const localNode = 0x112233445566;
+      final session = EdgezMeshSession(sdk: sdk);
+
+      ble.emitNode(
+        const EdgezMeshNode(
+          nodeNum: localNode,
+          userUuid: '',
+          displayName: 'Local device',
+          route: 'HALOW',
+          lastSeenMs: 1,
+          marker: 'blue',
+        ),
+      );
+      await ble.flushEvents();
+      expect(session.state.nodes, contains(localNode));
+
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(macAddress: Int64(localNode)),
+        ),
+      );
+      await ble.flushEvents();
+      expect(session.state.nodes, isNot(contains(localNode)));
+
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(localNode),
+          operation: Operation.RESPONSE,
+          interface: Interface.HALOW,
+          report: Report(
+            peers: <Peer>[
+              Peer(
+                id: Int64(localNode),
+                sensorData: <SensorData>[
+                  SensorData(
+                    type: SensorType.SENSOR_LATITUDE,
+                    floatValue: 59.3293,
+                  ),
+                  SensorData(
+                    type: SensorType.SENSOR_LONGITUDE,
+                    floatValue: 18.0686,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      expect(session.state.nodes, isNot(contains(localNode)));
+      expect(session.state.sensorSamples, isNot(contains(localNode)));
+      session.dispose();
+    });
+
     test('session accepts Android-style complete EZ beacon frames', () async {
       final session = EdgezMeshSession(sdk: sdk);
       final packet = NetworkPacket(

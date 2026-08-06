@@ -1,3 +1,8 @@
+## 0.1.7
+
+- Excluded the local device from SDK node discovery, including topology GPS
+  placeholders created before or after device status is received.
+
 ## 0.1.6
 
 - Updated node coordinates from valid beacon and topology sensor GPS data.

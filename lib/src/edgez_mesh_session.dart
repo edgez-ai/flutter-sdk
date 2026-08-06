@@ -853,15 +853,21 @@ class EdgezMeshSession extends ChangeNotifier {
         if (!_provisioning) unawaited(_sendInitIfReady());
       case EdgezMeshEventType.status:
         _deviceStatusTimeout?.cancel();
+        final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
+        final localNode = event.status?.macAddress ?? 0;
+        if (localNode != 0) nodes.remove(localNode);
         _setState(
           _state.copyWith(
             status: event.status,
+            nodes: nodes,
             statusLine: 'Device status received',
           ),
         );
       case EdgezMeshEventType.node:
         final node = event.node;
         if (node == null) return;
+        final localNode = _state.status?.macAddress ?? 0;
+        if (localNode != 0 && node.nodeNum == localNode) return;
         final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
         final updated = node.mergeDiscovery(nodes[node.nodeNum]);
         nodes[node.nodeNum] = updated;
@@ -943,6 +949,8 @@ class EdgezMeshSession extends ChangeNotifier {
 
     if (packet.hasStatus()) {
       _deviceStatusTimeout?.cancel();
+      final localNode = packet.status.macAddress.toInt();
+      final nodes = Map<int, EdgezMeshNode>.of(_state.nodes)..remove(localNode);
       _setState(
         _state.copyWith(
           statusLine: 'Device status received',
@@ -956,12 +964,13 @@ class EdgezMeshSession extends ChangeNotifier {
             meshId: packet.status.meshId,
             ipAddress: packet.status.ipAddr,
             gateway: packet.status.gateway,
-            macAddress: packet.status.macAddress.toInt(),
+            macAddress: localNode,
             licenseStatus: EdgezLicenseStatus.fromWire(
               packet.status.licenseStatus.value,
             ),
             firmwareVersion: packet.status.firmwareVersion,
           ),
+          nodes: nodes,
         ),
       );
     }
@@ -1018,6 +1027,7 @@ class EdgezMeshSession extends ChangeNotifier {
   void _handleTopologyReport(proto.NetworkPacket packet) {
     final reporter = packet.from.toInt();
     if (reporter == 0) return;
+    final localNode = _state.status?.macAddress ?? 0;
     final now = DateTime.now().millisecondsSinceEpoch;
     const windowMs = 5 * 60 * 1000;
     final latestByPair = <String, EdgezTopologyLink>{};
@@ -1031,7 +1041,7 @@ class EdgezMeshSession extends ChangeNotifier {
     }
     for (final peer in packet.report.peers) {
       final peerNode = peer.id.toInt();
-      if (peerNode == 0) continue;
+      if (peerNode == 0 || (localNode != 0 && peerNode == localNode)) continue;
       final sensorData = _sensorData(peer.sensorData);
       if (sensorData != null) {
         sensorSamples[peerNode] = <EdgezSensorSample>[

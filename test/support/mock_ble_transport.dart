@@ -80,6 +80,27 @@ class MockBleTransport implements EdgezPlatformTransport {
     });
   }
 
+  void emitNode(EdgezMeshNode node) {
+    _events.add(<Object?, Object?>{
+      'type': 'node',
+      'node': <Object?, Object?>{
+        'nodeNum': node.nodeNum,
+        'userUuid': node.userUuid,
+        'displayName': node.displayName,
+        'route': node.route,
+        'lastSeenMs': node.lastSeenMs,
+        'marker': node.marker,
+        'publicKey': node.publicKey,
+        'latitude': node.latitude,
+        'longitude': node.longitude,
+        'deviceType': node.deviceType,
+        'geoFenceName': node.geoFenceName,
+        'geoIndex': node.geoIndex,
+        'sleeping': node.sleeping,
+      },
+    });
+  }
+
   void emitPacket(NetworkPacket packet) {
     emitFrame(encodeFrame(packet.writeToBuffer()));
   }
