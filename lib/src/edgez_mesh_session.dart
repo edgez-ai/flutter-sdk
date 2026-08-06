@@ -739,6 +739,7 @@ class EdgezMeshSession extends ChangeNotifier {
   Future<void> sendSpeedTest({
     required int toNode,
     int totalBytes = EdgezMeshSdk.speedTestBytes,
+    void Function(int sentBytes, int totalBytes)? onProgress,
   }) async {
     final node = _state.nodes[toNode];
     final fromNode = _state.status?.macAddress ?? 0;
@@ -755,6 +756,7 @@ class EdgezMeshSession extends ChangeNotifier {
         compactTransport: _supportsCompactSpeedTest(
           _state.status?.firmwareVersion ?? '',
         ),
+        onProgress: onProgress,
       );
       _setState(_state.copyWith(statusLine: 'Link measurement sent'));
     } catch (error) {

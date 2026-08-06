@@ -885,10 +885,15 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     return session.startVoiceMessage();
   }
 
-  Future<void> _startSpeedTest() async {
+  Future<void> _startSpeedTest(
+    void Function(int sentBytes, int totalBytes) onProgress,
+  ) async {
     final nodeNum = selectedNodeNum;
     if (nodeNum == null) return;
-    await session.sendSpeedTest(toNode: nodeNum);
+    await session.sendSpeedTest(
+      toNode: nodeNum,
+      onProgress: onProgress,
+    );
   }
 
   Future<void> _stopVoiceMessage(bool send) async {

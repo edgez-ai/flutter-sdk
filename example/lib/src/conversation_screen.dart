@@ -33,7 +33,9 @@ class ConversationScreen extends StatefulWidget {
   final Future<bool> Function() onStartVoiceMessage;
   final Future<void> Function(bool send) onStopVoiceMessage;
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
-  final Future<void> Function() onStartSpeedTest;
+  final Future<void> Function(
+    void Function(int sentBytes, int totalBytes) onProgress,
+  ) onStartSpeedTest;
   final EdgezVoiceCallState callState;
   final Future<void> Function() onStartCall;
 
@@ -48,6 +50,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
   bool voicePressed = false;
   bool voiceStarting = false;
   bool speedTesting = false;
+  int speedTestSentBytes = 0;
+  int speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
 
   @override
   void dispose() {
@@ -94,10 +98,18 @@ class _ConversationScreenState extends State<ConversationScreen> {
     if (speedTesting) return;
     setState(() {
       speedTesting = true;
-      status = 'Sending 2 MiB binary speed test';
+      speedTestSentBytes = 0;
+      speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
+      status = 'Speed test started';
     });
     try {
-      await widget.onStartSpeedTest();
+      await widget.onStartSpeedTest((sentBytes, totalBytes) {
+        if (!mounted) return;
+        setState(() {
+          speedTestSentBytes = sentBytes;
+          speedTestTotalBytes = totalBytes;
+        });
+      });
       if (mounted) setState(() => status = 'Speed test sent');
     } catch (error) {
       if (mounted) setState(() => status = 'Speed test failed: $error');
@@ -113,6 +125,12 @@ class _ConversationScreenState extends State<ConversationScreen> {
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
     final canSpeedTest = canSendVoice && widget.user.opensConversation;
+    final speedTestProgress = speedTestTotalBytes <= 0
+        ? 0.0
+        : (speedTestSentBytes / speedTestTotalBytes).clamp(0.0, 1.0);
+    final speedTestPercent = (speedTestProgress * 100).round();
+    final speedTestSentKiB = speedTestSentBytes ~/ 1024;
+    final speedTestTotalMiB = speedTestTotalBytes / (1024 * 1024);
     final displayName = widget.user.resolvedDisplayName.trim();
     final avatarText = displayName.isEmpty ? '?' : displayName[0].toUpperCase();
     EdgezSensorSample? latestLocation;
@@ -331,13 +349,18 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     ? () => unawaited(_startSpeedTest())
                     : null,
                 icon: speedTesting
-                    ? const SizedBox.square(
+                    ? SizedBox.square(
                         dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          value: speedTestProgress,
+                          strokeWidth: 2,
+                        ),
                       )
                     : const Icon(Icons.speed),
-                label: Text(
-                    speedTesting ? 'Sending 2 MiB…' : 'Speed test (2 MiB)'),
+                label: Text(speedTesting
+                    ? 'Speed test $speedTestPercent% · $speedTestSentKiB KiB / '
+                        '${speedTestTotalMiB.toStringAsFixed(1)} MiB'
+                    : 'Speed test (2 MiB)'),
               ),
             ),
             const SizedBox(height: 12),

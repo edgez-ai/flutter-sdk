@@ -274,7 +274,7 @@ void main() {
             onStartVoiceMessage: () async => true,
             onStopVoiceMessage: (_) async {},
             onReplayVoiceMessage: (_) {},
-            onStartSpeedTest: () async {},
+            onStartSpeedTest: (_) async {},
             onStartCall: () async {},
           ),
         ),
