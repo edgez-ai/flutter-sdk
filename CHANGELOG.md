@@ -1,3 +1,13 @@
+## 0.1.5
+
+- Added periodic mobile GPS tracking through the dedicated
+  `NetworkPacket.location_update` protocol for firmware 0.5.5 and newer.
+- Added fresh Android location requests and GPS transmit/receive diagnostics.
+- Decoded peer sensor data, including GPS, from topology reports.
+- Ignored invalid `(0,0)` GPS values so they cannot replace a valid location.
+- Inherited the host app's Android compile SDK by default, with a documented
+  standalone fallback and override.
+
 ## 0.1.4
 
 - Improved BLE setup compatibility across Android devices with MTU fallback,
