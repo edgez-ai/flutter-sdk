@@ -1023,6 +1023,7 @@ class EdgezMeshSession extends ChangeNotifier {
     final latestByPair = <String, EdgezTopologyLink>{};
     final sensorSamples =
         Map<int, List<EdgezSensorSample>>.of(_state.sensorSamples);
+    final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
     for (final link in _state.topologyLinks) {
       if (link.lastSeenMs >= now - windowMs) {
         latestByPair[link.undirectedKey] = link;
@@ -1041,6 +1042,14 @@ class EdgezMeshSession extends ChangeNotifier {
             data: sensorData,
           ),
         ];
+        if (sensorData.latitude != null && sensorData.longitude != null) {
+          nodes[peerNode] = _nodeWithSensorLocation(
+            nodeNum: peerNode,
+            previous: nodes[peerNode],
+            sensorData: sensorData,
+            timestampMs: now,
+          );
+        }
       }
       if (peerNode == reporter) continue;
       final link = EdgezTopologyLink(
@@ -1057,6 +1066,7 @@ class EdgezMeshSession extends ChangeNotifier {
       _state.copyWith(
         topologyLinks: links,
         sensorSamples: sensorSamples,
+        nodes: nodes,
         statusLine: 'Topology report received',
       ),
     );
@@ -1111,6 +1121,15 @@ class EdgezMeshSession extends ChangeNotifier {
     final previous = previousEntry?.value;
     final nextDeviceType = _deviceTypeLabel(beacon.deviceType);
     final hasGeoFence = beacon.hasGeoFence();
+    final hasBeaconLocation = beacon.hasLatitude() &&
+        beacon.hasLongitude() &&
+        beacon.latitude.isFinite &&
+        beacon.longitude.isFinite &&
+        beacon.latitude >= -90 &&
+        beacon.latitude <= 90 &&
+        beacon.longitude >= -180 &&
+        beacon.longitude <= 180 &&
+        (beacon.latitude != 0 || beacon.longitude != 0);
     final node = EdgezMeshNode(
       nodeNum: nodeNum,
       userUuid: userUuid,
@@ -1119,11 +1138,8 @@ class EdgezMeshSession extends ChangeNotifier {
       lastSeenMs: now,
       marker: decodedUser.marker,
       publicKey: beacon.userPublicKey,
-      latitude:
-          beacon.hasLatitude() && beacon.latitude != 0 ? beacon.latitude : null,
-      longitude: beacon.hasLongitude() && beacon.longitude != 0
-          ? beacon.longitude
-          : null,
+      latitude: hasBeaconLocation ? beacon.latitude : null,
+      longitude: hasBeaconLocation ? beacon.longitude : null,
       deviceType: nextDeviceType == 'Unspecified'
           ? previous?.deviceType ?? nextDeviceType
           : nextDeviceType,
@@ -1153,6 +1169,14 @@ class EdgezMeshSession extends ChangeNotifier {
         ...(sensorSamples[nodeNum] ?? const <EdgezSensorSample>[]),
         EdgezSensorSample(nodeNum: nodeNum, timestampMs: now, data: sensorData),
       ];
+      if (sensorData.latitude != null && sensorData.longitude != null) {
+        nodes[nodeNum] = _nodeWithSensorLocation(
+          nodeNum: nodeNum,
+          previous: nodes[nodeNum],
+          sensorData: sensorData,
+          timestampMs: now,
+        );
+      }
     }
 
     _setState(
@@ -1161,6 +1185,29 @@ class EdgezMeshSession extends ChangeNotifier {
         sensorSamples: sensorSamples,
         statusLine: 'Beacon received from ${node.resolvedDisplayName}',
       ),
+    );
+  }
+
+  EdgezMeshNode _nodeWithSensorLocation({
+    required int nodeNum,
+    required EdgezMeshNode? previous,
+    required EdgezSensorData sensorData,
+    required int timestampMs,
+  }) {
+    return EdgezMeshNode(
+      nodeNum: nodeNum,
+      userUuid: previous?.userUuid ?? '',
+      displayName: previous?.displayName ?? '',
+      route: previous?.route ?? 'HALOW',
+      lastSeenMs: timestampMs,
+      marker: previous?.marker ?? 'blue',
+      publicKey: previous?.publicKey ?? const <int>[],
+      latitude: sensorData.latitude,
+      longitude: sensorData.longitude,
+      deviceType: previous?.deviceType ?? 'Unknown',
+      geoFenceName: previous?.geoFenceName ?? '',
+      geoIndex: previous?.geoIndex ?? 0,
+      sleeping: previous?.sleeping ?? false,
     );
   }
 

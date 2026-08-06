@@ -475,6 +475,15 @@ void main() {
       expect(samples, hasLength(1));
       expect(samples!.single.data.latitude, closeTo(59.3293, 0.001));
       expect(samples.single.data.longitude, closeTo(18.0686, 0.001));
+      expect(session.state.nodes[0x223344556677]?.hasLocation, isTrue);
+      expect(
+        session.state.nodes[0x223344556677]?.latitude,
+        closeTo(59.3293, 0.001),
+      );
+      expect(
+        session.state.nodes[0x223344556677]?.longitude,
+        closeTo(18.0686, 0.001),
+      );
       expect(session.state.topologyLinks, hasLength(1));
 
       ble.emitPacket(
@@ -505,6 +514,14 @@ void main() {
       await ble.flushEvents();
 
       expect(session.state.sensorSamples[0x223344556677], hasLength(1));
+      expect(
+        session.state.nodes[0x223344556677]?.latitude,
+        closeTo(59.3293, 0.001),
+      );
+      expect(
+        session.state.nodes[0x223344556677]?.longitude,
+        closeTo(18.0686, 0.001),
+      );
 
       session.dispose();
     });

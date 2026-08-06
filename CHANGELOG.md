@@ -1,3 +1,9 @@
+## 0.1.6
+
+- Updated node coordinates from valid beacon and topology sensor GPS data.
+- Added safe placeholder nodes for topology-only peers with GPS positions.
+- Preserved the last valid node position when later reports contain `(0,0)`.
+
 ## 0.1.5
 
 - Added periodic mobile GPS tracking through the dedicated
