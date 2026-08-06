@@ -45,6 +45,6 @@ flutter run
 
 Hot reload does not update the Android manifest, service, notification
 channels, or `MainActivity`. See
-[`docs/background-notifications.md`](../docs/background-notifications.md) for
+[`doc/background-notifications.md`](../doc/background-notifications.md) for
 permissions, Android 14 full-screen intent behavior, and the locked-screen test
 checklist.

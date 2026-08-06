@@ -1,0 +1,28 @@
+## 0.1.4
+
+- Improved BLE setup compatibility across Android devices with MTU fallback,
+  service-discovery retries, notification subscription diagnostics, and clearer
+  connection status messages.
+- Added Android foreground BLE operation and native notifications for incoming
+  encrypted messages and voice calls.
+- Added a dedicated incoming, outgoing, and active voice-call screen with
+  lock-screen support and elapsed call time.
+- Added incoming-message and incoming-call session callbacks.
+- Expanded integration, API, feature, and background-notification documentation.
+
+## 0.1.3
+
+- Added provisioning support for HaLow country, frequency, and bandwidth.
+
+## 0.1.2
+
+- Improved the Android example and release build configuration.
+
+## 0.1.1
+
+- Added initial release packaging and documentation improvements.
+
+## 0.1.0
+
+- Initial EdgeZ Flutter SDK with Android BLE transport, mesh state, nodes,
+  encrypted conversations, sensor data, provisioning, and OTA support.

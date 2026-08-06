@@ -6,10 +6,10 @@ flutter sdk for edgez mesh
 This package is the Flutter-facing SDK boundary for the EdgeZ HaLow mesh app.
 
 For a structured feature overview and application setup, start with the
-[`docs/` documentation hub](docs/README.md) and the
-[`integration guide`](docs/integration-guide.md).
+[`doc/` documentation hub](doc/README.md) and the
+[`integration guide`](doc/integration-guide.md).
 Planned offline maps and libp2p cross-boundary mixed-mesh support are tracked in
-the [`roadmap`](docs/roadmap.md).
+the [`roadmap`](doc/roadmap.md).
 
 The SDK owns BLE transport and mesh operations:
 
@@ -41,7 +41,7 @@ after Answer. Android 13+
 requires notification permission, and Android 14+ lets the user separately
 control full-screen intent access.
 
-See [Background notifications and calls](docs/background-notifications.md) for
+See [Background notifications and calls](doc/background-notifications.md) for
 host manifest requirements, Dart callbacks, notification channels, lock-screen
 behavior, and lifecycle limitations. Native changes require a full stop,
 rebuild, and reinstall; hot reload is not sufficient.
