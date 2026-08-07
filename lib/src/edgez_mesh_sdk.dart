@@ -670,6 +670,7 @@ class EdgezMeshSdk {
     int totalBytes = speedTestBytes,
     int hop = 0,
     void Function(int sentBytes, int totalBytes)? onProgress,
+    void Function(int packetBytes, int sequence)? onPacketSent,
   }) async {
     if (totalBytes <= 0) {
       throw ArgumentError.value(totalBytes, 'totalBytes', 'Must be positive');
@@ -687,13 +688,15 @@ class EdgezMeshSdk {
       int sequence, {
       bool waitForDrain = false,
     }) async {
+      final encoded = frame.encode();
       await _transport.invokeMethod<void>('sendSpeedTestFrame', {
         'to': toNode,
         'maxHop': hop,
         'sequence': sequence,
-        'payload': frame.encode(),
+        'payload': encoded,
         if (waitForDrain) 'waitForDrainMs': _speedTestDrainTimeoutMs,
       });
+      onPacketSent?.call(encoded.length, sequence);
     }
 
     await sendFrame(

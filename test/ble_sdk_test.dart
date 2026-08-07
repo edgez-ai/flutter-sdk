@@ -1149,11 +1149,13 @@ void main() {
 
     test('speed test uses route TTL without duplicating the hop rule in frame',
         () async {
+      final sentPackets = <(int, int)>[];
       await sdk.sendSpeedTest(
         toNode: 0x200,
         fromNode: 0x100,
         totalBytes: 384,
         hop: 2,
+        onPacketSent: (bytes, sequence) => sentPackets.add((bytes, sequence)),
       );
 
       final calls = ble.callsFor('sendSpeedTestFrame').toList(growable: false);
@@ -1175,6 +1177,7 @@ void main() {
       expect(dataPayload, hasLength(26 + 384));
       final obsoleteV2 = List<int>.from(dataPayload)..[4] = 2;
       expect(EdgezSpeedTestFrame.tryDecode(obsoleteV2), isNull);
+      expect(sentPackets, <(int, int)>[(26, 1), (410, 2), (26, 3)]);
       expect(calls.last.argumentMap['waitForDrainMs'], 10000);
     });
 
@@ -1224,7 +1227,7 @@ void main() {
       session.dispose();
     });
 
-    test('receiver replies with speed result without adding a local message',
+    test('speed result is visible on receiver and sent to the sender',
         () async {
       final sender = await _newIdentity('Speed sender', 500, 501);
       final receiver = await _newIdentity('Speed receiver', 600, 601);
@@ -1257,8 +1260,12 @@ void main() {
       );
       await ble.flushEvents();
 
-      void emit(EdgezSpeedTestFrame frame, int _) {
-        ble.emitSpeedTestFrame(fromNode: fromNode, frame: frame);
+      void emit(EdgezSpeedTestFrame frame, int timestampSeconds) {
+        ble.emitSpeedTestFrame(
+          fromNode: fromNode,
+          frame: frame,
+          receivedAtUs: timestampSeconds * 1000000,
+        );
       }
 
       emit(
@@ -1313,11 +1320,14 @@ void main() {
 
       final completed = session.state.linkStats[fromNode];
       expect(session.state.sharedLinkStats, isNotNull);
+      expect(
+        session.state.sharedLinkStats!.updatedAtMs,
+        greaterThan(1000000000000),
+      );
       expect(completed?.bitsPerSecond, greaterThan(0));
       expect(completed?.packetLossPercent, closeTo(33.33, 0.01));
       expect(completed?.receivedPackets, 2);
       expect(completed?.expectedPackets, 3);
-      expect(session.state.conversations[fromNode], isNull);
 
       for (var attempt = 0;
           attempt < 10 &&
@@ -1352,6 +1362,44 @@ void main() {
       expect(resultText, contains('Speed test result'));
       expect(resultText, contains('Average speed:'));
       expect(resultText, contains('Packet loss: 33.33%'));
+      final receiverMessages = session.state.conversations[fromNode]!;
+      expect(receiverMessages, hasLength(1));
+      expect(receiverMessages.single.mine, isTrue);
+      expect(receiverMessages.single.text, resultText);
+      expect(receiverMessages.single.status, startsWith('Sent via'));
+
+      final senderBle = MockBleTransport();
+      final senderSession = EdgezMeshSession(
+        sdk: EdgezMeshSdk(transport: senderBle),
+      );
+      await senderSession.initializeMesh(EdgezMeshConfig(identity: sender));
+      senderBle.emitPacket(
+        NetworkPacket(
+          from: Int64(localNode),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(receiver.userIdHigh),
+            userIdLow: Int64(receiver.userIdLow),
+            userName: receiver.name,
+            userPublicKey: receiver.publicKey,
+          ),
+        ),
+      );
+      await senderBle.flushEvents();
+      senderBle.emitRawPacketBytes(resultPacket.packet.writeToBuffer());
+      for (var attempt = 0;
+          attempt < 10 &&
+              (senderSession.state.conversations[localNode]?.isEmpty ?? true);
+          attempt++) {
+        await senderBle.flushEvents();
+      }
+      final senderMessages = senderSession.state.conversations[localNode]!;
+      expect(senderMessages, hasLength(1));
+      expect(senderMessages.single.mine, isFalse);
+      expect(senderMessages.single.text, resultText);
+      senderSession.dispose();
+      await senderBle.close();
       session.dispose();
     });
 

@@ -132,6 +132,7 @@ class MockBleTransport implements EdgezPlatformTransport {
   void emitSpeedTestFrame({
     required int fromNode,
     required EdgezSpeedTestFrame frame,
+    int receivedAtUs = 0,
   }) {
     _events.add(<Object?, Object?>{
       'type': 'speedTestFrame',
@@ -139,6 +140,7 @@ class MockBleTransport implements EdgezPlatformTransport {
         for (var shift = 40; shift >= 0; shift -= 8) (fromNode >> shift) & 0xff,
         ...frame.encode(),
       ]),
+      'receivedAtUs': receivedAtUs,
     });
   }
 

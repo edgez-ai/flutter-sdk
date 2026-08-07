@@ -249,6 +249,7 @@ class EdgezMeshSession extends ChangeNotifier {
   final Map<String, _PendingSpeedTest> _pendingSpeedTests =
       <String, _PendingSpeedTest>{};
   final _TransportTrafficMeter _trafficMeter = _TransportTrafficMeter();
+  int? _transportMonotonicToEpochOffsetUs;
   static const Set<String> _knownMarkerIds = <String>{
     'default',
     'red',
@@ -848,6 +849,12 @@ class EdgezMeshSession extends ChangeNotifier {
         totalBytes: totalBytes,
         hop: hop,
         onProgress: onProgress,
+        onPacketSent: (packetBytes, sequence) => _recordTransportTraffic(
+          byteCount: packetBytes,
+          streamKey: 'speed-tx:$fromNode:$toNode',
+          sequence: sequence,
+          receivedAtUs: 0,
+        ),
       );
       _setState(_state.copyWith(statusLine: 'Link measurement sent'));
     } catch (error) {
@@ -1651,13 +1658,21 @@ class EdgezMeshSession extends ChangeNotifier {
     required int? sequence,
     required int receivedAtUs,
   }) {
+    final nowUs = DateTime.now().microsecondsSinceEpoch;
+    // Native BLE/USB callbacks use an elapsed-realtime clock so packet timing
+    // is captured before Flutter event batching. Translate that clock into the
+    // Unix domain required by shared state and SQLite without losing deltas.
+    final observationUs = receivedAtUs <= 0
+        ? nowUs
+        : receivedAtUs < 1000000000000000
+            ? receivedAtUs +
+                (_transportMonotonicToEpochOffsetUs ??= nowUs - receivedAtUs)
+            : receivedAtUs;
     final snapshot = _trafficMeter.record(
       byteCount: byteCount,
       streamKey: streamKey,
       sequence: sequence,
-      receivedAtUs: receivedAtUs > 0
-          ? receivedAtUs
-          : DateTime.now().microsecondsSinceEpoch,
+      receivedAtUs: observationUs,
     );
     if (snapshot != null) {
       _setState(_state.copyWith(sharedLinkStats: snapshot));
@@ -1723,8 +1738,20 @@ class EdgezMeshSession extends ChangeNotifier {
     final text = 'Speed test result\n'
         'Average speed: ${_formatSpeedTestBitRate(stats.bitsPerSecond)}\n'
         'Packet loss: ${stats.packetLossPercent.toStringAsFixed(2)}%';
+    final pendingUuid = 'speed-result-${stats.updatedAtMs}-$senderNodeNum';
+    _appendMessage(
+      EdgezConversationMessage(
+        nodeNum: senderNodeNum,
+        text: text,
+        mine: true,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        messageUuid: pendingUuid,
+        status: 'Queued',
+      ),
+      statusLine: 'Speed test result queued',
+    );
     try {
-      await sdk.sendTextMessage(
+      final messageUuid = await sdk.sendTextMessage(
         config: config,
         toNode: sender,
         fromNode: localNode,
@@ -1737,7 +1764,18 @@ class EdgezMeshSession extends ChangeNotifier {
           receivedAtUs: 0,
         ),
       );
+      _replaceMessage(
+        pendingUuid,
+        messageUuid: messageUuid,
+        status: 'Sent via ${_state.connection.name.toUpperCase()}',
+        statusLine: 'Speed test result sent',
+      );
     } catch (error) {
+      _replaceMessage(
+        pendingUuid,
+        status: 'Failed: $error',
+        statusLine: 'Speed test result failed: $error',
+      );
       debugPrint('EdgeZ speed result reply failed: $error');
     }
   }

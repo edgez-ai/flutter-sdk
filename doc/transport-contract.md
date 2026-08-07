@@ -146,5 +146,11 @@ Global moving speed and loss telemetry is independent of speed-test results. It
 counts all control, conversation, binary, recorded/live voice, and speed-test
 traffic and is the only metric series persisted for the 30-minute debug chart.
 
+Firmware uses two common 1 MiB PSRAM-backed data queues between mobile and
+HaLow: one mobile-to-HaLow TX queue and one HaLow-to-mobile RX queue. Compact
+voice, binary/global-buffer, and speed-test frames share these queues. Protobuf
+control/conversation traffic remains on its separate higher-priority path and
+is processed before queued data traffic.
+
 Encryption, message IDs, routing, and peer delivery acknowledgements are above
 the transport layer and must behave identically on BLE and USB.
