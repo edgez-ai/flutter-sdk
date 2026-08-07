@@ -62,7 +62,7 @@ private const val LOCATION_PERMISSION_REQUEST = 9009
 private const val NOTIFICATION_PERMISSION_REQUEST = 9010
 private const val USB_PERMISSION_ACTION = "ai.edgez.flutter_sdk.USB_PERMISSION"
 private const val USB_IO_TIMEOUT_MS = 10_000
-private const val USB_HEARTBEAT_INTERVAL_MS = 2_000L
+private const val USB_HEARTBEAT_INTERVAL_MS = 60_000L
 private const val LEGACY_USB_VERSION: Byte = 1
 private const val LEGACY_USB_ECHO_REQUEST: Byte = 1
 private const val LEGACY_USB_ECHO_RESPONSE: Byte = 2
@@ -174,7 +174,7 @@ class EdgezFlutterSdkPlugin :
     private var rxLen = 0
     private val forwardRxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
     private var forwardRxLen = 0
-    private val usbRxBuffer = ByteArray(EDGEZ_MAX_FRAME * 8)
+    private val usbRxBuffer = ByteArray(EDGEZ_MAX_FRAME * 64)
     private var usbRxLen = 0
     private val txQueue = ArrayDeque<EdgezBleWrite>()
     private val voiceTxQueue = ArrayDeque<EdgezBleWrite>()
@@ -192,7 +192,11 @@ class EdgezFlutterSdkPlugin :
     private var usbOutEndpoint: UsbEndpoint? = null
     private val usbRunning = AtomicBoolean(false)
     private val usbWriteLock = Object()
+    private val usbRealtimeLock = Object()
     private val usbStatsLock = Object()
+    private val usbRealtimeTxQueue = ArrayDeque<ByteArray>()
+    private var usbRealtimeWriteInFlight = false
+    private var usbRealtimeWriteFailure: Throwable? = null
     private var pendingUsbResult: MethodChannel.Result? = null
     private var pendingUsbDevice: UsbDevice? = null
     private var usbReceiverRegistered = false
@@ -579,7 +583,7 @@ class EdgezFlutterSdkPlugin :
 
     private fun startUsbReader() {
         thread(name = "edgez-usb-rx") {
-            val buffer = ByteArray(4096)
+            val buffer = ByteArray(16 * 1024)
             while (usbRunning.get()) {
                 val port = usbSerialPort ?: break
                 val count = port.read(buffer, 1000)
@@ -704,6 +708,12 @@ class EdgezFlutterSdkPlugin :
         usbOutEndpoint = null
         rxLen = 0
         usbRxLen = 0
+        synchronized(usbRealtimeLock) {
+            usbRealtimeTxQueue.clear()
+            usbRealtimeWriteInFlight = false
+            usbRealtimeWriteFailure = null
+            usbRealtimeLock.notifyAll()
+        }
         synchronized(usbStatsLock) {
             usbHeartbeatSequence = 0
             usbHeartbeatSent = 0
@@ -724,7 +734,10 @@ class EdgezFlutterSdkPlugin :
         }
     }
 
-    private fun writeUsbFrame(payload: ByteArray): Result<String> = runCatching {
+    private fun writeUsbFrame(
+        payload: ByteArray,
+        trackAcceptance: Boolean = true,
+    ): Result<String> = runCatching {
         if (payload.size > EDGEZ_MAX_PAYLOAD) {
             throw IllegalArgumentException("Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD")
         }
@@ -733,8 +746,93 @@ class EdgezFlutterSdkPlugin :
             val port = usbSerialPort ?: throw IllegalStateException("USB UART is not connected")
             port.write(frame, USB_IO_TIMEOUT_MS)
         }
-        synchronized(usbStatsLock) { usbApplicationFramesSent++ }
+        if (trackAcceptance) {
+            synchronized(usbStatsLock) { usbApplicationFramesSent++ }
+        }
         "USB UART frame sent"
+    }
+
+    private fun enqueueUsbRealtimeFrame(
+        frame: ByteArray,
+        dropStale: Boolean,
+    ): Result<String> {
+        var startWriter = false
+        synchronized(usbRealtimeLock) {
+            val queueDepth =
+                if (dropStale) EDGEZ_VOICE_TX_QUEUE_DEPTH else EDGEZ_SPEED_TX_QUEUE_DEPTH
+            if (usbRealtimeTxQueue.size >= queueDepth) {
+                if (!dropStale) {
+                    return Result.failure(IllegalStateException("USB realtime queue is full"))
+                }
+                usbRealtimeTxQueue.pollFirst()
+            }
+            usbRealtimeTxQueue.addLast(frame)
+            usbRealtimeWriteFailure = null
+            if (!usbRealtimeWriteInFlight) {
+                usbRealtimeWriteInFlight = true
+                startWriter = true
+            }
+        }
+        if (startWriter) startUsbRealtimeWriter()
+        return Result.success("USB realtime queued")
+    }
+
+    private fun startUsbRealtimeWriter() {
+        thread(name = "edgez-usb-realtime-tx") {
+            while (usbRunning.get()) {
+                val frame = synchronized(usbRealtimeLock) {
+                    val next = usbRealtimeTxQueue.pollFirst()
+                    if (next == null) {
+                        usbRealtimeWriteInFlight = false
+                        usbRealtimeLock.notifyAll()
+                    }
+                    next
+                }
+                if (frame == null) return@thread
+                val write = writeUsbFrame(frame, trackAcceptance = false)
+                if (write.isFailure) {
+                    synchronized(usbRealtimeLock) {
+                        usbRealtimeTxQueue.clear()
+                        usbRealtimeWriteFailure = write.exceptionOrNull()
+                        usbRealtimeWriteInFlight = false
+                        usbRealtimeLock.notifyAll()
+                    }
+                    emit(
+                        mapOf(
+                            "type" to "log",
+                            "log" to "USB realtime write failed: ${write.exceptionOrNull()?.message}",
+                        ),
+                    )
+                    return@thread
+                }
+            }
+            synchronized(usbRealtimeLock) {
+                usbRealtimeTxQueue.clear()
+                usbRealtimeWriteInFlight = false
+                usbRealtimeLock.notifyAll()
+            }
+        }
+    }
+
+    private fun waitForUsbRealtimeTxDrain(timeoutMs: Int): Result<String> {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        synchronized(usbRealtimeLock) {
+            while ((usbRealtimeWriteInFlight || usbRealtimeTxQueue.isNotEmpty()) &&
+                usbRunning.get()
+            ) {
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) break
+                usbRealtimeLock.wait(remaining)
+            }
+            usbRealtimeWriteFailure?.let { return Result.failure(it) }
+            return if (!usbRealtimeWriteInFlight && usbRealtimeTxQueue.isEmpty()) {
+                Result.success("USB realtime TX complete")
+            } else {
+                Result.failure(
+                    IllegalStateException("USB realtime TX did not drain after ${timeoutMs}ms"),
+                )
+            }
+        }
     }
 
     private fun writeUsbRaw(bytes: ByteArray): Result<String> = runCatching {
@@ -881,10 +979,11 @@ class EdgezFlutterSdkPlugin :
                     return
                 }
                 val waitForDrainMs = call.argument<Int>("waitForDrainMs") ?: 0
+                val sequence = call.argument<Int>("sequence") ?: 1
                 sendSpeedTestFrame(
                     to = call.argument<Long>("to") ?: 0L,
                     maxHop = call.argument<Int>("maxHop") ?: 0,
-                    sequence = call.argument<Int>("sequence") ?: 1,
+                    sequence = sequence,
                     payload = payload,
                 ).fold(
                     onSuccess = {
@@ -1597,7 +1696,7 @@ class EdgezFlutterSdkPlugin :
         val activeGatt = gatt
         if (activeGatt == null) {
             return if (usbConnection != null) {
-                writeUsbFrame(frame)
+                enqueueUsbRealtimeFrame(frame, dropStale)
             } else {
                 Result.failure(IllegalStateException("BLE and USB are not connected"))
             }
@@ -1647,25 +1746,7 @@ class EdgezFlutterSdkPlugin :
 
     private fun waitForApplicationTxDrain(timeoutMs: Int): Result<String> {
         if (gatt == null && usbConnection != null) {
-            val deadline = System.currentTimeMillis() + timeoutMs
-            synchronized(usbStatsLock) {
-                val target = usbApplicationFramesSent
-                while (usbApplicationFramesAcked < target && usbRunning.get()) {
-                    val remaining = deadline - System.currentTimeMillis()
-                    if (remaining <= 0) break
-                    usbStatsLock.wait(remaining)
-                }
-                return if (usbApplicationFramesAcked >= target) {
-                    Result.success("USB application TX acknowledged")
-                } else {
-                    Result.failure(
-                        IllegalStateException(
-                            "USB application TX acknowledgement timed out " +
-                                "($usbApplicationFramesAcked/$target)",
-                        ),
-                    )
-                }
-            }
+            return waitForUsbRealtimeTxDrain(timeoutMs)
         }
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {

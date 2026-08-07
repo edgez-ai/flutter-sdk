@@ -86,9 +86,28 @@ Type `03` is `TX_ACCEPTED`. It is consumed by the transport and never forwarded
 to the application. Acceptance frames are cumulative and ordered for the
 connection, so the mobile side may use sent/accepted counters for back-pressure.
 
+USB realtime traffic uses the same queue-and-drain mechanism as BLE. Frames are
+placed in a bounded native queue and written serially. Speed sends pause after
+each short batch until that queue drains; live voice may discard a stale queued
+frame rather than increasing latency. No firmware status packet or per-speed-
+frame `TX_ACCEPTED` is required.
+
+Firmware decouples UART and HaLow work with two 256-frame PSRAM queues (one per
+direction). Each slot holds one complete application frame up to 512 bytes.
+Mobile-to-HaLow parsing waits for PSRAM space so pressure propagates through the
+UART driver instead of dropping frames. HaLow-to-mobile control frames wait
+briefly for queue space; realtime voice drops a newly produced stale frame when
+the queue is full.
+
+The firmware UART driver uses a 64 KiB RX ring and 32 KiB TX ring. Its 32 KiB
+stream-parser staging buffer is allocated in PSRAM. Android reads up to 16 KiB
+per serial operation and retains up to 64 complete framed packets while
+assembling burst traffic.
+
 The same link-frame layout reserves type `01` for `PING` and type `02` for
 `PONG`. Link frames are diagnostics/control traffic and are not included in the
-application acceptance counters.
+application acceptance counters. Mobile alone initiates one heartbeat per
+minute; firmware only returns the matching `PONG`.
 
 ## Message mapping
 
@@ -97,7 +116,8 @@ application acceptance counters.
   transport acceptance between chunks to avoid overrunning the firmware queue.
 - Live voice-call signaling and audio: `realtimeVoice`; use transport
   acceptance as back-pressure for host-to-device frames.
-- Speed test: `realtimeSpeed`.
+- Speed test: `realtimeSpeed`; BLE and USB use the same bounded realtime queue
+  and periodic queue-drain checkpoints.
 
 Encryption, message IDs, routing, and peer delivery acknowledgements are above
 the transport layer and must behave identically on BLE and USB.
