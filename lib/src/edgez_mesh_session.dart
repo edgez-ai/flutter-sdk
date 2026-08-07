@@ -219,6 +219,7 @@ class EdgezMeshSession extends ChangeNotifier {
     EdgezMeshSdk? sdk,
     this.onIncomingMessage,
     this.onIncomingCall,
+    this.speedTestInactivityTimeout = const Duration(seconds: 30),
   }) : sdk = sdk ?? EdgezMeshSdk() {
     _subscription = this.sdk.events.listen(_handleEvent);
   }
@@ -226,6 +227,7 @@ class EdgezMeshSession extends ChangeNotifier {
   final EdgezMeshSdk sdk;
   final EdgezIncomingMessageCallback? onIncomingMessage;
   final EdgezIncomingCallCallback? onIncomingCall;
+  final Duration speedTestInactivityTimeout;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
   EdgezMeshConfig? _lastMeshConfig;
@@ -1567,24 +1569,32 @@ class EdgezMeshSession extends ChangeNotifier {
         (frame.chunkIndex + 1) % 128 == 0) {
       debugPrint(
         'EdgeZ speed RX from=${fromNode.toRadixString(16)} '
+        'transfer=${frame.transferId} '
         'type=${frame.type.name} chunk=${frame.chunkIndex}/${frame.totalChunks} '
         'data=${frame.data.length}',
       );
     }
     final key = '$fromNode:${frame.transferId}';
+    late final _PendingSpeedTest pending;
     if (frame.type == EdgezSpeedTestFrameType.start) {
       _pendingSpeedTests.remove(key)?.timer?.cancel();
-    }
-    final pending = _pendingSpeedTests.putIfAbsent(
-      key,
-      () => _PendingSpeedTest(
-        hop: frame.hop,
+      pending = _PendingSpeedTest(
         totalBytes: frame.totalBytes,
         totalChunks: frame.totalChunks,
-      ),
-    );
-    if (pending.hop != frame.hop ||
-        pending.totalBytes != frame.totalBytes ||
+      );
+      _pendingSpeedTests[key] = pending;
+    } else {
+      final existing = _pendingSpeedTests[key];
+      if (existing == null) {
+        debugPrint(
+          'EdgeZ speed RX ignored orphan ${frame.type.name} '
+          'from=${fromNode.toRadixString(16)} transfer=${frame.transferId}',
+        );
+        return;
+      }
+      pending = existing;
+    }
+    if (pending.totalBytes != frame.totalBytes ||
         pending.totalChunks != frame.totalChunks) {
       return;
     }
@@ -1598,21 +1608,34 @@ class EdgezMeshSession extends ChangeNotifier {
         _publishLinkStats(fromNode, pending, finalResult: false);
       }
     }
+    if (frame.type == EdgezSpeedTestFrameType.end) {
+      pending.endReceived = true;
+    }
     pending.timer?.cancel();
-    if (pending.complete) {
+    if (pending.endReceived && pending.complete) {
       _finishSpeedTest(key, fromNode);
       return;
     }
-    // Slow or congested links can pause for several seconds while the sender
-    // is still active. Only END should use a short reordering grace period;
-    // otherwise retain the transfer until a genuine inactivity timeout.
-    final grace = frame.type == EdgezSpeedTestFrameType.end
-        ? const Duration(seconds: 1)
-        : const Duration(seconds: 30);
-    pending.timer = Timer(
-      grace,
-      () => _finishSpeedTest(key, fromNode),
-    );
+    if (pending.endReceived) {
+      // END may overtake DATA on a forced multi-hop route. Keep the transfer
+      // alive while delayed chunks arrive, then publish the incomplete result.
+      pending.timer = Timer(
+        speedTestInactivityTimeout,
+        () => _finishSpeedTest(key, fromNode),
+      );
+    } else {
+      // START can precede DATA by minutes while the radio queue drains. A
+      // pre-END timeout is cleanup only and must never create a false 0/100
+      // result or allow a later orphan END to create a second result.
+      pending.timer = Timer(const Duration(minutes: 10), () {
+        final stale = _pendingSpeedTests.remove(key);
+        stale?.timer?.cancel();
+        debugPrint(
+          'EdgeZ speed RX discarded stale pre-END transfer '
+          '${frame.transferId} from=${fromNode.toRadixString(16)}',
+        );
+      });
+    }
   }
 
   void _finishSpeedTest(String key, int fromNode) {
@@ -2375,12 +2398,10 @@ class _PendingVoiceMessage {
 
 class _PendingSpeedTest {
   _PendingSpeedTest({
-    required this.hop,
     required this.totalBytes,
     required this.totalChunks,
   });
 
-  final int hop;
   final int totalBytes;
   final int totalChunks;
   final Set<int> chunks = <int>{};
@@ -2389,6 +2410,7 @@ class _PendingSpeedTest {
   int? lastDataUs;
   int lastPublishedMs = 0;
   int highestChunkIndex = -1;
+  bool endReceived = false;
   Timer? timer;
 
   int get receivedChunks => chunks.length;

@@ -128,12 +128,19 @@ minute; firmware only returns the matching `PONG`.
   conversation message. It does not append the reply to its own conversation
   or store that per-conversation result in the global metrics database.
 
-Speed-test frame version 2 carries a hop-mode byte in every START, DATA, and END
-frame. `0` uses the normal route table, `1` addresses the target directly, `2`
-requires one intermediate peer, and `3` prefers a three-hop route with a
-two-hop fallback. Forced routes never select the ingress/source as the next hop.
-This tag is specific to speed tests and does not change routing for protobuf or
-voice traffic.
+Speed-test frame version 3 has a 26-byte header and does not duplicate routing
+metadata. The existing route TTL byte is interpreted as the speed-test path
+selector: `0` uses normal routing (learned route first, then direct-target
+fallback), `1` addresses the target directly, `2` requires one intermediate
+peer, and `3` prefers a three-hop route with a two-hop fallback. Forced routes
+never select the ingress/source as the next hop. These TTL semantics apply only
+to speed tests and do not change routing for protobuf or voice traffic.
+
+When a forced route needs a random intermediate, the transfer ID pins that
+choice for the whole transfer. A receiver does not publish a result until it
+has seen END and every expected DATA chunk. If chunks were lost, it publishes
+only after 30 seconds without additional speed-test traffic; END alone is not a
+completion signal because it may overtake DATA on a multi-hop path.
 
 Global moving speed and loss telemetry is independent of speed-test results. It
 counts all control, conversation, binary, recorded/live voice, and speed-test

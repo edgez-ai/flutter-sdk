@@ -23,7 +23,6 @@ enum EdgezSpeedTestFrameType { start, data, end }
 class EdgezSpeedTestFrame {
   const EdgezSpeedTestFrame._({
     required this.type,
-    required this.hop,
     required this.transferId,
     required this.totalBytes,
     required this.totalChunks,
@@ -32,14 +31,12 @@ class EdgezSpeedTestFrame {
   });
 
   factory EdgezSpeedTestFrame.start({
-    int hop = 0,
     required int transferId,
     required int totalBytes,
     required int totalChunks,
   }) =>
       EdgezSpeedTestFrame._(
         type: EdgezSpeedTestFrameType.start,
-        hop: hop,
         transferId: transferId,
         totalBytes: totalBytes,
         totalChunks: totalChunks,
@@ -48,7 +45,6 @@ class EdgezSpeedTestFrame {
       );
 
   factory EdgezSpeedTestFrame.data({
-    int hop = 0,
     required int transferId,
     required int totalBytes,
     required int totalChunks,
@@ -57,7 +53,6 @@ class EdgezSpeedTestFrame {
   }) =>
       EdgezSpeedTestFrame._(
         type: EdgezSpeedTestFrameType.data,
-        hop: hop,
         transferId: transferId,
         totalBytes: totalBytes,
         totalChunks: totalChunks,
@@ -66,14 +61,12 @@ class EdgezSpeedTestFrame {
       );
 
   factory EdgezSpeedTestFrame.end({
-    int hop = 0,
     required int transferId,
     required int totalBytes,
     required int totalChunks,
   }) =>
       EdgezSpeedTestFrame._(
         type: EdgezSpeedTestFrameType.end,
-        hop: hop,
         transferId: transferId,
         totalBytes: totalBytes,
         totalChunks: totalChunks,
@@ -81,10 +74,9 @@ class EdgezSpeedTestFrame {
         data: Uint8List(0),
       );
 
-  static const _headerBytes = 27;
+  static const _headerBytes = 26;
   static const _magic = <int>[0x45, 0x5a, 0x53, 0x54];
   final EdgezSpeedTestFrameType type;
-  final int hop;
   final int transferId;
   final int totalBytes;
   final int totalChunks;
@@ -92,19 +84,15 @@ class EdgezSpeedTestFrame {
   final Uint8List data;
 
   Uint8List encode() {
-    if (hop < 0 || hop > 3) {
-      throw ArgumentError.value(hop, 'hop', 'Must be between 0 and 3');
-    }
     final output = Uint8List(_headerBytes + data.length);
     output.setRange(0, _magic.length, _magic);
-    output[4] = 2;
+    output[4] = 3;
     output[5] = type.index + 1;
-    output[6] = hop;
     final bytes = ByteData.sublistView(output);
-    bytes.setUint64(7, transferId, Endian.big);
-    bytes.setUint32(15, totalBytes, Endian.big);
-    bytes.setUint32(19, totalChunks, Endian.big);
-    bytes.setUint32(23, chunkIndex, Endian.big);
+    bytes.setUint64(6, transferId, Endian.big);
+    bytes.setUint32(14, totalBytes, Endian.big);
+    bytes.setUint32(18, totalChunks, Endian.big);
+    bytes.setUint32(22, chunkIndex, Endian.big);
     output.setRange(_headerBytes, output.length, data);
     return output;
   }
@@ -114,19 +102,18 @@ class EdgezSpeedTestFrame {
     for (var i = 0; i < _magic.length; i++) {
       if (payload[i] != _magic[i]) return null;
     }
-    if (payload[4] != 2 || payload[5] < 1 || payload[5] > 3 || payload[6] > 3) {
+    if (payload[4] != 3 || payload[5] < 1 || payload[5] > 3) {
       return null;
     }
     final raw = Uint8List.fromList(payload);
     final bytes = ByteData.sublistView(raw);
-    final totalBytes = bytes.getUint32(15, Endian.big);
-    final totalChunks = bytes.getUint32(19, Endian.big);
-    final chunkIndex = bytes.getUint32(23, Endian.big);
+    final totalBytes = bytes.getUint32(14, Endian.big);
+    final totalChunks = bytes.getUint32(18, Endian.big);
+    final chunkIndex = bytes.getUint32(22, Endian.big);
     if (totalBytes == 0 || totalChunks == 0) return null;
     return EdgezSpeedTestFrame._(
       type: EdgezSpeedTestFrameType.values[payload[5] - 1],
-      hop: payload[6],
-      transferId: bytes.getUint64(7, Endian.big),
+      transferId: bytes.getUint64(6, Endian.big),
       totalBytes: totalBytes,
       totalChunks: totalChunks,
       chunkIndex: chunkIndex,
@@ -711,7 +698,6 @@ class EdgezMeshSdk {
 
     await sendFrame(
       EdgezSpeedTestFrame.start(
-        hop: hop,
         transferId: transferId,
         totalBytes: totalBytes,
         totalChunks: totalChunks,
@@ -732,7 +718,6 @@ class EdgezMeshSdk {
       }
       await sendFrame(
         EdgezSpeedTestFrame.data(
-          hop: hop,
           transferId: transferId,
           totalBytes: totalBytes,
           totalChunks: totalChunks,
@@ -760,7 +745,6 @@ class EdgezMeshSdk {
     }
     await sendFrame(
       EdgezSpeedTestFrame.end(
-        hop: hop,
         transferId: transferId,
         totalBytes: totalBytes,
         totalChunks: totalChunks,

@@ -1115,7 +1115,6 @@ void main() {
           .toList();
       expect(frames.first.type, EdgezSpeedTestFrameType.start);
       expect(frames.last.type, EdgezSpeedTestFrameType.end);
-      expect(frames.every((frame) => frame.hop == 3), isTrue);
       expect(
         frames
             .where((frame) => frame.type == EdgezSpeedTestFrameType.data)
@@ -1148,7 +1147,7 @@ void main() {
       ]);
     });
 
-    test('speed test always uses compact frames carrying the hop rule',
+    test('speed test uses route TTL without duplicating the hop rule in frame',
         () async {
       await sdk.sendSpeedTest(
         toNode: 0x200,
@@ -1171,6 +1170,11 @@ void main() {
         EdgezSpeedTestFrameType.end,
       ]);
       expect(calls.every((call) => call.argumentMap['maxHop'] == 2), isTrue);
+      final dataPayload = calls[1].argumentMap['payload']! as List<int>;
+      expect(dataPayload[4], 3);
+      expect(dataPayload, hasLength(26 + 384));
+      final obsoleteV2 = List<int>.from(dataPayload)..[4] = 2;
+      expect(EdgezSpeedTestFrame.tryDecode(obsoleteV2), isNull);
       expect(calls.last.argumentMap['waitForDrainMs'], 10000);
     });
 
@@ -1181,11 +1185,53 @@ void main() {
       );
     });
 
+    test('receiver waits for END before publishing a complete speed test',
+        () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      const fromNode = 0x100;
+      const transferId = 41;
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.start(
+          transferId: transferId,
+          totalBytes: 3,
+          totalChunks: 1,
+        ),
+      );
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: 3,
+          totalChunks: 1,
+          chunkIndex: 0,
+          data: Uint8List.fromList(<int>[1, 2, 3]),
+        ),
+      );
+      await ble.flushEvents();
+      expect(session.state.linkStats[fromNode], isNull);
+
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.end(
+          transferId: transferId,
+          totalBytes: 3,
+          totalChunks: 1,
+        ),
+      );
+      await ble.flushEvents();
+      expect(session.state.linkStats[fromNode]?.packetLossPercent, 0);
+      session.dispose();
+    });
+
     test('receiver replies with speed result without adding a local message',
         () async {
       final sender = await _newIdentity('Speed sender', 500, 501);
       final receiver = await _newIdentity('Speed receiver', 600, 601);
-      final session = EdgezMeshSession(sdk: sdk);
+      final session = EdgezMeshSession(
+        sdk: sdk,
+        speedTestInactivityTimeout: const Duration(seconds: 1),
+      );
       const fromNode = 0x100;
       const localNode = 0x200;
       const transferId = 42;
