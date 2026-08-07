@@ -1034,6 +1034,16 @@ void main() {
         EdgezMeshSdk.speedTestBytes,
       );
       expect(calls.every((call) => call.argumentMap['to'] == 0x200), isTrue);
+      // Native adds a 3-byte protocol marker and an 11-byte route prefix.
+      // The complete BLE/USB payload must fit the shared 512-byte limit.
+      expect(
+        calls.every(
+          (call) =>
+              3 + 11 + (call.argumentMap['payload']! as List<int>).length <=
+              512,
+        ),
+        isTrue,
+      );
       final drainCalls = calls
           .where((call) => call.argumentMap.containsKey('waitForDrainMs'))
           .toList(growable: false);

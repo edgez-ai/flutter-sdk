@@ -817,9 +817,10 @@ class EdgezMeshSession extends ChangeNotifier {
         fromNode: fromNode,
         totalBytes: totalBytes,
         maxHop: _lastMeshConfig?.maxHop ?? 0,
-        compactTransport: _supportsCompactSpeedTest(
-          _state.status?.firmwareVersion ?? '',
-        ),
+        // Both BLE and USB share a 512-byte transport payload limit. The
+        // compact frame stays below it; the legacy protobuf envelope can grow
+        // to 526 bytes with a full speed-test chunk.
+        compactTransport: true,
         onProgress: onProgress,
       );
       _setState(_state.copyWith(statusLine: 'Link measurement sent'));
@@ -2102,15 +2103,6 @@ class _PendingVoiceMessage {
       durationMs: durationMs,
     );
   }
-}
-
-bool _supportsCompactSpeedTest(String firmwareVersion) {
-  final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)').firstMatch(firmwareVersion);
-  if (match == null) return false;
-  final major = int.parse(match.group(1)!);
-  final minor = int.parse(match.group(2)!);
-  final patch = int.parse(match.group(3)!);
-  return major > 0 || minor > 5 || (minor == 5 && patch >= 6);
 }
 
 class _PendingSpeedTest {

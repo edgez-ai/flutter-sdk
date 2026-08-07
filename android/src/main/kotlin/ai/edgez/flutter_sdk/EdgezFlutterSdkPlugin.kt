@@ -211,6 +211,12 @@ class EdgezFlutterSdkPlugin :
     private val usbManager: UsbManager
         get() = context.getSystemService(Context.USB_SERVICE) as UsbManager
 
+    private fun activeTransportName(): String = when {
+        gatt != null -> "ble"
+        usbConnection != null -> "usb"
+        else -> "none"
+    }
+
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -916,7 +922,7 @@ class EdgezFlutterSdkPlugin :
                 }
                 Log.i(
                     LOG_TAG,
-                    "EdgeZ TX mesh-init route=${if (usbConnection != null) "usb" else "ble"} " +
+                    "EdgeZ TX mesh-init route=${activeTransportName()} " +
                         "bytes=${packet.size} compatibility=${call.argument<String>("sdkCompatibility") ?: ""} " +
                         "release=${call.argument<String>("sdkReleaseId") ?: ""} " +
                         "signatureBytes=${call.argument<Int>("sdkReleaseSignatureBytes") ?: 0}",
@@ -946,7 +952,7 @@ class EdgezFlutterSdkPlugin :
                 ) {
                     Log.i(
                         LOG_TAG,
-                        "EdgeZ TX label=$label route=${if (usbConnection != null) "usb" else "ble"} " +
+                        "EdgeZ TX label=$label route=${activeTransportName()} " +
                             "bytes=${packet.size} compatibility=${call.argument<String>("sdkCompatibility") ?: ""} " +
                             "release=${call.argument<String>("sdkReleaseId") ?: ""} " +
                             "signatureBytes=${call.argument<Int>("sdkReleaseSignatureBytes") ?: 0}",
@@ -1543,11 +1549,14 @@ class EdgezFlutterSdkPlugin :
         dropStale: Boolean,
     ): Result<String> {
         val frame = protocolMagic + packet
-        if (usbConnection != null) {
-            return writeUsbFrame(frame)
-        }
         val activeGatt = gatt
-            ?: return Result.failure(IllegalStateException("BLE is not connected"))
+        if (activeGatt == null) {
+            return if (usbConnection != null) {
+                writeUsbFrame(frame)
+            } else {
+                Result.failure(IllegalStateException("BLE and USB are not connected"))
+            }
+        }
         val voice = voiceRxCharacteristic ?: return Result.failure(
             IllegalStateException("BLE voice characteristics FFF7/FFF8 are unavailable"),
         )
@@ -1592,7 +1601,9 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun waitForVoiceTxDrain(timeoutMs: Int): Result<String> {
-        if (usbConnection != null) return Result.success("USB realtime TX complete")
+        if (gatt == null && usbConnection != null) {
+            return Result.success("USB realtime TX complete")
+        }
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             synchronized(this) {
@@ -1871,8 +1882,14 @@ class EdgezFlutterSdkPlugin :
         payload: ByteArray,
         writeWithoutResponse: Boolean = false,
     ): Result<String> {
-        if (usbConnection != null) return writeUsbFrame(payload)
-        val activeGatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
+        val activeGatt = gatt
+        if (activeGatt == null) {
+            return if (usbConnection != null) {
+                writeUsbFrame(payload)
+            } else {
+                Result.failure(IllegalStateException("BLE and USB are not connected"))
+            }
+        }
         val rx = rxCharacteristic ?: return Result.failure(IllegalStateException("BLE control service is not ready"))
         if (payload.size > EDGEZ_MAX_PAYLOAD) {
             return Result.failure(IllegalArgumentException("Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD"))
@@ -1908,7 +1925,9 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun waitForControlTxDrain(timeoutMs: Int): Result<String> {
-        if (usbConnection != null) return Result.success("USB control TX complete")
+        if (gatt == null && usbConnection != null) {
+            return Result.success("USB control TX complete")
+        }
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             synchronized(this) {
@@ -2415,13 +2434,10 @@ class EdgezFlutterSdkPlugin :
             val frameLen = EDGEZ_HEADER_LEN + payloadLen
             if (rxLen < frameLen) return
             val payload = rxBuffer.copyOfRange(EDGEZ_HEADER_LEN, frameLen)
-            if (payload.size > EDGEZ_VOICE_PROTOCOL_MAGIC.size &&
-                payload.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
-                    .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)
-            ) {
+            if (isRealtimePayload(payload)) {
                 handleVoiceBytes(payload)
             } else {
-                logGpsPacket(payload, if (usbConnection != null) "usb" else "control")
+                logGpsPacket(payload, "ble")
                 emit(mapOf("type" to "packet", "packet" to payload))
             }
             val remaining = rxLen - frameLen
@@ -2500,10 +2516,7 @@ class EdgezFlutterSdkPlugin :
         // running, even when heartbeat diagnostics are disabled in the future.
         markUsbProtocolReady()
         Log.i(LOG_TAG, "EdgeZ RX route=usb bytes=${payload.size}")
-        if (payload.size > EDGEZ_VOICE_PROTOCOL_MAGIC.size &&
-            payload.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
-                .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)
-        ) {
+        if (isRealtimePayload(payload)) {
             handleVoiceBytes(payload)
             return
         }
@@ -2676,15 +2689,36 @@ class EdgezFlutterSdkPlugin :
     private fun isZeroLocation(latitude: Float?, longitude: Float?): Boolean =
         latitude == 0.0f && longitude == 0.0f
 
-    private fun handleVoiceBytes(bytes: ByteArray) {
-        if (bytes.size <= EDGEZ_VOICE_PROTOCOL_MAGIC.size ||
-            !bytes.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
-                .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)
+    private fun isRealtimePayload(bytes: ByteArray): Boolean {
+        if (bytes.size > EDGEZ_VOICE_PROTOCOL_MAGIC.size &&
+            (bytes.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
+                .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC) ||
+                bytes.copyOfRange(0, EDGEZ_SPEED_PROTOCOL_MAGIC.size)
+                    .contentEquals(EDGEZ_SPEED_PROTOCOL_MAGIC))
         ) {
-            emit(mapOf("type" to "log", "log" to "BLE voice frame invalid len=${bytes.size}"))
-            return
+            return true
         }
-        val payload = bytes.copyOfRange(EDGEZ_VOICE_PROTOCOL_MAGIC.size, bytes.size)
+        // Accept the raw routed speed frame too. This keeps USB compatible
+        // with firmware builds that omit the three-byte realtime envelope.
+        return bytes.size > 9 &&
+            bytes[6] == 'E'.code.toByte() &&
+            bytes[7] == 'Z'.code.toByte() &&
+            bytes[8] == 'S'.code.toByte() &&
+            bytes[9] == 'T'.code.toByte()
+    }
+
+    private fun handleVoiceBytes(bytes: ByteArray) {
+        val hasVoiceEnvelope = bytes.size > EDGEZ_VOICE_PROTOCOL_MAGIC.size &&
+            bytes.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
+                .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)
+        val hasSpeedEnvelope = bytes.size > EDGEZ_SPEED_PROTOCOL_MAGIC.size &&
+            bytes.copyOfRange(0, EDGEZ_SPEED_PROTOCOL_MAGIC.size)
+                .contentEquals(EDGEZ_SPEED_PROTOCOL_MAGIC)
+        val payload = when {
+            hasVoiceEnvelope -> bytes.copyOfRange(EDGEZ_VOICE_PROTOCOL_MAGIC.size, bytes.size)
+            hasSpeedEnvelope -> bytes.copyOfRange(EDGEZ_SPEED_PROTOCOL_MAGIC.size, bytes.size)
+            else -> bytes
+        }
         if (payload.size > 9 &&
             payload[6] == 'E'.code.toByte() &&
             payload[7] == 'Z'.code.toByte() &&
@@ -2692,6 +2726,10 @@ class EdgezFlutterSdkPlugin :
             payload[9] == 'T'.code.toByte()
         ) {
             emit(mapOf("type" to "speedTestFrame", "packet" to payload))
+            return
+        }
+        if (!hasVoiceEnvelope) {
+            emit(mapOf("type" to "log", "log" to "Realtime frame invalid len=${bytes.size}"))
             return
         }
         if (payload.size < 6 + 4 + EDGEZ_VOICE_NONCE_SIZE + 1 ||
