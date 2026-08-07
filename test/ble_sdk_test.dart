@@ -31,9 +31,23 @@ void main() {
     expect(restored.autoConnect, isTrue);
     expect(restored.shareLocation, isFalse);
     expect(restored.selectedDevice?.label, device.label);
+    expect(restored.preferredTransport, EdgezPreferredTransport.ble);
 
     await store.setShareLocation(true);
     expect((await store.load()).shareLocation, isTrue);
+
+    const usbDevice = EdgezUsbDevice(
+      id: 7,
+      name: 'CP2102',
+      vendorId: 0x10c4,
+      productId: 0xea60,
+    );
+    await store.saveSelectedUsbDevice(usbDevice);
+    final usbRestored = await store.load();
+    expect(usbRestored.preferredTransport, EdgezPreferredTransport.usb);
+    expect(usbRestored.usbVendorId, usbDevice.vendorId);
+    expect(usbRestored.usbProductId, usbDevice.productId);
+    expect(usbRestored.usbDeviceName, usbDevice.name);
   });
 
   group('OTA release metadata', () {
@@ -386,6 +400,15 @@ void main() {
       await ble.flushEvents();
       expect(session.state.usbLinkStats.bidirectional, isTrue);
       expect(session.state.usbLinkStats.rttMs, 12);
+
+      // Reopening CP2102 can reset the ESP32 and clear its in-RAM SDK release
+      // authorization. The identical init packet must therefore be resent.
+      await session.connectUsb(device);
+      ble.emitConnection(EdgezConnectionType.usb);
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+      expect(ble.callsFor('initializeMesh'), hasLength(2));
 
       session.dispose();
     });

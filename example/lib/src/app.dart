@@ -77,6 +77,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   List<ExampleDriver> drivers = ExampleDriverCatalog.bundled;
   MarketplaceDriverInstallRequest? pendingDriverInstall;
   bool bleAutoConnect = false;
+  EdgezPreferredTransport preferredTransport = EdgezPreferredTransport.ble;
   EdgezBleDevice? selectedBleDevice;
   List<EdgezUsbDevice> usbDevices = const <EdgezUsbDevice>[];
   EdgezUsbDevice? selectedUsbDevice;
@@ -377,15 +378,37 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   Future<void> _loadIdentityAndBleConfiguration() async {
     final identity = await identityStore.getOrCreate();
     final bleConfiguration = await bleConfigurationStore.load();
+    var attachedUsbDevices = const <EdgezUsbDevice>[];
+    if (bleConfiguration.preferredTransport == EdgezPreferredTransport.usb) {
+      try {
+        attachedUsbDevices = await session.sdk.listUsbDevices();
+      } on MissingPluginException {
+        // USB support requires a full Android rebuild after native changes.
+      }
+    }
+    final restoredUsbDevice =
+        attachedUsbDevices.cast<EdgezUsbDevice?>().firstWhere(
+              (device) =>
+                  device?.vendorId == bleConfiguration.usbVendorId &&
+                  device?.productId == bleConfiguration.usbProductId,
+              orElse: () => null,
+            );
     if (!mounted) return;
     setState(() {
       userIdentity = identity;
       userName = identity.name;
-      selectedBleDevice = bleConfiguration.selectedDevice;
+      preferredTransport = bleConfiguration.preferredTransport;
+      selectedBleDevice = preferredTransport == EdgezPreferredTransport.ble
+          ? bleConfiguration.selectedDevice
+          : null;
+      usbDevices = attachedUsbDevices;
+      selectedUsbDevice = restoredUsbDevice;
       bleAutoConnect = bleConfiguration.autoConnect;
       shareLocation = bleConfiguration.shareLocation;
     });
-    if (bleConfiguration.autoConnect && bleConfiguration.hasSelectedDevice) {
+    if (bleConfiguration.preferredTransport == EdgezPreferredTransport.ble &&
+        bleConfiguration.autoConnect &&
+        bleConfiguration.hasSelectedDevice) {
       await _connectBleDevice(bleConfiguration.deviceId);
     }
   }
@@ -574,6 +597,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   Future<void> _connectBle() async {
+    if (session.state.connection == EdgezConnectionType.usb) {
+      await session.disconnect();
+    }
+    preferredTransport = EdgezPreferredTransport.ble;
+    selectedUsbDevice = null;
+    await bleConfigurationStore
+        .setPreferredTransport(EdgezPreferredTransport.ble);
+    if (mounted) setState(() {});
     await session.startBleScan();
   }
 
@@ -585,6 +616,17 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     // Match the Android flow: make the current mesh configuration available
     // before BLE service discovery emits its ready event.
     await _saveAppSettings();
+    preferredTransport = EdgezPreferredTransport.ble;
+    selectedUsbDevice = null;
+    final device = session.state.bleDevices[deviceId] ?? selectedBleDevice;
+    if (device != null && device.id == deviceId) {
+      selectedBleDevice = device;
+      await bleConfigurationStore.saveSelectedDevice(device);
+    } else {
+      await bleConfigurationStore
+          .setPreferredTransport(EdgezPreferredTransport.ble);
+    }
+    if (mounted) setState(() {});
     try {
       await session.sdk.requestNotificationPermission();
     } on MissingPluginException {
@@ -596,7 +638,23 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   Future<void> _refreshUsbDevices() async {
     try {
       final devices = await session.sdk.listUsbDevices();
-      if (mounted) setState(() => usbDevices = devices);
+      final current = selectedUsbDevice;
+      final restored = current == null
+          ? null
+          : devices.cast<EdgezUsbDevice?>().firstWhere(
+                (device) =>
+                    device?.vendorId == current.vendorId &&
+                    device?.productId == current.productId,
+                orElse: () => null,
+              );
+      if (mounted) {
+        setState(() {
+          usbDevices = devices;
+          if (preferredTransport == EdgezPreferredTransport.usb) {
+            selectedUsbDevice = restored;
+          }
+        });
+      }
     } on MissingPluginException {
       // USB support requires a full Android rebuild after native changes.
     }
@@ -604,7 +662,16 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
 
   Future<void> _connectUsbDevice(EdgezUsbDevice device) async {
     await _saveAppSettings();
-    if (mounted) setState(() => selectedUsbDevice = device);
+    await bleConfigurationStore.saveSelectedUsbDevice(device);
+    await bleConfigurationStore.setAutoConnect(false);
+    if (mounted) {
+      setState(() {
+        preferredTransport = EdgezPreferredTransport.usb;
+        bleAutoConnect = false;
+        selectedBleDevice = null;
+        selectedUsbDevice = device;
+      });
+    }
     try {
       await session.connectUsb(device);
     } catch (error) {
@@ -1114,7 +1181,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   onStopBleScan: _stopBleScan,
                   onConnectBleDevice: _connectBleDevice,
                   onSelectBleDevice: (device) {
-                    setState(() => selectedBleDevice = device);
+                    setState(() {
+                      preferredTransport = EdgezPreferredTransport.ble;
+                      selectedBleDevice = device;
+                      selectedUsbDevice = null;
+                    });
                     unawaited(bleConfigurationStore.saveSelectedDevice(device));
                   },
                   onRefreshUsbDevices: _refreshUsbDevices,

@@ -505,6 +505,16 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> connectBle(String deviceId) async {
     _deviceStatusTimeout?.cancel();
+    // SDK release authorization lives in firmware RAM. A reconnect may follow
+    // a device reset, so the init/auth packet must be sent again even when the
+    // saved mesh configuration itself has not changed.
+    _lastInitKey = null;
+    // A session owns exactly one physical transport. Close USB (or a previous
+    // BLE link) before Android starts a new BLE connection.
+    if (_state.connection != EdgezConnectionType.none) {
+      await sdk.disconnect();
+      _bleReady = false;
+    }
     _setState(
       _state.copyWith(
         bleConnecting: true,
@@ -535,6 +545,14 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> connectUsb(EdgezUsbDevice device) async {
     _deviceStatusTimeout?.cancel();
+    // Opening a CP2102 commonly resets the ESP32. Never reuse initialization
+    // deduplication state from BLE or an earlier USB connection.
+    _lastInitKey = null;
+    // Do not leave a GATT connection alive while opening the USB serial port.
+    if (_state.connection != EdgezConnectionType.none) {
+      await sdk.disconnect();
+    }
+    await sdk.stopBleScan();
     _bleReady = false;
     _setState(
       _state.copyWith(
@@ -954,7 +972,13 @@ class EdgezMeshSession extends ChangeNotifier {
           bleReady: true,
         ));
         unawaited(_refreshOtaReadiness());
-        if (!_provisioning) unawaited(_sendInitIfReady());
+        if (!_provisioning) {
+          if (_state.connection == EdgezConnectionType.usb) {
+            unawaited(_authorizeAndInitializeUsb());
+          } else {
+            unawaited(_sendInitIfReady());
+          }
+        }
       case EdgezMeshEventType.status:
         _deviceStatusTimeout?.cancel();
         final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
@@ -1645,6 +1669,26 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
     } finally {
       _initInFlight = false;
+    }
+  }
+
+  Future<void> _authorizeAndInitializeUsb() async {
+    try {
+      _setState(
+        _state.copyWith(statusLine: 'Authorizing SDK release over USB'),
+      );
+      // Firmware explicitly supports an init containing only the signed SDK
+      // release credential. Complete that handshake before sending mesh config
+      // or status/settings requests on a newly opened UART session.
+      await sdk.authorizeSession();
+      _setState(
+        _state.copyWith(statusLine: 'SDK release sent; initializing mesh'),
+      );
+      await _sendInitIfReady(force: true);
+    } catch (error) {
+      _setState(
+        _state.copyWith(statusLine: 'USB SDK authorization failed: $error'),
+      );
     }
   }
 

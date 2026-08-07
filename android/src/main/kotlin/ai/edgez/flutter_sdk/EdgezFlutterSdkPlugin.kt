@@ -203,6 +203,7 @@ class EdgezFlutterSdkPlugin :
     private var usbAwaitingPongSequence = 0
     private var usbPingSentAtMs = 0L
     private var usbLastRttMs = 0L
+    private var usbProtocolReady = false
 
     private val bluetoothAdapter: BluetoothAdapter?
         get() = context.getSystemService(BluetoothManager::class.java)?.adapter
@@ -214,17 +215,17 @@ class EdgezFlutterSdkPlugin :
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 USB_PERMISSION_ACTION -> {
+                    val result = pendingUsbResult ?: return
                     val device = intent.usbDeviceExtra() ?: pendingUsbDevice
                     val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-                    val result = pendingUsbResult
                     pendingUsbResult = null
                     pendingUsbDevice = null
                     if (!granted || device == null) {
-                        result?.error("usb_permission_denied", "USB permission was denied", null)
+                        result.error("usb_permission_denied", "USB permission was denied", null)
                     } else {
                         connectUsbDevice(device).fold(
-                            onSuccess = { result?.success(null) },
-                            onFailure = { result?.error("usb_connect_failed", it.message, null) },
+                            onSuccess = { result.success(null) },
+                            onFailure = { result.error("usb_connect_failed", it.message, null) },
                         )
                     }
                 }
@@ -500,6 +501,17 @@ class EdgezFlutterSdkPlugin :
         )
     }
 
+    private fun cancelPendingUsbConnection() {
+        val result = pendingUsbResult
+        pendingUsbResult = null
+        pendingUsbDevice = null
+        result?.error(
+            "usb_connection_cancelled",
+            "USB connection cancelled because another transport was selected",
+            null,
+        )
+    }
+
     private fun connectUsbDevice(device: UsbDevice): Result<Unit> = runCatching {
         logUsbEnumeration(device)
         val endpoints = findUsbInterface(device)
@@ -544,8 +556,12 @@ class EdgezFlutterSdkPlugin :
         startUsbReader()
         startUsbHeartbeat()
         emit(mapOf("type" to "connection", "connection" to "usb"))
-        emit(mapOf("type" to "ready", "mtu" to EDGEZ_MAX_PAYLOAD))
-        emit(mapOf("type" to "log", "log" to "USB high-speed transport connected"))
+        emit(
+            mapOf(
+                "type" to "log",
+                "log" to "USB UART connected; waiting for firmware handshake",
+            ),
+        )
     }
 
     private fun startUsbReader() {
@@ -606,6 +622,7 @@ class EdgezFlutterSdkPlugin :
         if (type == LEGACY_USB_ECHO_REQUEST) {
             synchronized(usbStatsLock) { usbHeartbeatPingsReceived++ }
             writeUsbRaw(buildLegacyUsbEcho(LEGACY_USB_ECHO_RESPONSE, sequence, payload))
+            markUsbProtocolReady()
         } else if (type == LEGACY_USB_ECHO_RESPONSE) {
             synchronized(usbStatsLock) {
                 usbHeartbeatPongsReceived++
@@ -614,8 +631,26 @@ class EdgezFlutterSdkPlugin :
                     usbAwaitingPongSequence = 0
                 }
             }
+            markUsbProtocolReady()
         }
         emitUsbLinkStats()
+    }
+
+    private fun markUsbProtocolReady() {
+        synchronized(usbStatsLock) {
+            if (usbProtocolReady || !usbRunning.get()) return
+            usbProtocolReady = true
+        }
+        mainHandler.post {
+            if (!usbRunning.get()) return@post
+            emit(mapOf("type" to "ready", "mtu" to EDGEZ_MAX_PAYLOAD))
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "USB firmware handshake complete; EdgeZ protocol ready",
+                ),
+            )
+        }
     }
 
     private fun emitUsbLinkStats() {
@@ -657,6 +692,7 @@ class EdgezFlutterSdkPlugin :
             usbAwaitingPongSequence = 0
             usbPingSentAtMs = 0
             usbLastRttMs = 0
+            usbProtocolReady = false
         }
         if (wasConnected && emitDisconnected) {
             emit(mapOf("type" to "connection", "connection" to "none"))
@@ -866,6 +902,7 @@ class EdgezFlutterSdkPlugin :
             }
             "disconnect" -> {
                 stopBleScan()
+                cancelPendingUsbConnection()
                 closeGatt()
                 closeUsb(false)
                 emit(mapOf("type" to "connection", "connection" to "none"))
@@ -877,6 +914,13 @@ class EdgezFlutterSdkPlugin :
                     result.error("missing_packet", "Missing HaLow init packet", null)
                     return
                 }
+                Log.i(
+                    LOG_TAG,
+                    "EdgeZ TX mesh-init route=${if (usbConnection != null) "usb" else "ble"} " +
+                        "bytes=${packet.size} compatibility=${call.argument<String>("sdkCompatibility") ?: ""} " +
+                        "release=${call.argument<String>("sdkReleaseId") ?: ""} " +
+                        "signatureBytes=${call.argument<Int>("sdkReleaseSignatureBytes") ?: 0}",
+                )
                 sendFrame(packet).fold(
                     onSuccess = {
                         emit(mapOf("type" to "log", "log" to "HaLow mesh init queued"))
@@ -896,6 +940,17 @@ class EdgezFlutterSdkPlugin :
                 if (packet == null) {
                     result.error("missing_packet", "Missing packet", null)
                     return
+                }
+                if (label.contains("SDK license", ignoreCase = true) ||
+                    label.contains("settings", ignoreCase = true)
+                ) {
+                    Log.i(
+                        LOG_TAG,
+                        "EdgeZ TX label=$label route=${if (usbConnection != null) "usb" else "ble"} " +
+                            "bytes=${packet.size} compatibility=${call.argument<String>("sdkCompatibility") ?: ""} " +
+                            "release=${call.argument<String>("sdkReleaseId") ?: ""} " +
+                            "signatureBytes=${call.argument<Int>("sdkReleaseSignatureBytes") ?: 0}",
+                    )
                 }
                 if (label.contains("location", ignoreCase = true)) {
                     Log.i(LOG_TAG, "GPS TX label=$label bytes=${packet.size}")
@@ -1697,6 +1752,7 @@ class EdgezFlutterSdkPlugin :
             result.error("ble_device_missing", "BLE device not found", null)
             return
         }
+        cancelPendingUsbConnection()
         stopBleScan()
         closeUsb(false)
         closeGatt()
@@ -2440,6 +2496,10 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun dispatchUsbPayload(payload: ByteArray) {
+        // A valid framed payload is also proof that the firmware UART parser is
+        // running, even when heartbeat diagnostics are disabled in the future.
+        markUsbProtocolReady()
+        Log.i(LOG_TAG, "EdgeZ RX route=usb bytes=${payload.size}")
         if (payload.size > EDGEZ_VOICE_PROTOCOL_MAGIC.size &&
             payload.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
                 .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)

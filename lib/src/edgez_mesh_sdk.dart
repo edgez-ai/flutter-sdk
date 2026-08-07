@@ -427,6 +427,9 @@ class EdgezMeshSdk {
     );
     return _transport.invokeMethod<void>('initializeMesh', {
       ...config.toMap(),
+      'sdkCompatibility': _releaseCredential.compatibility,
+      'sdkReleaseId': _releaseCredential.releaseId,
+      'sdkReleaseSignatureBytes': releaseSignature.length,
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
   }
@@ -443,6 +446,9 @@ class EdgezMeshSdk {
     );
     return _transport.invokeMethod<void>('sendPacket', {
       'label': 'SDK license authorization',
+      'sdkCompatibility': _releaseCredential.compatibility,
+      'sdkReleaseId': _releaseCredential.releaseId,
+      'sdkReleaseSignatureBytes': _releaseCredential.signature.length,
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
   }
