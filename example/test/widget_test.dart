@@ -175,7 +175,7 @@ void main() {
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('BLE connection'), findsOneWidget);
+    expect(find.text('Device connection'), findsOneWidget);
     expect(find.text('Device mode'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('Mesh Network'),
@@ -210,26 +210,26 @@ void main() {
     expect(find.text('SDK events'), findsOneWidget);
     await tester.tap(find.byTooltip('Back to settings'));
     await tester.pumpAndSettle();
-    expect(find.text('BLE connection'), findsOneWidget);
+    expect(find.text('Device connection'), findsOneWidget);
   });
 
-  testWidgets('BLE connection uses the Android-style device picker',
+  testWidgets('connection selector offers BLE and USB devices',
       (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
 
     expect(find.text('Selected device'), findsOneWidget);
-    expect(find.text('No BLE device selected'), findsOneWidget);
+    expect(find.text('No device selected'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
     await tester.tap(find.widgetWithText(OutlinedButton, 'Select'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Select BLE device'), findsOneWidget);
+    expect(find.text('Select BLE or USB device'), findsOneWidget);
     expect(find.text('Scanning for EdgeZ devices'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
-    expect(find.text('BLE connection'), findsOneWidget);
+    expect(find.text('Device connection'), findsOneWidget);
   });
 
   testWidgets('conversation shows GPS without overflowing a narrow screen',

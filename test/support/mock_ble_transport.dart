@@ -64,6 +64,23 @@ class MockBleTransport implements EdgezPlatformTransport {
     _events.add(const <Object?, Object?>{'type': 'ready'});
   }
 
+  void emitUsbLinkStats({
+    required int sentPings,
+    required int receivedPings,
+    required int receivedPongs,
+    int timeouts = 0,
+    int rttMs = 0,
+  }) {
+    _events.add(<Object?, Object?>{
+      'type': 'usbLinkStats',
+      'sentPings': sentPings,
+      'receivedPings': receivedPings,
+      'receivedPongs': receivedPongs,
+      'timeouts': timeouts,
+      'rttMs': rttMs,
+    });
+  }
+
   void emitBleDevice({
     required String id,
     required String name,

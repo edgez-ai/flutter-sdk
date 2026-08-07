@@ -1,6 +1,7 @@
 enum EdgezConnectionType {
   none,
-  ble;
+  ble,
+  usb;
 
   static EdgezConnectionType fromWire(String? value) {
     return EdgezConnectionType.values.firstWhere(
@@ -20,6 +21,7 @@ enum EdgezMeshEventType {
   message,
   voiceFrame,
   speedTestFrame,
+  usbLinkStats,
   voiceAudio,
   otaProgress,
   log;
@@ -140,6 +142,30 @@ class EdgezBleDevice {
       lastSeenMs: map['lastSeenMs'] as int? ?? 0,
     );
   }
+}
+
+class EdgezUsbDevice {
+  const EdgezUsbDevice({
+    required this.id,
+    required this.name,
+    required this.vendorId,
+    required this.productId,
+  });
+
+  final int id;
+  final String name;
+  final int vendorId;
+  final int productId;
+
+  String get label => '$name (${vendorId.toRadixString(16).padLeft(4, '0')}:'
+      '${productId.toRadixString(16).padLeft(4, '0')})';
+
+  factory EdgezUsbDevice.fromMap(Map<Object?, Object?> map) => EdgezUsbDevice(
+        id: map['id'] as int? ?? 0,
+        name: map['name'] as String? ?? 'ESP32-S3 USB',
+        vendorId: map['vendorId'] as int? ?? 0,
+        productId: map['productId'] as int? ?? 0,
+      );
 }
 
 class EdgezUserIdentity {
@@ -681,6 +707,11 @@ class EdgezMeshEvent {
     this.message,
     this.sentBytes = 0,
     this.totalBytes = 0,
+    this.usbSentPings = 0,
+    this.usbReceivedPings = 0,
+    this.usbReceivedPongs = 0,
+    this.usbTimeouts = 0,
+    this.usbRttMs = 0,
     this.log = '',
   });
 
@@ -693,6 +724,11 @@ class EdgezMeshEvent {
   final EdgezConversationMessage? message;
   final int sentBytes;
   final int totalBytes;
+  final int usbSentPings;
+  final int usbReceivedPings;
+  final int usbReceivedPongs;
+  final int usbTimeouts;
+  final int usbRttMs;
   final String log;
 
   double get progress => totalBytes <= 0 ? 0 : sentBytes / totalBytes;
@@ -722,6 +758,11 @@ class EdgezMeshEvent {
           : null,
       sentBytes: map['sentBytes'] as int? ?? 0,
       totalBytes: map['totalBytes'] as int? ?? 0,
+      usbSentPings: map['sentPings'] as int? ?? 0,
+      usbReceivedPings: map['receivedPings'] as int? ?? 0,
+      usbReceivedPongs: map['receivedPongs'] as int? ?? 0,
+      usbTimeouts: map['timeouts'] as int? ?? 0,
+      usbRttMs: map['rttMs'] as int? ?? 0,
       log: map['log'] as String? ?? '',
     );
   }

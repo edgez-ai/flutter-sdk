@@ -33,6 +33,24 @@ class EdgezLinkStats {
   final int updatedAtMs;
 }
 
+class EdgezUsbLinkStats {
+  const EdgezUsbLinkStats({
+    this.sentPings = 0,
+    this.receivedPings = 0,
+    this.receivedPongs = 0,
+    this.timeouts = 0,
+    this.rttMs = 0,
+  });
+
+  final int sentPings;
+  final int receivedPings;
+  final int receivedPongs;
+  final int timeouts;
+  final int rttMs;
+
+  bool get bidirectional => receivedPings > 0 && receivedPongs > 0;
+}
+
 class EdgezMeshState {
   EdgezMeshState({
     required this.connection,
@@ -50,6 +68,7 @@ class EdgezMeshState {
     required this.voiceCall,
     required this.statusLine,
     required this.bleReady,
+    this.usbLinkStats = const EdgezUsbLinkStats(),
     this.bleConnecting = false,
     this.deviceSettings,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
@@ -76,6 +95,7 @@ class EdgezMeshState {
       voiceCall: const EdgezVoiceCallState(),
       statusLine: 'Connect with BLE, then save mesh settings.',
       bleReady: false,
+      usbLinkStats: const EdgezUsbLinkStats(),
       bleConnecting: false,
     );
   }
@@ -95,6 +115,7 @@ class EdgezMeshState {
   final EdgezVoiceCallState voiceCall;
   final String statusLine;
   final bool bleReady;
+  final EdgezUsbLinkStats usbLinkStats;
   final bool bleConnecting;
   final EdgezDeviceSettings? deviceSettings;
 
@@ -132,6 +153,7 @@ class EdgezMeshState {
     EdgezVoiceCallState? voiceCall,
     String? statusLine,
     bool? bleReady,
+    EdgezUsbLinkStats? usbLinkStats,
     bool? bleConnecting,
     EdgezDeviceSettings? deviceSettings,
     bool clearDeviceSettings = false,
@@ -152,6 +174,7 @@ class EdgezMeshState {
       voiceCall: voiceCall ?? this.voiceCall,
       statusLine: statusLine ?? this.statusLine,
       bleReady: bleReady ?? this.bleReady,
+      usbLinkStats: usbLinkStats ?? this.usbLinkStats,
       bleConnecting: bleConnecting ?? this.bleConnecting,
       deviceSettings:
           clearDeviceSettings ? null : deviceSettings ?? this.deviceSettings,
@@ -510,6 +533,30 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<void> connectUsb(EdgezUsbDevice device) async {
+    _deviceStatusTimeout?.cancel();
+    _bleReady = false;
+    _setState(
+      _state.copyWith(
+        clearStatus: true,
+        clearDeviceSettings: true,
+        bleReady: false,
+        statusLine: 'Connecting USB to ${device.label}',
+      ),
+    );
+    try {
+      await sdk.connectUsb(device.id);
+      _setState(
+        _state.copyWith(
+          statusLine: 'USB connection requested; waiting for device',
+        ),
+      );
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'USB connect failed: $error'));
+      rethrow;
+    }
+  }
+
   Future<void> disconnect() async {
     await sdk.disconnect();
     _deviceStatusTimeout?.cancel();
@@ -534,13 +581,12 @@ class EdgezMeshSession extends ChangeNotifier {
     if (config == null ||
         !config.beacon.shareLocation ||
         !_bleReady ||
-        _state.connection != EdgezConnectionType.ble ||
+        _state.connection == EdgezConnectionType.none ||
         _locationUpdateInFlight) {
       return false;
     }
     final status = _state.status;
-    if (status != null &&
-        (!status.supported || !status.stackInitialized || !status.meshMode)) {
+    if (status == null || !status.meshMode || !status.isUsable) {
       return false;
     }
 
@@ -566,8 +612,8 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> authorizeSession() async {
-    if (!_bleReady || _state.connection != EdgezConnectionType.ble) {
-      throw StateError('BLE control service is not ready');
+    if (!_bleReady || _state.connection == EdgezConnectionType.none) {
+      throw StateError('Device control transport is not ready');
     }
     _setState(
       _state.copyWith(
@@ -878,9 +924,12 @@ class EdgezMeshSession extends ChangeNotifier {
             voiceCall: event.connection == EdgezConnectionType.none
                 ? const EdgezVoiceCallState()
                 : _state.voiceCall,
-            statusLine: event.connection == EdgezConnectionType.ble
-                ? 'BLE link connected; setting up control channel'
-                : 'BLE disconnected',
+            statusLine: switch (event.connection) {
+              EdgezConnectionType.ble =>
+                'BLE link connected; setting up control channel',
+              EdgezConnectionType.usb => 'USB high-speed link connected',
+              EdgezConnectionType.none => 'Device disconnected',
+            },
           ),
         );
       case EdgezMeshEventType.bleDevice:
@@ -899,7 +948,9 @@ class EdgezMeshSession extends ChangeNotifier {
       case EdgezMeshEventType.ready:
         _bleReady = true;
         _setState(_state.copyWith(
-          statusLine: 'BLE control channel ready; requesting device status',
+          statusLine: _state.connection == EdgezConnectionType.usb
+              ? 'USB protocol ready; initializing mesh'
+              : 'BLE control channel ready; requesting device status',
           bleReady: true,
         ));
         unawaited(_refreshOtaReadiness());
@@ -916,6 +967,7 @@ class EdgezMeshSession extends ChangeNotifier {
             statusLine: 'Device status received',
           ),
         );
+        _updateLocationTrackingForStatus(event.status);
       case EdgezMeshEventType.node:
         final node = event.node;
         if (node == null) return;
@@ -968,6 +1020,18 @@ class EdgezMeshSession extends ChangeNotifier {
           fromNode = (fromNode << 8) | event.packet[index];
         }
         _handleSpeedTestFrame(fromNode, event.packet.sublist(6));
+      case EdgezMeshEventType.usbLinkStats:
+        _setState(
+          _state.copyWith(
+            usbLinkStats: EdgezUsbLinkStats(
+              sentPings: event.usbSentPings,
+              receivedPings: event.usbReceivedPings,
+              receivedPongs: event.usbReceivedPongs,
+              timeouts: event.usbTimeouts,
+              rttMs: event.usbRttMs,
+            ),
+          ),
+        );
       case EdgezMeshEventType.voiceAudio:
         if (_state.voiceCall.isActive && event.packet.isNotEmpty) {
           _queueVoiceAudio(event.packet);
@@ -1011,28 +1075,30 @@ class EdgezMeshSession extends ChangeNotifier {
       _deviceStatusTimeout?.cancel();
       final localNode = packet.status.macAddress.toInt();
       final nodes = Map<int, EdgezMeshNode>.of(_state.nodes)..remove(localNode);
+      final status = EdgezMeshStatus(
+        supported: packet.status.supported,
+        stackInitialized: packet.status.stackInitialized,
+        meshMode: packet.status.meshMode,
+        linkUp: packet.status.linkUp,
+        routeReady: packet.status.routeReady,
+        readyForReport: packet.status.readyForReport,
+        meshId: packet.status.meshId,
+        ipAddress: packet.status.ipAddr,
+        gateway: packet.status.gateway,
+        macAddress: localNode,
+        licenseStatus: EdgezLicenseStatus.fromWire(
+          packet.status.licenseStatus.value,
+        ),
+        firmwareVersion: packet.status.firmwareVersion,
+      );
       _setState(
         _state.copyWith(
           statusLine: 'Device status received',
-          status: EdgezMeshStatus(
-            supported: packet.status.supported,
-            stackInitialized: packet.status.stackInitialized,
-            meshMode: packet.status.meshMode,
-            linkUp: packet.status.linkUp,
-            routeReady: packet.status.routeReady,
-            readyForReport: packet.status.readyForReport,
-            meshId: packet.status.meshId,
-            ipAddress: packet.status.ipAddr,
-            gateway: packet.status.gateway,
-            macAddress: localNode,
-            licenseStatus: EdgezLicenseStatus.fromWire(
-              packet.status.licenseStatus.value,
-            ),
-            firmwareVersion: packet.status.firmwareVersion,
-          ),
+          status: status,
           nodes: nodes,
         ),
       );
+      _updateLocationTrackingForStatus(status);
     }
 
     if (packet.hasDeviceSettings()) {
@@ -1552,9 +1618,9 @@ class EdgezMeshSession extends ChangeNotifier {
     if (!_bleReady) {
       _setState(
         _state.copyWith(
-          statusLine: _state.connection == EdgezConnectionType.ble
-              ? 'Settings saved; waiting for BLE control service'
-              : 'Settings saved; connect BLE to initialize device',
+          statusLine: _state.connection != EdgezConnectionType.none
+              ? 'Settings saved; waiting for device control service'
+              : 'Settings saved; connect BLE or USB to initialize device',
         ),
       );
       return;
@@ -1575,7 +1641,6 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Waiting for device status response',
       ));
       _startDeviceStatusTimeout();
-      _startLocationTracking();
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
     } finally {
@@ -1586,12 +1651,28 @@ class EdgezMeshSession extends ChangeNotifier {
   void _startLocationTracking() {
     _stopLocationTracking();
     final config = _lastMeshConfig;
-    if (config == null || !config.beacon.shareLocation || !_bleReady) return;
+    final status = _state.status;
+    if (config == null ||
+        !config.beacon.shareLocation ||
+        !_bleReady ||
+        status == null ||
+        !status.meshMode ||
+        !status.isUsable) {
+      return;
+    }
     unawaited(refreshSharedLocation());
     _locationUpdateTimer = Timer.periodic(
       Duration(seconds: config.beacon.normalizedIntervalSeconds),
       (_) => unawaited(refreshSharedLocation()),
     );
+  }
+
+  void _updateLocationTrackingForStatus(EdgezMeshStatus? status) {
+    if (status != null && status.meshMode && status.isUsable) {
+      _startLocationTracking();
+    } else {
+      _stopLocationTracking();
+    }
   }
 
   void _stopLocationTracking() {
@@ -1629,13 +1710,13 @@ class EdgezMeshSession extends ChangeNotifier {
     _deviceStatusTimeout?.cancel();
     if (_state.status != null) return;
     _deviceStatusTimeout = Timer(const Duration(seconds: 8), () {
-      if (_state.connection == EdgezConnectionType.ble &&
+      if (_state.connection != EdgezConnectionType.none &&
           _bleReady &&
           _state.status == null) {
         _setState(
           _state.copyWith(
             statusLine: 'No device status received after 8 seconds. '
-                'The phone connected, but BLE notifications or the device response may have failed.',
+                'The transport connected, but the device did not respond.',
           ),
         );
       }

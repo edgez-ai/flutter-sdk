@@ -78,6 +78,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   MarketplaceDriverInstallRequest? pendingDriverInstall;
   bool bleAutoConnect = false;
   EdgezBleDevice? selectedBleDevice;
+  List<EdgezUsbDevice> usbDevices = const <EdgezUsbDevice>[];
+  EdgezUsbDevice? selectedUsbDevice;
   EdgezOtaRelease? otaRelease;
   bool otaCheckInProgress = false;
   bool otaInstallInProgress = false;
@@ -591,6 +593,28 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     await session.connectBle(deviceId);
   }
 
+  Future<void> _refreshUsbDevices() async {
+    try {
+      final devices = await session.sdk.listUsbDevices();
+      if (mounted) setState(() => usbDevices = devices);
+    } on MissingPluginException {
+      // USB support requires a full Android rebuild after native changes.
+    }
+  }
+
+  Future<void> _connectUsbDevice(EdgezUsbDevice device) async {
+    await _saveAppSettings();
+    if (mounted) setState(() => selectedUsbDevice = device);
+    try {
+      await session.connectUsb(device);
+    } catch (error) {
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('USB connection failed: $error')),
+      );
+    }
+  }
+
   Future<void> _disconnect() async {
     await session.disconnect();
     setState(() {
@@ -1034,8 +1058,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   autoReplayReceivedVoice: autoReplayReceivedVoice,
                   deviceModeEnabled: deviceModeEnabled,
                   bleDevices: meshState.sortedBleDevices,
+                  usbDevices: usbDevices,
                   drivers: drivers,
                   selectedBleDevice: selectedBleDevice,
+                  selectedUsbDevice: selectedUsbDevice,
+                  usbLinkStats: meshState.usbLinkStats,
                   meshStatus: meshState.status,
                   bleAutoConnect: bleAutoConnect,
                   statusLine: meshState.statusLine,
@@ -1090,6 +1117,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                     setState(() => selectedBleDevice = device);
                     unawaited(bleConfigurationStore.saveSelectedDevice(device));
                   },
+                  onRefreshUsbDevices: _refreshUsbDevices,
+                  onConnectUsbDevice: (device) =>
+                      unawaited(_connectUsbDevice(device)),
                   onBleAutoConnectChanged: (value) {
                     setState(() => bleAutoConnect = value);
                     unawaited(bleConfigurationStore.setAutoConnect(value));

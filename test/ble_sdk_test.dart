@@ -102,6 +102,24 @@ void main() {
       );
     });
 
+    test('lists and connects an Android USB device', () async {
+      ble.results['listUsbDevices'] = <Object?>[
+        <Object?, Object?>{
+          'id': 7,
+          'name': 'ESP32-S3 USB JTAG/serial debug unit',
+          'vendorId': 0x303a,
+          'productId': 0x1001,
+        },
+      ];
+
+      final devices = await sdk.listUsbDevices();
+      await sdk.connectUsb(devices.single.id);
+
+      expect(devices.single.vendorId, 0x303a);
+      expect(devices.single.label, contains('303a:1001'));
+      expect(ble.callsFor('connectUsb').single.argumentMap['deviceId'], 7);
+    });
+
     test('returns the best known phone location from the platform', () async {
       ble.results['getBestKnownLocation'] = <Object?, Object?>{
         'latitude': 59.3293,
@@ -327,6 +345,51 @@ void main() {
       session.dispose();
     });
 
+    test('session initializes mesh over USB when USB becomes ready', () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final identity = await _newIdentity('USB user', 30, 40);
+      await session.initializeMesh(
+        EdgezMeshConfig(
+          identity: identity,
+          countryCode: 'US',
+          meshId: 'usb-mesh',
+          passphrase: 'usb-secret',
+          meshBandwidthMhz: 1,
+          meshFrequencyKhz: 902500,
+        ),
+      );
+      const device = EdgezUsbDevice(
+        id: 7,
+        name: 'ESP32-S3 USB',
+        vendorId: 0x303a,
+        productId: 0x1001,
+      );
+
+      await session.connectUsb(device);
+      ble.emitConnection(EdgezConnectionType.usb);
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+
+      expect(session.state.connection, EdgezConnectionType.usb);
+      expect(session.state.bleReady, isTrue);
+      final initPacket = ble.callsFor('initializeMesh').single.packet;
+      expect(initPacket.init.meshId, 'usb-mesh');
+      expect(initPacket.init.meshFrequencyKhz, 902500);
+
+      ble.emitUsbLinkStats(
+        sentPings: 3,
+        receivedPings: 2,
+        receivedPongs: 3,
+        rttMs: 12,
+      );
+      await ble.flushEvents();
+      expect(session.state.usbLinkStats.bidirectional, isTrue);
+      expect(session.state.usbLinkStats.rttMs, 12);
+
+      session.dispose();
+    });
+
     test('session sends periodic GPS with the dedicated protocol', () async {
       ble.results['getBestKnownLocation'] = <Object?, Object?>{
         'latitude': 59.3293,
@@ -339,17 +402,6 @@ void main() {
       ble.emitConnection(EdgezConnectionType.ble);
       ble.emitReady();
       await ble.flushEvents();
-      ble.emitPacket(
-        NetworkPacket(
-          status: HaLowInterfaceStatus(
-            supported: true,
-            stackInitialized: true,
-            meshMode: true,
-            firmwareVersion: '0.5.5',
-          ),
-        ),
-      );
-      await ble.flushEvents();
 
       await session.initializeMesh(
         EdgezMeshConfig(
@@ -360,6 +412,28 @@ void main() {
           ),
         ),
       );
+      await ble.flushEvents();
+
+      expect(
+        ble.callsFor('sendPacket').where(
+              (call) => call.argumentMap['label'] == 'GPS location update',
+            ),
+        isEmpty,
+      );
+
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(
+            supported: true,
+            stackInitialized: true,
+            meshMode: true,
+            linkUp: true,
+            routeReady: true,
+            firmwareVersion: '0.5.5',
+          ),
+        ),
+      );
+      await ble.flushEvents();
       await ble.flushEvents();
 
       final locationCalls = ble.callsFor('sendPacket').where(

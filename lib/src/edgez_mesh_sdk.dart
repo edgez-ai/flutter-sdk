@@ -189,6 +189,19 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('connectBle', {'deviceId': deviceId});
   }
 
+  Future<List<EdgezUsbDevice>> listUsbDevices() async {
+    final result =
+        await _transport.invokeMethod<List<Object?>>('listUsbDevices');
+    return (result ?? const <Object?>[])
+        .whereType<Map>()
+        .map((item) => EdgezUsbDevice.fromMap(item.cast<Object?, Object?>()))
+        .toList(growable: false);
+  }
+
+  Future<void> connectUsb(int deviceId) {
+    return _transport.invokeMethod<void>('connectUsb', {'deviceId': deviceId});
+  }
+
   Future<void> disconnect() {
     return _transport.invokeMethod<void>('disconnect');
   }
