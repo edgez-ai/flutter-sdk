@@ -226,6 +226,7 @@ class EdgezMeshSession extends ChangeNotifier {
   var _bleReady = false;
   Timer? _deviceStatusTimeout;
   Timer? _locationUpdateTimer;
+  Duration? _locationUpdateInterval;
   Timer? _voiceCallTimeout;
   var _provisioning = false;
   var _initInFlight = false;
@@ -590,6 +591,9 @@ class EdgezMeshSession extends ChangeNotifier {
     _lastMeshConfig = config;
     if (!config.beacon.shareLocation) _stopLocationTracking();
     await _sendInitIfReady(force: true);
+    if (config.beacon.shareLocation) {
+      _updateLocationTrackingForStatus(_state.status);
+    }
   }
 
   /// Requests a current phone fix and broadcasts it through the connected
@@ -730,6 +734,7 @@ class EdgezMeshSession extends ChangeNotifier {
         status: 'Failed: $error',
         statusLine: 'Message send failed: $error',
       );
+      rethrow;
     }
   }
 
@@ -817,9 +822,10 @@ class EdgezMeshSession extends ChangeNotifier {
         fromNode: fromNode,
         totalBytes: totalBytes,
         maxHop: _lastMeshConfig?.maxHop ?? 0,
-        // Both BLE and USB share a 512-byte transport payload limit. The
-        // compact frame stays below it; the legacy protobuf envelope can grow
-        // to 526 bytes with a full speed-test chunk.
+        // Speed/voice data uses the dedicated realtime transport on both BLE
+        // and USB. Wrapping a speed frame in NetworkPacket is not safe here:
+        // the firmware's protobuf MessageBody payload is limited to 420 bytes
+        // before the speed-frame header is added.
         compactTransport: true,
         onProgress: onProgress,
       );
@@ -1495,6 +1501,15 @@ class EdgezMeshSession extends ChangeNotifier {
     if (fromNode == 0) return;
     final frame = EdgezSpeedTestFrame.tryDecode(payload);
     if (frame == null) return;
+    if (frame.type != EdgezSpeedTestFrameType.data ||
+        frame.chunkIndex == 0 ||
+        (frame.chunkIndex + 1) % 128 == 0) {
+      debugPrint(
+        'EdgeZ speed RX from=${fromNode.toRadixString(16)} '
+        'type=${frame.type.name} chunk=${frame.chunkIndex}/${frame.totalChunks} '
+        'data=${frame.data.length}',
+      );
+    }
     final key = '$fromNode:${frame.transferId}';
     if (frame.type == EdgezSpeedTestFrameType.start) {
       _pendingSpeedTests.remove(key)?.timer?.cancel();
@@ -1563,6 +1578,13 @@ class EdgezMeshSession extends ChangeNotifier {
       updatedAtMs: now,
     );
     _setState(_state.copyWith(linkStats: linkStats));
+    if (finalResult) {
+      debugPrint(
+        'EdgeZ speed result from=${fromNode.toRadixString(16)} '
+        'bps=${bitsPerSecond.toStringAsFixed(0)} loss=${lossPercent.toStringAsFixed(2)}% '
+        'received=${pending.receivedChunks}/$expectedPackets bytes=${pending.receivedBytes}',
+      );
+    }
   }
 
   _CompletedVoiceMessage? _storeVoiceChunk(int nodeNum, EdgezVoiceChunk chunk) {
@@ -1694,7 +1716,6 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   void _startLocationTracking() {
-    _stopLocationTracking();
     final config = _lastMeshConfig;
     final status = _state.status;
     if (config == null ||
@@ -1705,9 +1726,21 @@ class EdgezMeshSession extends ChangeNotifier {
         !status.isUsable) {
       return;
     }
+    // Refresh GPS at half the beacon interval. Do not restart this timer for
+    // every repeated status packet: restarting also triggers an immediate GPS
+    // update and was the source of overly frequent transmissions.
+    final refreshInterval = Duration(
+      seconds: max(5, (config.beacon.normalizedIntervalSeconds / 2).ceil()),
+    );
+    if (_locationUpdateTimer?.isActive == true &&
+        _locationUpdateInterval == refreshInterval) {
+      return;
+    }
+    _stopLocationTracking();
+    _locationUpdateInterval = refreshInterval;
     unawaited(refreshSharedLocation());
     _locationUpdateTimer = Timer.periodic(
-      Duration(seconds: config.beacon.normalizedIntervalSeconds),
+      refreshInterval,
       (_) => unawaited(refreshSharedLocation()),
     );
   }
@@ -1723,6 +1756,7 @@ class EdgezMeshSession extends ChangeNotifier {
   void _stopLocationTracking() {
     _locationUpdateTimer?.cancel();
     _locationUpdateTimer = null;
+    _locationUpdateInterval = null;
   }
 
   bool _isValidSharedLocation(EdgezLocation location) {

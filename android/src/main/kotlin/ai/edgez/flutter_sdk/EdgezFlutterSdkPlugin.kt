@@ -66,13 +66,14 @@ private const val USB_HEARTBEAT_INTERVAL_MS = 2_000L
 private const val LEGACY_USB_VERSION: Byte = 1
 private const val LEGACY_USB_ECHO_REQUEST: Byte = 1
 private const val LEGACY_USB_ECHO_RESPONSE: Byte = 2
+private const val LEGACY_USB_TX_ACK: Byte = 3
 private const val LEGACY_USB_HEADER_LEN = 8
 private const val LEGACY_USB_MAX_PAYLOAD = 256
 private const val EDGEZ_TINYUSB_VID = 0x303A
 private const val EDGEZ_TINYUSB_CDC_PID = 0x4001
 private const val CP2102_VID = 0x10C4
 private const val CP2102_PID = 0xEA60
-private const val USB_CDC_BAUD = 115_200
+private const val USB_CDC_BAUD = 921_600
 private const val LOCATION_REFRESH_TIMEOUT_MS = 10_000L
 private const val LOG_TAG = "EdgezFlutterSdk"
 private const val VOICE_CODEC_AMR_NB = 1
@@ -204,6 +205,12 @@ class EdgezFlutterSdkPlugin :
     private var usbPingSentAtMs = 0L
     private var usbLastRttMs = 0L
     private var usbProtocolReady = false
+    // The firmware acknowledges every application frame after accepting it
+    // from the serial stream. Track control and realtime traffic together so
+    // a caller cannot report a text/voice frame as sent while it is still
+    // queued (or already dropped) on the device.
+    private var usbApplicationFramesSent = 0L
+    private var usbApplicationFramesAcked = 0L
 
     private val bluetoothAdapter: BluetoothAdapter?
         get() = context.getSystemService(BluetoothManager::class.java)?.adapter
@@ -638,6 +645,14 @@ class EdgezFlutterSdkPlugin :
                 }
             }
             markUsbProtocolReady()
+        } else if (type == LEGACY_USB_TX_ACK) {
+            synchronized(usbStatsLock) {
+                usbApplicationFramesAcked++
+                usbStatsLock.notifyAll()
+            }
+            // ACKs can arrive for every application frame. Do not turn them into
+            // high-frequency UI heartbeat-stat events.
+            return
         }
         emitUsbLinkStats()
     }
@@ -699,6 +714,9 @@ class EdgezFlutterSdkPlugin :
             usbPingSentAtMs = 0
             usbLastRttMs = 0
             usbProtocolReady = false
+            usbApplicationFramesSent = 0
+            usbApplicationFramesAcked = 0
+            usbStatsLock.notifyAll()
         }
         if (wasConnected && emitDisconnected) {
             emit(mapOf("type" to "connection", "connection" to "none"))
@@ -715,6 +733,7 @@ class EdgezFlutterSdkPlugin :
             val port = usbSerialPort ?: throw IllegalStateException("USB UART is not connected")
             port.write(frame, USB_IO_TIMEOUT_MS)
         }
+        synchronized(usbStatsLock) { usbApplicationFramesSent++ }
         "USB UART frame sent"
     }
 
@@ -822,6 +841,7 @@ class EdgezFlutterSdkPlugin :
                     result.error("voice_frame_invalid", "Voice crypto envelope is missing", null)
                     return
                 }
+                val waitForDrainMs = call.argument<Int>("waitForDrainMs") ?: 0
                 sendVoiceCallFrame(
                     to = call.argument<Long>("to") ?: 0L,
                     maxHop = call.argument<Int>("maxHop") ?: 0,
@@ -829,7 +849,26 @@ class EdgezFlutterSdkPlugin :
                     nonce = nonce,
                     ciphertext = ciphertext,
                 ).fold(
-                    onSuccess = { result.success(it) },
+                    onSuccess = {
+                        if (waitForDrainMs <= 0) {
+                            result.success(it)
+                        } else {
+                            thread(name = "edgez-voice-call-tx-drain") {
+                                waitForApplicationTxDrain(waitForDrainMs).fold(
+                                    onSuccess = { mainHandler.post { result.success(null) } },
+                                    onFailure = {
+                                        mainHandler.post {
+                                            result.error(
+                                                "voice_write_timeout",
+                                                it.message ?: "Voice write did not complete",
+                                                null,
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    },
                     onFailure = {
                         result.error("voice_write_failed", it.message ?: "Voice write failed", null)
                     },
@@ -853,7 +892,7 @@ class EdgezFlutterSdkPlugin :
                             result.success(null)
                         } else {
                             thread(name = "edgez-speed-tx-drain") {
-                                waitForVoiceTxDrain(waitForDrainMs).fold(
+                                waitForApplicationTxDrain(waitForDrainMs).fold(
                                     onSuccess = { mainHandler.post { result.success(null) } },
                                     onFailure = {
                                         mainHandler.post {
@@ -961,6 +1000,12 @@ class EdgezFlutterSdkPlugin :
                 if (label.contains("location", ignoreCase = true)) {
                     Log.i(LOG_TAG, "GPS TX label=$label bytes=${packet.size}")
                     logGpsPacket(packet, "tx")
+                }
+                if (label.contains("conversation", ignoreCase = true)) {
+                    Log.i(
+                        LOG_TAG,
+                        "EdgeZ TX label=$label route=${activeTransportName()} bytes=${packet.size}",
+                    )
                 }
                 sendFrame(packet, writeWithoutResponse).fold(
                     onSuccess = {
@@ -1600,9 +1645,27 @@ class EdgezFlutterSdkPlugin :
         }
     }
 
-    private fun waitForVoiceTxDrain(timeoutMs: Int): Result<String> {
+    private fun waitForApplicationTxDrain(timeoutMs: Int): Result<String> {
         if (gatt == null && usbConnection != null) {
-            return Result.success("USB realtime TX complete")
+            val deadline = System.currentTimeMillis() + timeoutMs
+            synchronized(usbStatsLock) {
+                val target = usbApplicationFramesSent
+                while (usbApplicationFramesAcked < target && usbRunning.get()) {
+                    val remaining = deadline - System.currentTimeMillis()
+                    if (remaining <= 0) break
+                    usbStatsLock.wait(remaining)
+                }
+                return if (usbApplicationFramesAcked >= target) {
+                    Result.success("USB application TX acknowledged")
+                } else {
+                    Result.failure(
+                        IllegalStateException(
+                            "USB application TX acknowledgement timed out " +
+                                "($usbApplicationFramesAcked/$target)",
+                        ),
+                    )
+                }
+            }
         }
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
@@ -1926,7 +1989,7 @@ class EdgezFlutterSdkPlugin :
 
     private fun waitForControlTxDrain(timeoutMs: Int): Result<String> {
         if (gatt == null && usbConnection != null) {
-            return Result.success("USB control TX complete")
+            return waitForApplicationTxDrain(timeoutMs)
         }
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
@@ -2482,7 +2545,8 @@ class EdgezFlutterSdkPlugin :
                 payload[0] == EDGEZ_MAGIC_0 && payload[1] == EDGEZ_MAGIC_1 &&
                 payload[2] == LEGACY_USB_VERSION &&
                 (payload[3] == LEGACY_USB_ECHO_REQUEST ||
-                    payload[3] == LEGACY_USB_ECHO_RESPONSE)
+                    payload[3] == LEGACY_USB_ECHO_RESPONSE ||
+                    payload[3] == LEGACY_USB_TX_ACK)
             ) {
                 val echoPayloadLen = (payload[6].toInt() and 0xff) or
                     ((payload[7].toInt() and 0xff) shl 8)

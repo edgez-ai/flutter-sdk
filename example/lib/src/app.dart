@@ -962,10 +962,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     lastPersistSignature = _persistenceSignature(session.state);
   }
 
-  void _sendMessage(String text) {
+  Future<void> _sendMessage(String text) async {
     final nodeNum = selectedNodeNum;
     if (nodeNum == null) return;
-    session.sendTextMessage(
+    await session.sendTextMessage(
       toNode: nodeNum,
       text: text,
       maxHop: int.tryParse(maxHop) ?? 0,

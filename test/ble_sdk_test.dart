@@ -468,6 +468,28 @@ void main() {
         locationCalls.single.packet.locationUpdate.latitude,
         closeTo(59.3293, 0.0001),
       );
+
+      // Repeated status reports must not restart location tracking and cause
+      // another immediate GPS transmission.
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(
+            supported: true,
+            stackInitialized: true,
+            meshMode: true,
+            linkUp: true,
+            routeReady: true,
+            firmwareVersion: '0.5.5',
+          ),
+        ),
+      );
+      await ble.flushEvents();
+      expect(
+        ble.callsFor('sendPacket').where(
+              (call) => call.argumentMap['label'] == 'GPS location update',
+            ),
+        hasLength(1),
+      );
       session.dispose();
     });
 
@@ -790,6 +812,10 @@ void main() {
       await session.startVoiceCall(0x223344556677);
       expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.outgoing);
       expect(ble.callsFor('sendVoiceCallFrame'), hasLength(1));
+      expect(
+        ble.callsFor('sendVoiceCallFrame').first.argumentMap['waitForDrainMs'],
+        1500,
+      );
 
       await session.endVoiceCall();
       expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.idle);
@@ -946,6 +972,7 @@ void main() {
       expect(packet.to.toInt(), 0x200);
       expect(packet.msg.mime, Mime.MIME_TEXT);
       expect(packet.msg.payload, isNotEmpty);
+      expect(ble.lastPacketCall.argumentMap['waitForDrainMs'], 3000);
       final frame = ble.transmittedFrames.single;
       expect(frame.sublist(0, 2), <int>[0x45, 0x5a]);
       expect(frame[2] | (frame[3] << 8), packet.writeToBuffer().length);
@@ -1007,6 +1034,67 @@ void main() {
       expect(incomingSender?.displayName, sender.name);
       receiverSession.dispose();
       await receiverBle.close();
+    });
+
+    test('recorded voice chunks request transport drain back-pressure',
+        () async {
+      final sender = await _newIdentity('Voice sender', 300, 301);
+      final receiver = await _newIdentity('Voice receiver', 400, 401);
+      final receiverNode = EdgezMeshNode(
+        nodeNum: 0x400,
+        userUuid: '',
+        displayName: receiver.name,
+        route: 'USB',
+        lastSeenMs: 1,
+        marker: 'blue',
+        publicKey: receiver.publicKey,
+        deviceType: 'User',
+      );
+
+      await sdk.sendVoiceMessage(
+        config: EdgezMeshConfig(identity: sender),
+        toNode: receiverNode,
+        fromNode: 0x300,
+        bytes: List<int>.generate(600, (index) => index & 0xff),
+        durationMs: 1000,
+        codec: 1,
+      );
+
+      final calls = ble.callsFor('sendPacket').toList(growable: false);
+      expect(calls, hasLength(3));
+      expect(
+        calls.every((call) => call.argumentMap['waitForDrainMs'] == 3000),
+        isTrue,
+      );
+      expect(calls.every((call) => call.packet.msg.mime == Mime.MIME_VOICE),
+          isTrue);
+
+      final receiverTransport = MockBleTransport();
+      final receiverSdk = EdgezMeshSdk(transport: receiverTransport);
+      final decodedAudio = <int>[];
+      for (var index = 0; index < calls.length; index++) {
+        final chunk = await receiverSdk.decryptVoiceChunk(
+          config: EdgezMeshConfig(identity: receiver),
+          sender: EdgezMeshNode(
+            nodeNum: 0x300,
+            userUuid: '',
+            displayName: sender.name,
+            route: 'USB',
+            lastSeenMs: 1,
+            marker: 'blue',
+            publicKey: sender.publicKey,
+            deviceType: 'User',
+          ),
+          fromNode: 0x300,
+          toNode: 0x400,
+          payload: calls[index].packet.msg.payload,
+        );
+        expect(chunk.index, index);
+        expect(chunk.totalChunks, calls.length);
+        decodedAudio.addAll(chunk.audio);
+      }
+      expect(decodedAudio, List<int>.generate(600, (index) => index & 0xff));
+      await receiverTransport.close();
     });
 
     test('speed test sends exactly 2 MiB as binary streaming frames', () async {
@@ -1077,6 +1165,25 @@ void main() {
         EdgezSpeedTestFrameType.end,
       ]);
       expect(calls.last.argumentMap['waitForDrainMs'], 10000);
+    });
+
+    test('BLE protobuf speed frames stay within 512 bytes', () async {
+      await sdk.sendSpeedTest(
+        toNode: 0x200,
+        fromNode: 0x100,
+        totalBytes: 848,
+      );
+
+      final calls = ble.callsFor('sendPacket').toList(growable: false);
+      expect(calls, hasLength(5));
+      expect(calls.every((call) => call.packet.writeToBuffer().length <= 512),
+          isTrue);
+      expect(
+        calls
+            .where((call) => call.packet.hasMsg())
+            .every((call) => call.packet.msg.payload.length <= 420),
+        isTrue,
+      );
     });
 
     test('receiver updates link indicators without adding chat messages',

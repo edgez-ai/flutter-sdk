@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:fixnum/fixnum.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'models.dart';
@@ -157,11 +158,19 @@ class EdgezMeshSdk {
   final EdgezPlatformTransport _transport;
   final EdgezSdkReleaseCredential _releaseCredential;
   static const _voiceChunkAudioBytes = 290;
+  static const _conversationDrainTimeoutMs = 3000;
+  static const _voiceCallDrainTimeoutMs = 1500;
   static const speedTestBytes = 2 * 1024 * 1024;
   // 448 data bytes + the 26-byte speed header exactly fills the firmware's
   // 512-byte HaLow vendor payload after its 38-byte route prefix. This avoids
   // leaving radio airtime unused without triggering link-layer fragmentation.
   static const _speedTestChunkBytes = 448;
+  // BLE's compatibility path wraps the speed frame in NetworkPacket protobuf.
+  // Leave room for that variable-length envelope so the fully encoded packet
+  // remains below the shared 512-byte BLE/USB transport limit.
+  // Nanopb reserves at most 420 bytes for MessageBody.payload; the encoded
+  // speed-frame header must fit inside that field as well.
+  static const _legacySpeedTestChunkBytes = 384;
   static const _speedTestDrainBatchChunks = 6;
   static const _speedTestDrainTimeoutMs = 10000;
   static const _speedTestProgressInterval = Duration(seconds: 10);
@@ -363,6 +372,9 @@ class EdgezMeshSdk {
       'sequence': sequence,
       'nonce': Uint8List.fromList(encrypted.nonce),
       'ciphertext': Uint8List.fromList(encrypted.ciphertext),
+      // USB uses firmware acknowledgements for back-pressure. BLE uses its
+      // characteristic write completion, so this is safe for both transports.
+      'waitForDrainMs': _voiceCallDrainTimeoutMs,
     });
   }
 
@@ -633,6 +645,10 @@ class EdgezMeshSdk {
     await _transport.invokeMethod<void>('sendPacket', {
       'label': 'Conversation message',
       'packet': Uint8List.fromList(packet.writeToBuffer()),
+      // Do not report a message as sent while it is only waiting in Android's
+      // BLE queue. This is also a useful back-pressure point after a speed or
+      // voice transfer.
+      'waitForDrainMs': _conversationDrainTimeoutMs,
     });
     return _formatUuid(messageId.$1, messageId.$2);
   }
@@ -650,7 +666,9 @@ class EdgezMeshSdk {
     }
     final transferId =
         DateTime.now().microsecondsSinceEpoch & 0x7fffffffffffffff;
-    final totalChunks = (totalBytes / _speedTestChunkBytes).ceil();
+    final chunkBytes =
+        compactTransport ? _speedTestChunkBytes : _legacySpeedTestChunkBytes;
+    final totalChunks = (totalBytes / chunkBytes).ceil();
     final messageId = compactTransport ? null : _newMessageId();
 
     Future<void> sendFrame(
@@ -696,10 +714,14 @@ class EdgezMeshSdk {
       ),
       1,
     );
+    debugPrint(
+      'EdgeZ speed TX start transport=${compactTransport ? 'compact' : 'protobuf'} '
+      'transfer=$transferId chunks=$totalChunks bytes=$totalBytes',
+    );
     var sentBytes = 0;
     var lastProgressAt = DateTime.now();
     for (var index = 0; index < totalChunks; index++) {
-      final length = min(_speedTestChunkBytes, totalBytes - sentBytes);
+      final length = min(chunkBytes, totalBytes - sentBytes);
       final data = Uint8List(length);
       for (var offset = 0; offset < length; offset++) {
         data[offset] = (index + offset) & 0xff;
@@ -718,6 +740,12 @@ class EdgezMeshSdk {
         waitForDrain: (index + 1) % _speedTestDrainBatchChunks == 0,
       );
       sentBytes += length;
+      if (index == 0 || (index + 1) % 128 == 0) {
+        debugPrint(
+          'EdgeZ speed TX data transfer=$transferId chunk=${index + 1}/$totalChunks '
+          'sent=$sentBytes',
+        );
+      }
       final now = DateTime.now();
       if (sentBytes == totalBytes ||
           now.difference(lastProgressAt) >= _speedTestProgressInterval) {
@@ -733,6 +761,9 @@ class EdgezMeshSdk {
       ),
       totalChunks + 2,
       waitForDrain: true,
+    );
+    debugPrint(
+      'EdgeZ speed TX end transfer=$transferId chunks=$totalChunks bytes=$sentBytes',
     );
     return transferId.toRadixString(16).padLeft(16, '0');
   }
@@ -807,6 +838,10 @@ class EdgezMeshSdk {
       await _transport.invokeMethod<void>('sendPacket', {
         'label': 'Voice chunk ${index + 1}/$totalChunks',
         'packet': Uint8List.fromList(packet.writeToBuffer()),
+        // Pace chunks at the transport boundary. In particular, a 921600-baud
+        // USB UART can otherwise fill the firmware queue much faster than the
+        // mesh radio can transmit it.
+        'waitForDrainMs': _conversationDrainTimeoutMs,
       });
     }
     return _formatUuid(messageId.$1, messageId.$2);

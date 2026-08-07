@@ -29,7 +29,7 @@ class ConversationScreen extends StatefulWidget {
   final List<EdgezSensorSample> sensorSamples;
   final EdgezLinkStats? linkStats;
   final VoidCallback onBack;
-  final ValueChanged<String> onSendMessage;
+  final Future<void> Function(String) onSendMessage;
   final Future<bool> Function() onStartVoiceMessage;
   final Future<void> Function(bool send) onStopVoiceMessage;
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
@@ -330,11 +330,18 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 const SizedBox(width: 8),
                 FilledButton(
                   onPressed: canSend
-                      ? () {
+                      ? () async {
                           final text = controller.text.trim();
-                          widget.onSendMessage(text);
-                          controller.clear();
-                          setState(() => status = 'Sent');
+                          setState(() => status = 'Sending');
+                          try {
+                            await widget.onSendMessage(text);
+                            if (!mounted) return;
+                            controller.clear();
+                            setState(() => status = 'Sent to device');
+                          } catch (error) {
+                            if (!mounted) return;
+                            setState(() => status = 'Send failed: $error');
+                          }
                         }
                       : null,
                   child: const Text('Send'),

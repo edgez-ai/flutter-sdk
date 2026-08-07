@@ -213,8 +213,7 @@ void main() {
     expect(find.text('Device connection'), findsOneWidget);
   });
 
-  testWidgets('connection selector offers BLE and USB devices',
-      (tester) async {
+  testWidgets('connection selector offers BLE and USB devices', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
@@ -270,7 +269,7 @@ void main() {
             ),
             callState: const EdgezVoiceCallState(),
             onBack: () {},
-            onSendMessage: (_) {},
+            onSendMessage: (_) async {},
             onStartVoiceMessage: () async => true,
             onStopVoiceMessage: (_) async {},
             onReplayVoiceMessage: (_) {},
