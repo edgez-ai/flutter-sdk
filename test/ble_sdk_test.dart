@@ -1247,6 +1247,11 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 1100));
 
       final completed = session.state.linkStats[fromNode];
+      expect(session.state.sharedLinkStats, isNotNull);
+      expect(
+        session.state.sharedLinkStats?.packetLossPercent,
+        closeTo(33.33, 0.01),
+      );
       expect(completed?.bitsPerSecond, greaterThan(0));
       expect(completed?.packetLossPercent, closeTo(33.33, 0.01));
       expect(completed?.receivedPackets, 2);

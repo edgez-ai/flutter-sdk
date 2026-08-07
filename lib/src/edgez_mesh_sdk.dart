@@ -215,6 +215,13 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('disconnect');
   }
 
+  Future<int> reportUsbPacketLoss(double lossPercent) async {
+    return await _transport.invokeMethod<int>('reportUsbPacketLoss', {
+          'lossPercent': lossPercent,
+        }) ??
+        3;
+  }
+
   Future<EdgezLocation?> getBestKnownLocation() async {
     final result = await _transport.invokeMethod<Object?>(
       'getBestKnownLocation',
@@ -621,6 +628,7 @@ class EdgezMeshSdk {
     required int fromNode,
     required String text,
     int maxHop = 0,
+    void Function(int packetBytes, int sequence)? onPacketSent,
   }) async {
     final messageId = _newMessageId();
     final encrypted = await _encryptConversationPayload(
@@ -642,14 +650,16 @@ class EdgezMeshSdk {
         payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
       ),
     );
+    final packetBytes = Uint8List.fromList(packet.writeToBuffer());
     await _transport.invokeMethod<void>('sendPacket', {
       'label': 'Conversation message',
-      'packet': Uint8List.fromList(packet.writeToBuffer()),
+      'packet': packetBytes,
       // Do not report a message as sent while it is only waiting in Android's
       // BLE queue. This is also a useful back-pressure point after a speed or
       // voice transfer.
       'waitForDrainMs': _conversationDrainTimeoutMs,
     });
+    onPacketSent?.call(packetBytes.length, 1);
     return _formatUuid(messageId.$1, messageId.$2);
   }
 
@@ -798,6 +808,7 @@ class EdgezMeshSdk {
     required int durationMs,
     required int codec,
     int maxHop = 0,
+    void Function(int packetBytes, int sequence)? onPacketSent,
   }) async {
     if (bytes.isEmpty) {
       throw StateError('Voice payload is empty');
@@ -835,14 +846,16 @@ class EdgezMeshSdk {
           payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
         ),
       );
+      final packetBytes = Uint8List.fromList(packet.writeToBuffer());
       await _transport.invokeMethod<void>('sendPacket', {
         'label': 'Voice chunk ${index + 1}/$totalChunks',
-        'packet': Uint8List.fromList(packet.writeToBuffer()),
+        'packet': packetBytes,
         // Pace chunks at the transport boundary. In particular, a 921600-baud
         // USB UART can otherwise fill the firmware queue much faster than the
         // mesh radio can transmit it.
         'waitForDrainMs': _conversationDrainTimeoutMs,
       });
+      onPacketSent?.call(packetBytes.length, index + 1);
     }
     return _formatUuid(messageId.$1, messageId.$2);
   }

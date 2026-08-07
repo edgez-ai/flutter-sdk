@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:collection';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -69,6 +71,7 @@ class EdgezMeshState {
     required this.statusLine,
     required this.bleReady,
     this.usbLinkStats = const EdgezUsbLinkStats(),
+    this.sharedLinkStats,
     this.bleConnecting = false,
     this.deviceSettings,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
@@ -116,6 +119,7 @@ class EdgezMeshState {
   final String statusLine;
   final bool bleReady;
   final EdgezUsbLinkStats usbLinkStats;
+  final EdgezLinkStats? sharedLinkStats;
   final bool bleConnecting;
   final EdgezDeviceSettings? deviceSettings;
 
@@ -154,6 +158,7 @@ class EdgezMeshState {
     String? statusLine,
     bool? bleReady,
     EdgezUsbLinkStats? usbLinkStats,
+    EdgezLinkStats? sharedLinkStats,
     bool? bleConnecting,
     EdgezDeviceSettings? deviceSettings,
     bool clearDeviceSettings = false,
@@ -175,6 +180,7 @@ class EdgezMeshState {
       statusLine: statusLine ?? this.statusLine,
       bleReady: bleReady ?? this.bleReady,
       usbLinkStats: usbLinkStats ?? this.usbLinkStats,
+      sharedLinkStats: sharedLinkStats ?? this.sharedLinkStats,
       bleConnecting: bleConnecting ?? this.bleConnecting,
       deviceSettings:
           clearDeviceSettings ? null : deviceSettings ?? this.deviceSettings,
@@ -240,6 +246,10 @@ class EdgezMeshSession extends ChangeNotifier {
       <String, _PendingVoiceMessage>{};
   final Map<String, _PendingSpeedTest> _pendingSpeedTests =
       <String, _PendingSpeedTest>{};
+  final ListQueue<_SpeedMeasurement> _speedMeasurements =
+      ListQueue<_SpeedMeasurement>(5);
+  final _TransportTrafficMeter _trafficMeter = _TransportTrafficMeter();
+  static const int _speedMovingAverageWindow = 5;
   static const Set<String> _knownMarkerIds = <String>{
     'default',
     'red',
@@ -721,6 +731,12 @@ class EdgezMeshSession extends ChangeNotifier {
         fromNode: fromNode,
         text: text,
         maxHop: maxHop,
+        onPacketSent: (packetBytes, sequence) => _recordTransportTraffic(
+          byteCount: packetBytes,
+          streamKey: 'conversation-tx:$pendingUuid',
+          sequence: sequence,
+          receivedAtUs: 0,
+        ),
       );
       _replaceMessage(
         pendingUuid,
@@ -789,6 +805,12 @@ class EdgezMeshSession extends ChangeNotifier {
         durationMs: durationMs,
         codec: codec,
         maxHop: maxHop,
+        onPacketSent: (packetBytes, sequence) => _recordTransportTraffic(
+          byteCount: packetBytes,
+          streamKey: 'voice-message-tx:$pendingUuid',
+          sequence: sequence,
+          receivedAtUs: 0,
+        ),
       );
       _replaceMessage(
         pendingUuid,
@@ -969,7 +991,7 @@ class EdgezMeshSession extends ChangeNotifier {
           ),
         );
       case EdgezMeshEventType.packet:
-        _handlePacket(event.packet);
+        _handlePacket(event.packet, receivedAtUs: event.receivedAtUs);
       case EdgezMeshEventType.ready:
         _bleReady = true;
         _setState(_state.copyWith(
@@ -1016,6 +1038,14 @@ class EdgezMeshSession extends ChangeNotifier {
       case EdgezMeshEventType.message:
         final message = event.message;
         if (message == null) return;
+        _recordTransportTraffic(
+          byteCount: message.voiceBytes.isNotEmpty
+              ? message.voiceBytes.length
+              : utf8.encode(message.text).length,
+          streamKey: null,
+          sequence: null,
+          receivedAtUs: message.timestampMs * 1000,
+        );
         final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
         nodes.putIfAbsent(
           message.nodeNum,
@@ -1050,7 +1080,11 @@ class EdgezMeshSession extends ChangeNotifier {
         for (var index = 0; index < 6; index++) {
           fromNode = (fromNode << 8) | event.packet[index];
         }
-        _handleSpeedTestFrame(fromNode, event.packet.sublist(6));
+        _handleSpeedTestFrame(
+          fromNode,
+          event.packet.sublist(6),
+          receivedAtUs: event.receivedAtUs,
+        );
       case EdgezMeshEventType.usbLinkStats:
         _setState(
           _state.copyWith(
@@ -1097,10 +1131,19 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  void _handlePacket(List<int> packetBytes) {
+  void _handlePacket(List<int> packetBytes, {required int receivedAtUs}) {
     if (packetBytes.isEmpty) return;
     final packet = _parseNetworkPacket(packetBytes);
     if (packet == null) return;
+    _recordTransportTraffic(
+      byteCount: packetBytes.length,
+      streamKey: packet.hasMsg()
+          ? 'protobuf:${packet.from}:${packet.msg.messageIdHigh}:'
+              '${packet.msg.messageIdLow}'
+          : null,
+      sequence: packet.hasMsg() ? packet.msg.sequence : null,
+      receivedAtUs: receivedAtUs,
+    );
 
     if (packet.hasStatus()) {
       _deviceStatusTimeout?.cancel();
@@ -1392,7 +1435,12 @@ class EdgezMeshSession extends ChangeNotifier {
     if (!packet.hasMsg()) return;
     final message = packet.msg;
     if (message.mime == proto.Mime.MIME_BINARY) {
-      _handleSpeedTestFrame(packet.from.toInt(), message.payload);
+      _handleSpeedTestFrame(
+        packet.from.toInt(),
+        message.payload,
+        receivedAtUs: 0,
+        countTransportTraffic: false,
+      );
       return;
     }
     if (message.mime != proto.Mime.MIME_TEXT &&
@@ -1497,10 +1545,27 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  void _handleSpeedTestFrame(int fromNode, List<int> payload) {
+  void _handleSpeedTestFrame(
+    int fromNode,
+    List<int> payload, {
+    required int receivedAtUs,
+    bool countTransportTraffic = true,
+  }) {
     if (fromNode == 0) return;
     final frame = EdgezSpeedTestFrame.tryDecode(payload);
     if (frame == null) return;
+    if (countTransportTraffic) {
+      _recordTransportTraffic(
+        byteCount: payload.length + 6,
+        streamKey: frame.type == EdgezSpeedTestFrameType.data
+            ? 'speed:$fromNode:${frame.transferId}'
+            : null,
+        sequence: frame.type == EdgezSpeedTestFrameType.data
+            ? frame.chunkIndex
+            : null,
+        receivedAtUs: receivedAtUs,
+      );
+    }
     if (frame.type != EdgezSpeedTestFrameType.data ||
         frame.chunkIndex == 0 ||
         (frame.chunkIndex + 1) % 128 == 0) {
@@ -1526,7 +1591,11 @@ class EdgezMeshSession extends ChangeNotifier {
       return;
     }
     if (frame.type == EdgezSpeedTestFrameType.data) {
-      pending.put(frame.chunkIndex, frame.data.length);
+      pending.put(
+        frame.chunkIndex,
+        frame.data.length,
+        receivedAtUs > 0 ? receivedAtUs : DateTime.now().microsecondsSinceEpoch,
+      );
       if (pending.shouldPublish) {
         _publishLinkStats(fromNode, pending, finalResult: false);
       }
@@ -1555,33 +1624,89 @@ class EdgezMeshSession extends ChangeNotifier {
     _publishLinkStats(fromNode, pending, finalResult: true);
   }
 
+  void _recordTransportTraffic({
+    required int byteCount,
+    required String? streamKey,
+    required int? sequence,
+    required int receivedAtUs,
+  }) {
+    final snapshot = _trafficMeter.record(
+      byteCount: byteCount,
+      streamKey: streamKey,
+      sequence: sequence,
+      receivedAtUs: receivedAtUs > 0
+          ? receivedAtUs
+          : DateTime.now().microsecondsSinceEpoch,
+    );
+    if (snapshot != null) {
+      _setState(_state.copyWith(sharedLinkStats: snapshot));
+    }
+  }
+
   void _publishLinkStats(
     int fromNode,
     _PendingSpeedTest pending, {
     required bool finalResult,
   }) {
-    final elapsedMs = max(1, pending.elapsedMilliseconds);
-    final bitsPerSecond = pending.receivedBytes * 8 * 1000 / elapsedMs;
+    final elapsedUs = max(1, pending.elapsedMicroseconds);
+    final rawBitsPerSecond = pending.receivedBytes * 8 * 1000000 / elapsedUs;
     final expectedPackets = finalResult
         ? pending.totalChunks
         : max(1, pending.highestChunkIndex + 1);
     final lost = max(0, expectedPackets - pending.receivedChunks);
-    final lossPercent = lost * 100 / expectedPackets;
+    final rawLossPercent = lost * 100 / expectedPackets;
+    if (finalResult) {
+      if (_speedMeasurements.length == _speedMovingAverageWindow) {
+        _speedMeasurements.removeFirst();
+      }
+      _speedMeasurements.addLast(
+        _SpeedMeasurement(rawBitsPerSecond, rawLossPercent),
+      );
+    }
+    final averagingSamples = finalResult
+        ? _speedMeasurements
+        : <_SpeedMeasurement>[
+            ..._speedMeasurements,
+            _SpeedMeasurement(rawBitsPerSecond, rawLossPercent),
+          ];
+    final bitsPerSecond = averagingSamples.fold<double>(
+          0,
+          (sum, sample) => sum + sample.bitsPerSecond,
+        ) /
+        averagingSamples.length;
+    final lossPercent = averagingSamples.fold<double>(
+          0,
+          (sum, sample) => sum + sample.packetLossPercent,
+        ) /
+        averagingSamples.length;
     final now = DateTime.now().millisecondsSinceEpoch;
     pending.lastPublishedMs = now;
     final linkStats = Map<int, EdgezLinkStats>.of(_state.linkStats);
-    linkStats[fromNode] = EdgezLinkStats(
+    final sharedLinkStats = EdgezLinkStats(
       bitsPerSecond: bitsPerSecond,
       packetLossPercent: lossPercent,
       receivedPackets: pending.receivedChunks,
       expectedPackets: expectedPackets,
       updatedAtMs: now,
     );
-    _setState(_state.copyWith(linkStats: linkStats));
+    linkStats[fromNode] = sharedLinkStats;
+    _setState(
+      _state.copyWith(
+        linkStats: linkStats,
+        sharedLinkStats: _state.sharedLinkStats,
+      ),
+    );
     if (finalResult) {
+      if (_state.connection == EdgezConnectionType.usb) {
+        unawaited(sdk.reportUsbPacketLoss(lossPercent));
+      }
       debugPrint(
         'EdgeZ speed result from=${fromNode.toRadixString(16)} '
-        'bps=${bitsPerSecond.toStringAsFixed(0)} loss=${lossPercent.toStringAsFixed(2)}% '
+        'rawBps=${rawBitsPerSecond.toStringAsFixed(0)} '
+        'rawLoss=${rawLossPercent.toStringAsFixed(2)}% '
+        'averageBps=${bitsPerSecond.toStringAsFixed(0)} '
+        'averageLoss=${lossPercent.toStringAsFixed(2)}% '
+        'samples=${_speedMeasurements.length} '
         'received=${pending.receivedChunks}/$expectedPackets bytes=${pending.receivedBytes}',
       );
     }
@@ -1852,6 +1977,12 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       final packet = _decodeVoiceCallPacket(envelope.plaintext);
       if (packet == null || packet.sequence != envelope.sequence) return;
+      _recordTransportTraffic(
+        byteCount: payload.length,
+        streamKey: 'voice:$fromNode:${packet.callId}',
+        sequence: packet.sequence,
+        receivedAtUs: 0,
+      );
       final call = _state.voiceCall;
       switch (packet.type) {
         case _callInvite:
@@ -2097,9 +2228,106 @@ class EdgezMeshSession extends ChangeNotifier {
       pending.timer?.cancel();
     }
     _pendingSpeedTests.clear();
+    _speedMeasurements.clear();
+    _trafficMeter.clear();
     _subscription.cancel();
     super.dispose();
   }
+}
+
+class _SpeedMeasurement {
+  const _SpeedMeasurement(this.bitsPerSecond, this.packetLossPercent);
+
+  final double bitsPerSecond;
+  final double packetLossPercent;
+}
+
+class _TransportTrafficMeter {
+  static const int _windowUs = 10 * 1000000;
+  static const int _publishIntervalUs = 1000000;
+  final ListQueue<_TrafficObservation> _observations =
+      ListQueue<_TrafficObservation>();
+  final LinkedHashMap<String, int> _lastSequence = LinkedHashMap<String, int>();
+  int _lastPublishedUs = 0;
+
+  EdgezLinkStats? record({
+    required int byteCount,
+    required String? streamKey,
+    required int? sequence,
+    required int receivedAtUs,
+  }) {
+    if (byteCount <= 0) return null;
+    var lostBefore = 0;
+    if (streamKey != null && sequence != null && sequence >= 0) {
+      final previous = _lastSequence.remove(streamKey);
+      if (previous != null && sequence > previous + 1) {
+        lostBefore = sequence - previous - 1;
+      }
+      _lastSequence[streamKey] = max(previous ?? sequence, sequence);
+      while (_lastSequence.length > 256) {
+        _lastSequence.remove(_lastSequence.keys.first);
+      }
+    }
+    _observations.addLast(
+      _TrafficObservation(
+        receivedAtUs,
+        byteCount,
+        lostBefore,
+        streamKey != null && sequence != null && sequence >= 0,
+      ),
+    );
+    final cutoff = receivedAtUs - _windowUs;
+    while (
+        _observations.isNotEmpty && _observations.first.receivedAtUs < cutoff) {
+      _observations.removeFirst();
+    }
+    if (_lastPublishedUs != 0 &&
+        receivedAtUs - _lastPublishedUs < _publishIntervalUs) {
+      return null;
+    }
+    _lastPublishedUs = receivedAtUs;
+    final bytes = _observations.fold<int>(
+      0,
+      (sum, item) => sum + item.byteCount,
+    );
+    final lost = _observations.fold<int>(
+      0,
+      (sum, item) => sum + item.lostBefore,
+    );
+    final received = _observations.where((item) => item.sequenced).length;
+    final expected = received + lost;
+    final spanUs = max(
+      1000000,
+      _observations.last.receivedAtUs - _observations.first.receivedAtUs,
+    );
+    return EdgezLinkStats(
+      bitsPerSecond: bytes * 8 * 1000000 / spanUs,
+      packetLossPercent: expected == 0 ? 0 : lost * 100 / expected,
+      receivedPackets: received,
+      expectedPackets: expected,
+      updatedAtMs: receivedAtUs ~/ 1000,
+    );
+  }
+
+  void clear() {
+    _observations.clear();
+    _lastSequence.clear();
+    _lastPublishedUs = 0;
+  }
+}
+
+class _TrafficObservation {
+  const _TrafficObservation(
+    this.receivedAtUs,
+    this.byteCount,
+    this.lostBefore,
+    this.sequenced,
+  );
+
+  final int receivedAtUs;
+  final int byteCount;
+  final int lostBefore;
+  final bool sequenced;
 }
 
 class _DecodedBeaconUserName {
@@ -2149,8 +2377,8 @@ class _PendingSpeedTest {
   final int totalChunks;
   final Set<int> chunks = <int>{};
   int receivedBytes = 0;
-  int? firstDataMs;
-  int? lastDataMs;
+  int? firstDataUs;
+  int? lastDataUs;
   int lastPublishedMs = 0;
   int highestChunkIndex = -1;
   Timer? timer;
@@ -2160,23 +2388,22 @@ class _PendingSpeedTest {
   // Link statistics are presentation data; updating them more frequently
   // competes with BLE event processing during the measurement itself.
   bool get shouldPublish =>
-      lastDataMs != null && lastDataMs! - lastPublishedMs >= 10000;
-  int get elapsedMilliseconds {
-    final first = firstDataMs;
-    final last = lastDataMs;
+      lastDataUs != null && lastDataUs! ~/ 1000 - lastPublishedMs >= 10000;
+  int get elapsedMicroseconds {
+    final first = firstDataUs;
+    final last = lastDataUs;
     if (first == null || last == null) return 1;
     return max(1, last - first);
   }
 
-  void put(int index, int byteCount) {
+  void put(int index, int byteCount, int receivedAtUs) {
     if (index < 0 || index >= totalChunks || byteCount < 0) return;
     if (!chunks.add(index)) return;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (firstDataMs == null) {
-      firstDataMs = now;
-      lastPublishedMs = now;
+    if (firstDataUs == null) {
+      firstDataUs = receivedAtUs;
+      lastPublishedMs = receivedAtUs ~/ 1000;
     }
-    lastDataMs = now;
+    lastDataUs = max(lastDataUs ?? receivedAtUs, receivedAtUs);
     highestChunkIndex = max(highestChunkIndex, index);
     receivedBytes += byteCount;
   }

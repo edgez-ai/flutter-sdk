@@ -37,6 +37,7 @@ enum AppDestination {
 }
 
 const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
+const _speedHistoryWindow = Duration(minutes: 30);
 
 class EdgezExampleApp extends StatefulWidget {
   const EdgezExampleApp({super.key});
@@ -66,6 +67,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   bool hydrationComplete = false;
   Map<String, ExampleDashboardDisplay> dashboardDisplays =
       const <String, ExampleDashboardDisplay>{};
+  List<ExampleSpeedMetric> speedMetrics = const <ExampleSpeedMetric>[];
+  int lastPersistedSpeedMetricMs = 0;
   Timer? persistDebounce;
   bool persistInFlight = false;
   bool persistAgain = false;
@@ -432,6 +435,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       final nodes = await database.loadNodes();
       final savedDashboardDisplays = await database.loadDashboardDisplays();
       final conversations = await database.loadConversations();
+      final loadedSpeedMetrics = await database.loadSpeedMetrics(
+        sinceMs:
+            DateTime.now().subtract(_speedHistoryWindow).millisecondsSinceEpoch,
+      );
       final samples = <int, List<EdgezSensorSample>>{};
       for (final nodeNum in nodes.keys) {
         samples[nodeNum] = await database.loadSensorSamples(nodeNum);
@@ -448,6 +455,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         persistenceEnabled = true;
         hydrationComplete = true;
         dashboardDisplays = savedDashboardDisplays;
+        speedMetrics = loadedSpeedMetrics;
+        lastPersistedSpeedMetricMs = loadedSpeedMetrics.isEmpty
+            ? 0
+            : loadedSpeedMetrics.last.timestampMs;
       });
     } catch (_) {
       if (!mounted) return;
@@ -461,8 +472,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
 
   void _persistSessionSnapshot() {
     if (!hydrationComplete || !persistenceEnabled) return;
-    final signature = _persistenceSignature(session.state);
-    if (signature == lastPersistSignature) return;
+    final state = session.state;
+    final signature = _persistenceSignature(state);
+    final metricNeedsPersistence =
+        (state.sharedLinkStats?.updatedAtMs ?? 0) > lastPersistedSpeedMetricMs;
+    if (signature == lastPersistSignature && !metricNeedsPersistence) return;
     persistDebounce?.cancel();
     persistDebounce = Timer(
       const Duration(milliseconds: 400),
@@ -483,6 +497,29 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         persistAgain = false;
         final state = session.state;
         final signature = _persistenceSignature(state);
+        final metric = state.sharedLinkStats;
+        if (metric != null && metric.updatedAtMs > lastPersistedSpeedMetricMs) {
+          await database.insertSpeedMetric(metric);
+          lastPersistedSpeedMetricMs = metric.updatedAtMs;
+          final cutoff = DateTime.now()
+              .subtract(_speedHistoryWindow)
+              .millisecondsSinceEpoch;
+          final updatedMetrics = <ExampleSpeedMetric>[
+            ...speedMetrics.where((item) => item.timestampMs >= cutoff),
+            ExampleSpeedMetric(
+              timestampMs: metric.updatedAtMs,
+              bitsPerSecond: metric.bitsPerSecond,
+              packetLossPercent: metric.packetLossPercent,
+              receivedPackets: metric.receivedPackets,
+              expectedPackets: metric.expectedPackets,
+            ),
+          ];
+          if (mounted) {
+            setState(() => speedMetrics = updatedMetrics);
+          } else {
+            speedMetrics = updatedMetrics;
+          }
+        }
         if (signature != lastPersistSignature) {
           await database.persistStateSnapshot(state);
           lastPersistSignature = signature;
@@ -1031,7 +1068,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       sensorSamples:
                           meshState.sensorSamples[selected.nodeNum] ??
                               const <EdgezSensorSample>[],
-                      linkStats: meshState.linkStats[selected.nodeNum],
+                      linkStats: meshState.sharedLinkStats,
                       onBack: () => setState(() => selectedNodeNum = null),
                       onSendMessage: _sendMessage,
                       onStartVoiceMessage: _startVoiceMessage,
@@ -1078,7 +1115,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                           sensorSamples:
                               meshState.sensorSamples[selected.nodeNum] ??
                                   const <EdgezSensorSample>[],
-                          linkStats: meshState.linkStats[selected.nodeNum],
+                          linkStats: meshState.sharedLinkStats,
                           onBack: () => setState(() => selectedNodeNum = null),
                           onSendMessage: _sendMessage,
                           onStartVoiceMessage: _startVoiceMessage,
@@ -1115,6 +1152,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   shareLocation: shareLocation,
                   deviceModeEnabled: deviceModeEnabled,
                   databaseReady: databaseReady,
+                  speedMetrics: speedMetrics,
                   onClose: () => setState(() => showDebug = false),
                 )
               : SettingsScreen(

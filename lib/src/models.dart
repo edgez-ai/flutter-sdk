@@ -712,6 +712,7 @@ class EdgezMeshEvent {
     this.usbReceivedPongs = 0,
     this.usbTimeouts = 0,
     this.usbRttMs = 0,
+    this.receivedAtUs = 0,
     this.log = '',
   });
 
@@ -729,6 +730,7 @@ class EdgezMeshEvent {
   final int usbReceivedPongs;
   final int usbTimeouts;
   final int usbRttMs;
+  final int receivedAtUs;
   final String log;
 
   double get progress => totalBytes <= 0 ? 0 : sentBytes / totalBytes;
@@ -763,6 +765,7 @@ class EdgezMeshEvent {
       usbReceivedPongs: map['receivedPongs'] as int? ?? 0,
       usbTimeouts: map['timeouts'] as int? ?? 0,
       usbRttMs: map['rttMs'] as int? ?? 0,
+      receivedAtUs: (map['receivedAtUs'] as num?)?.toInt() ?? 0,
       log: map['log'] as String? ?? '',
     );
   }

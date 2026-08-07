@@ -207,7 +207,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Transport'), findsOneWidget);
-    expect(find.text('SDK events'), findsOneWidget);
+    expect(find.text('Speed and loss · last 30 minutes'), findsOneWidget);
     await tester.tap(find.byTooltip('Back to settings'));
     await tester.pumpAndSettle();
     expect(find.text('Device connection'), findsOneWidget);

@@ -92,17 +92,23 @@ each short batch until that queue drains; live voice may discard a stale queued
 frame rather than increasing latency. No firmware status packet or per-speed-
 frame `TX_ACCEPTED` is required.
 
-Firmware decouples UART and HaLow work with two 256-frame PSRAM queues (one per
-direction). Each slot holds one complete application frame up to 512 bytes.
-Mobile-to-HaLow parsing waits for PSRAM space so pressure propagates through the
-UART driver instead of dropping frames. HaLow-to-mobile control frames wait
-briefly for queue space; realtime voice drops a newly produced stale frame when
-the queue is full.
+Firmware decouples UART and HaLow work with separate PSRAM queues in each
+direction. Protobuf/control has a dedicated 64-frame high-priority FIFO;
+voice/speed shares a 256-frame realtime FIFO. Each slot holds one complete
+application frame up to 512 bytes. Workers always select pending control work
+before realtime work. Producers wait for their queue's space so pressure
+propagates through the UART driver instead of dropping frames locally.
 
 The firmware UART driver uses a 64 KiB RX ring and 32 KiB TX ring. Its 32 KiB
 stream-parser staging buffer is allocated in PSRAM. Android reads up to 16 KiB
 per serial operation and retains up to 64 complete framed packets while
 assembling burst traffic.
+
+USB pacing starts with a 3 ms inter-frame gap and automatically adjusts within
+1–10 ms. Firmware queue pressure feeds a recommended mobile TX gap through the
+high-priority link-control path. Final receiver sequence loss adjusts the local
+gap and reports it to firmware for subsequent device-to-mobile traffic.
+Realtime speed/voice traffic does not use a firmware-acceptance window.
 
 The same link-frame layout reserves type `01` for `PING` and type `02` for
 `PONG`. Link frames are diagnostics/control traffic and are not included in the

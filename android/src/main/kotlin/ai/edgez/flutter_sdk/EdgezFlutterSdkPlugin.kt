@@ -31,6 +31,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
+import android.os.SystemClock
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
@@ -62,11 +63,15 @@ private const val LOCATION_PERMISSION_REQUEST = 9009
 private const val NOTIFICATION_PERMISSION_REQUEST = 9010
 private const val USB_PERMISSION_ACTION = "ai.edgez.flutter_sdk.USB_PERMISSION"
 private const val USB_IO_TIMEOUT_MS = 10_000
+private const val USB_GAP_MIN_MS = 1L
+private const val USB_GAP_INITIAL_MS = 3L
+private const val USB_GAP_MAX_MS = 10L
 private const val USB_HEARTBEAT_INTERVAL_MS = 60_000L
 private const val LEGACY_USB_VERSION: Byte = 1
 private const val LEGACY_USB_ECHO_REQUEST: Byte = 1
 private const val LEGACY_USB_ECHO_RESPONSE: Byte = 2
 private const val LEGACY_USB_TX_ACK: Byte = 3
+private const val LEGACY_USB_FLOW_CONTROL: Byte = 4
 private const val LEGACY_USB_HEADER_LEN = 8
 private const val LEGACY_USB_MAX_PAYLOAD = 256
 private const val EDGEZ_TINYUSB_VID = 0x303A
@@ -209,6 +214,7 @@ class EdgezFlutterSdkPlugin :
     private var usbPingSentAtMs = 0L
     private var usbLastRttMs = 0L
     private var usbProtocolReady = false
+    @Volatile private var usbInterFrameGapMs = USB_GAP_INITIAL_MS
     // The firmware acknowledges every application frame after accepting it
     // from the serial stream. Track control and realtime traffic together so
     // a caller cannot report a text/voice frame as sent while it is still
@@ -657,6 +663,9 @@ class EdgezFlutterSdkPlugin :
             // ACKs can arrive for every application frame. Do not turn them into
             // high-frequency UI heartbeat-stat events.
             return
+        } else if (type == LEGACY_USB_FLOW_CONTROL) {
+            usbInterFrameGapMs = sequence.toLong().coerceIn(USB_GAP_MIN_MS, USB_GAP_MAX_MS)
+            return
         }
         emitUsbLinkStats()
     }
@@ -724,6 +733,7 @@ class EdgezFlutterSdkPlugin :
             usbPingSentAtMs = 0
             usbLastRttMs = 0
             usbProtocolReady = false
+            usbInterFrameGapMs = USB_GAP_INITIAL_MS
             usbApplicationFramesSent = 0
             usbApplicationFramesAcked = 0
             usbStatsLock.notifyAll()
@@ -745,6 +755,7 @@ class EdgezFlutterSdkPlugin :
         synchronized(usbWriteLock) {
             val port = usbSerialPort ?: throw IllegalStateException("USB UART is not connected")
             port.write(frame, USB_IO_TIMEOUT_MS)
+            Thread.sleep(usbInterFrameGapMs)
         }
         if (trackAcceptance) {
             synchronized(usbStatsLock) { usbApplicationFramesSent++ }
@@ -825,14 +836,13 @@ class EdgezFlutterSdkPlugin :
                 usbRealtimeLock.wait(remaining)
             }
             usbRealtimeWriteFailure?.let { return Result.failure(it) }
-            return if (!usbRealtimeWriteInFlight && usbRealtimeTxQueue.isEmpty()) {
-                Result.success("USB realtime TX complete")
-            } else {
-                Result.failure(
+            if (usbRealtimeWriteInFlight || usbRealtimeTxQueue.isNotEmpty()) {
+                return Result.failure(
                     IllegalStateException("USB realtime TX did not drain after ${timeoutMs}ms"),
                 )
             }
         }
+        return Result.success("USB realtime TX complete")
     }
 
     private fun writeUsbRaw(bytes: ByteArray): Result<String> = runCatching {
@@ -840,6 +850,7 @@ class EdgezFlutterSdkPlugin :
         synchronized(usbWriteLock) {
             val port = usbSerialPort ?: throw IllegalStateException("USB UART is not connected")
             port.write(frame, USB_IO_TIMEOUT_MS)
+            Thread.sleep(usbInterFrameGapMs)
         }
         "UART stream frame sent"
     }
@@ -866,6 +877,25 @@ class EdgezFlutterSdkPlugin :
         when (call.method) {
             "listUsbDevices" -> result.success(listUsbDevices())
             "connectUsb" -> connectUsb(call.argument<Int>("deviceId"), result)
+            "reportUsbPacketLoss" -> {
+                val loss = call.argument<Number>("lossPercent")?.toDouble() ?: 0.0
+                usbInterFrameGapMs = when {
+                    loss >= 5.0 -> (usbInterFrameGapMs + 2).coerceAtMost(USB_GAP_MAX_MS)
+                    loss >= 1.0 -> (usbInterFrameGapMs + 1).coerceAtMost(USB_GAP_MAX_MS)
+                    loss <= 0.25 -> (usbInterFrameGapMs - 1).coerceAtLeast(USB_GAP_MIN_MS)
+                    else -> usbInterFrameGapMs
+                }
+                if (usbConnection != null) {
+                    writeUsbRaw(
+                        buildLegacyUsbEcho(
+                            LEGACY_USB_FLOW_CONTROL,
+                            usbInterFrameGapMs.toInt(),
+                            byteArrayOf(),
+                        ),
+                    )
+                }
+                result.success(usbInterFrameGapMs.toInt())
+            }
             "startBleScan" -> startBleScan(result)
             "stopBleScan" -> {
                 stopBleScan()
@@ -2582,7 +2612,13 @@ class EdgezFlutterSdkPlugin :
                 handleVoiceBytes(payload)
             } else {
                 logGpsPacket(payload, "ble")
-                emit(mapOf("type" to "packet", "packet" to payload))
+                emit(
+                    mapOf(
+                        "type" to "packet",
+                        "packet" to payload,
+                        "receivedAtUs" to SystemClock.elapsedRealtimeNanos() / 1_000L,
+                    ),
+                )
             }
             val remaining = rxLen - frameLen
             if (remaining > 0) {
@@ -2627,7 +2663,8 @@ class EdgezFlutterSdkPlugin :
                 payload[2] == LEGACY_USB_VERSION &&
                 (payload[3] == LEGACY_USB_ECHO_REQUEST ||
                     payload[3] == LEGACY_USB_ECHO_RESPONSE ||
-                    payload[3] == LEGACY_USB_TX_ACK)
+                    payload[3] == LEGACY_USB_TX_ACK ||
+                    payload[3] == LEGACY_USB_FLOW_CONTROL)
             ) {
                 val echoPayloadLen = (payload[6].toInt() and 0xff) or
                     ((payload[7].toInt() and 0xff) shl 8)
@@ -2666,7 +2703,13 @@ class EdgezFlutterSdkPlugin :
             return
         }
         logGpsPacket(payload, "usb")
-        emit(mapOf("type" to "packet", "packet" to payload))
+        emit(
+            mapOf(
+                "type" to "packet",
+                "packet" to payload,
+                "receivedAtUs" to SystemClock.elapsedRealtimeNanos() / 1_000L,
+            ),
+        )
     }
 
     private fun handleForwardBytes(bytes: ByteArray) {
@@ -2697,7 +2740,14 @@ class EdgezFlutterSdkPlugin :
             if (forwardRxLen < frameLen) return
             val payload = forwardRxBuffer.copyOfRange(EDGEZ_HEADER_LEN, frameLen)
             logGpsPacket(payload, "forward")
-            emit(mapOf("type" to "packet", "packet" to payload, "route" to "ble_forward"))
+            emit(
+                mapOf(
+                    "type" to "packet",
+                    "packet" to payload,
+                    "route" to "ble_forward",
+                    "receivedAtUs" to SystemClock.elapsedRealtimeNanos() / 1_000L,
+                ),
+            )
             val remaining = forwardRxLen - frameLen
             if (remaining > 0) {
                 System.arraycopy(forwardRxBuffer, frameLen, forwardRxBuffer, 0, remaining)
@@ -2852,7 +2902,10 @@ class EdgezFlutterSdkPlugin :
             bytes[9] == 'T'.code.toByte()
     }
 
-    private fun handleVoiceBytes(bytes: ByteArray) {
+    private fun handleVoiceBytes(
+        bytes: ByteArray,
+        receivedAtUs: Long = SystemClock.elapsedRealtimeNanos() / 1_000L,
+    ) {
         val hasVoiceEnvelope = bytes.size > EDGEZ_VOICE_PROTOCOL_MAGIC.size &&
             bytes.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
                 .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)
@@ -2870,7 +2923,16 @@ class EdgezFlutterSdkPlugin :
             payload[8] == 'S'.code.toByte() &&
             payload[9] == 'T'.code.toByte()
         ) {
-            emit(mapOf("type" to "speedTestFrame", "packet" to payload))
+            emit(
+                mapOf(
+                    "type" to "speedTestFrame",
+                    "packet" to payload,
+                    // Capture this before posting to Flutter's main thread.
+                    // Large USB reads can otherwise batch many callbacks and
+                    // make Dart processing time look like link throughput.
+                    "receivedAtUs" to receivedAtUs,
+                ),
+            )
             return
         }
         if (!hasVoiceEnvelope) {
