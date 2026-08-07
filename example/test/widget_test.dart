@@ -233,6 +233,7 @@ void main() {
 
   testWidgets('conversation shows GPS without overflowing a narrow screen',
       (tester) async {
+    int? selectedSpeedHop;
     await tester.binding.setSurfaceSize(const Size(360, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -273,12 +274,25 @@ void main() {
             onStartVoiceMessage: () async => true,
             onStopVoiceMessage: (_) async {},
             onReplayVoiceMessage: (_) {},
-            onStartSpeedTest: (_) async {},
+            onStartSpeedTest: (hop, _) async => selectedSpeedHop = hop,
             onStartCall: () async {},
           ),
         ),
       ),
     );
+    expect(find.text('Hop'), findsOneWidget);
+    expect(find.text('0 (Auto)'), findsOneWidget);
+    final hopSelector = find.byType(DropdownButtonFormField<int>);
+    await tester.ensureVisible(hopSelector);
+    await tester.tap(hopSelector);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2').last);
+    await tester.pumpAndSettle();
+    final speedButton = find.text('Speed test (2 MiB)');
+    await tester.ensureVisible(speedButton);
+    await tester.tap(speedButton);
+    await tester.pumpAndSettle();
+    expect(selectedSpeedHop, 2);
 
     expect(find.text('Latest sensor location'), findsOneWidget);
     expect(find.text('59.329323, 18.068581'), findsOneWidget);

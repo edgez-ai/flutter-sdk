@@ -60,7 +60,7 @@ class DebugScreen extends StatelessWidget {
             title: 'Speed and loss · last 30 minutes',
             children: <Widget>[
               if (speedMetrics.isEmpty)
-                const Text('No completed speed tests in this time window.')
+                const Text('No transport traffic in this time window.')
               else ...<Widget>[
                 DebugValue(
                   label: 'Moving speed',
@@ -75,31 +75,33 @@ class DebugScreen extends StatelessWidget {
                 Row(
                   children: <Widget>[
                     _ChartLegend(
-                      color: Theme.of(context).colorScheme.primary,
+                      color: Colors.green.shade600,
                       label: 'Speed',
                     ),
                     const SizedBox(width: 16),
                     _ChartLegend(
-                      color: Theme.of(context).colorScheme.tertiary,
+                      color: Colors.red.shade600,
                       label: 'Loss',
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 SizedBox(
-                  height: 180,
+                  height: 200,
                   width: double.infinity,
                   child: CustomPaint(
                     painter: _SpeedHistoryPainter(
                       metrics: speedMetrics,
-                      speedColor: Theme.of(context).colorScheme.primary,
-                      lossColor: Theme.of(context).colorScheme.tertiary,
+                      speedColor: Colors.green.shade600,
+                      lossColor: Colors.red.shade600,
                       gridColor: Theme.of(context).dividerColor,
+                      labelColor:
+                          Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
                 Text(
-                  '${speedMetrics.length} completed test${speedMetrics.length == 1 ? '' : 's'}',
+                  '${speedMetrics.length} sample${speedMetrics.length == 1 ? '' : 's'}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -220,16 +222,18 @@ class _SpeedHistoryPainter extends CustomPainter {
     required this.speedColor,
     required this.lossColor,
     required this.gridColor,
+    required this.labelColor,
   });
 
   final List<ExampleSpeedMetric> metrics;
   final Color speedColor;
   final Color lossColor;
   final Color gridColor;
+  final Color labelColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bounds = Rect.fromLTWH(0, 4, size.width, size.height - 12);
+    final bounds = Rect.fromLTRB(54, 8, size.width - 42, size.height - 22);
     final grid = Paint()
       ..color = gridColor.withValues(alpha: 0.45)
       ..strokeWidth = 1;
@@ -244,6 +248,38 @@ class _SpeedHistoryPainter extends CustomPainter {
     );
     final endMs = DateTime.now().millisecondsSinceEpoch;
     final startMs = endMs - const Duration(minutes: 30).inMilliseconds;
+
+    void drawLabel(String text, Offset offset, {required bool alignRight}) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(color: labelColor, fontSize: 10),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        Offset(alignRight ? offset.dx - painter.width : offset.dx, offset.dy),
+      );
+    }
+
+    for (var line = 0; line <= 4; line++) {
+      final fraction = 1 - line / 4;
+      final y = bounds.top + bounds.height * line / 4 - 6;
+      drawLabel(
+        _formatAxisBitRate(maxSpeed * fraction),
+        Offset(bounds.left - 6, y),
+        alignRight: true,
+      );
+      drawLabel(
+        '${(100 * fraction).round()}%',
+        Offset(bounds.right + 6, y),
+        alignRight: false,
+      );
+    }
+    drawLabel('-30m', Offset(bounds.left, bounds.bottom + 5),
+        alignRight: false);
+    drawLabel('now', Offset(bounds.right, bounds.bottom + 5), alignRight: true);
 
     Path pathFor(double Function(ExampleSpeedMetric metric) normalizedValue) {
       final path = Path();
@@ -286,7 +322,18 @@ class _SpeedHistoryPainter extends CustomPainter {
       oldDelegate.metrics != metrics ||
       oldDelegate.speedColor != speedColor ||
       oldDelegate.lossColor != lossColor ||
-      oldDelegate.gridColor != gridColor;
+      oldDelegate.gridColor != gridColor ||
+      oldDelegate.labelColor != labelColor;
+}
+
+String _formatAxisBitRate(double bitsPerSecond) {
+  if (bitsPerSecond >= 1000000) {
+    return '${(bitsPerSecond / 1000000).toStringAsFixed(1)}M';
+  }
+  if (bitsPerSecond >= 1000) {
+    return '${(bitsPerSecond / 1000).toStringAsFixed(0)}k';
+  }
+  return bitsPerSecond.toStringAsFixed(0);
 }
 
 class DebugValue extends StatelessWidget {

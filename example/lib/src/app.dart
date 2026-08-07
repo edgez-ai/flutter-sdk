@@ -1014,12 +1014,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   Future<void> _startSpeedTest(
+    int hop,
     void Function(int sentBytes, int totalBytes) onProgress,
   ) async {
     final nodeNum = selectedNodeNum;
     if (nodeNum == null) return;
     await session.sendSpeedTest(
       toNode: nodeNum,
+      hop: hop,
       onProgress: onProgress,
     );
   }

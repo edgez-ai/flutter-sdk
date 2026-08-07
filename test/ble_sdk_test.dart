@@ -1102,7 +1102,7 @@ void main() {
       await sdk.sendSpeedTest(
         toNode: 0x200,
         fromNode: 0x100,
-        compactTransport: true,
+        hop: 3,
         onProgress: (sent, total) => progressUpdates.add((sent, total)),
       );
 
@@ -1115,6 +1115,7 @@ void main() {
           .toList();
       expect(frames.first.type, EdgezSpeedTestFrameType.start);
       expect(frames.last.type, EdgezSpeedTestFrameType.end);
+      expect(frames.every((frame) => frame.hop == 3), isTrue);
       expect(
         frames
             .where((frame) => frame.type == EdgezSpeedTestFrameType.data)
@@ -1122,6 +1123,7 @@ void main() {
         EdgezMeshSdk.speedTestBytes,
       );
       expect(calls.every((call) => call.argumentMap['to'] == 0x200), isTrue);
+      expect(calls.every((call) => call.argumentMap['maxHop'] == 3), isTrue);
       // Native adds a 3-byte protocol marker and an 11-byte route prefix.
       // The complete BLE/USB payload must fit the shared 512-byte limit.
       expect(
@@ -1146,17 +1148,21 @@ void main() {
       ]);
     });
 
-    test('speed test retains protobuf transport for older firmware', () async {
+    test('speed test always uses compact frames carrying the hop rule',
+        () async {
       await sdk.sendSpeedTest(
         toNode: 0x200,
         fromNode: 0x100,
         totalBytes: 384,
+        hop: 2,
       );
 
-      final calls = ble.callsFor('sendPacket').toList(growable: false);
+      final calls = ble.callsFor('sendSpeedTestFrame').toList(growable: false);
       expect(calls, hasLength(3));
       final frames = calls
-          .map((call) => EdgezSpeedTestFrame.tryDecode(call.packet.msg.payload))
+          .map((call) => EdgezSpeedTestFrame.tryDecode(
+                call.argumentMap['payload']! as List<int>,
+              ))
           .whereType<EdgezSpeedTestFrame>()
           .toList(growable: false);
       expect(frames.map((frame) => frame.type), <EdgezSpeedTestFrameType>[
@@ -1164,33 +1170,46 @@ void main() {
         EdgezSpeedTestFrameType.data,
         EdgezSpeedTestFrameType.end,
       ]);
+      expect(calls.every((call) => call.argumentMap['maxHop'] == 2), isTrue);
       expect(calls.last.argumentMap['waitForDrainMs'], 10000);
     });
 
-    test('BLE protobuf speed frames stay within 512 bytes', () async {
-      await sdk.sendSpeedTest(
-        toNode: 0x200,
-        fromNode: 0x100,
-        totalBytes: 848,
-      );
-
-      final calls = ble.callsFor('sendPacket').toList(growable: false);
-      expect(calls, hasLength(5));
-      expect(calls.every((call) => call.packet.writeToBuffer().length <= 512),
-          isTrue);
-      expect(
-        calls
-            .where((call) => call.packet.hasMsg())
-            .every((call) => call.packet.msg.payload.length <= 420),
-        isTrue,
+    test('speed test rejects hop rules outside 0 through 3', () async {
+      await expectLater(
+        sdk.sendSpeedTest(toNode: 0x200, fromNode: 0x100, hop: 4),
+        throwsArgumentError,
       );
     });
 
-    test('receiver updates link indicators without adding chat messages',
+    test('receiver replies with speed result without adding a local message',
         () async {
+      final sender = await _newIdentity('Speed sender', 500, 501);
+      final receiver = await _newIdentity('Speed receiver', 600, 601);
       final session = EdgezMeshSession(sdk: sdk);
       const fromNode = 0x100;
+      const localNode = 0x200;
       const transferId = 42;
+
+      await session.initializeMesh(EdgezMeshConfig(identity: receiver));
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(macAddress: Int64(localNode)),
+        ),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(fromNode),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(sender.userIdHigh),
+            userIdLow: Int64(sender.userIdLow),
+            userName: sender.name,
+            userPublicKey: sender.publicKey,
+          ),
+        ),
+      );
+      await ble.flushEvents();
 
       void emit(EdgezSpeedTestFrame frame, int _) {
         ble.emitSpeedTestFrame(fromNode: fromNode, frame: frame);
@@ -1248,15 +1267,45 @@ void main() {
 
       final completed = session.state.linkStats[fromNode];
       expect(session.state.sharedLinkStats, isNotNull);
-      expect(
-        session.state.sharedLinkStats?.packetLossPercent,
-        closeTo(33.33, 0.01),
-      );
       expect(completed?.bitsPerSecond, greaterThan(0));
       expect(completed?.packetLossPercent, closeTo(33.33, 0.01));
       expect(completed?.receivedPackets, 2);
       expect(completed?.expectedPackets, 3);
       expect(session.state.conversations[fromNode], isNull);
+
+      for (var attempt = 0;
+          attempt < 10 &&
+              !ble.callsFor('sendPacket').any(
+                    (call) =>
+                        call.packet.hasMsg() &&
+                        call.packet.msg.mime == Mime.MIME_TEXT,
+                  );
+          attempt++) {
+        await ble.flushEvents();
+      }
+      final resultPacket = ble.callsFor('sendPacket').lastWhere(
+            (call) =>
+                call.packet.hasMsg() && call.packet.msg.mime == Mime.MIME_TEXT,
+          );
+      final resultText = await sdk.decryptTextMessage(
+        config: EdgezMeshConfig(identity: sender),
+        sender: EdgezMeshNode(
+          nodeNum: localNode,
+          userUuid: '',
+          displayName: receiver.name,
+          route: 'BLE',
+          lastSeenMs: 1,
+          marker: 'blue',
+          publicKey: receiver.publicKey,
+          deviceType: 'User',
+        ),
+        fromNode: localNode,
+        toNode: fromNode,
+        payload: resultPacket.packet.msg.payload,
+      );
+      expect(resultText, contains('Speed test result'));
+      expect(resultText, contains('Average speed:'));
+      expect(resultText, contains('Packet loss: 33.33%'));
       session.dispose();
     });
 

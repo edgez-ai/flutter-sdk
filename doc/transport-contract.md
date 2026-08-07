@@ -123,7 +123,21 @@ minute; firmware only returns the matching `PONG`.
 - Live voice-call signaling and audio: `realtimeVoice`; use transport
   acceptance as back-pressure for host-to-device frames.
 - Speed test: `realtimeSpeed`; BLE and USB use the same bounded realtime queue
-  and periodic queue-drain checkpoints.
+  and periodic queue-drain checkpoints. The receiver calculates speed and loss
+  over that completed transfer and sends the result back as an encrypted text
+  conversation message. It does not append the reply to its own conversation
+  or store that per-conversation result in the global metrics database.
+
+Speed-test frame version 2 carries a hop-mode byte in every START, DATA, and END
+frame. `0` uses the normal route table, `1` addresses the target directly, `2`
+requires one intermediate peer, and `3` prefers a three-hop route with a
+two-hop fallback. Forced routes never select the ingress/source as the next hop.
+This tag is specific to speed tests and does not change routing for protobuf or
+voice traffic.
+
+Global moving speed and loss telemetry is independent of speed-test results. It
+counts all control, conversation, binary, recorded/live voice, and speed-test
+traffic and is the only metric series persisted for the 30-minute debug chart.
 
 Encryption, message IDs, routing, and peer delivery acknowledgements are above
 the transport layer and must behave identically on BLE and USB.

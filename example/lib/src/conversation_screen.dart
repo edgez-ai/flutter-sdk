@@ -34,6 +34,7 @@ class ConversationScreen extends StatefulWidget {
   final Future<void> Function(bool send) onStopVoiceMessage;
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
   final Future<void> Function(
+    int hop,
     void Function(int sentBytes, int totalBytes) onProgress,
   ) onStartSpeedTest;
   final EdgezVoiceCallState callState;
@@ -52,6 +53,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   bool speedTesting = false;
   int speedTestSentBytes = 0;
   int speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
+  int speedTestHop = 0;
 
   @override
   void dispose() {
@@ -103,7 +105,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
       status = 'Speed test started';
     });
     try {
-      await widget.onStartSpeedTest((sentBytes, totalBytes) {
+      await widget.onStartSpeedTest(speedTestHop, (sentBytes, totalBytes) {
         if (!mounted) return;
         setState(() {
           speedTestSentBytes = sentBytes;
@@ -349,26 +351,70 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: canSpeedTest && !speedTesting
-                    ? () => unawaited(_startSpeedTest())
-                    : null,
-                icon: speedTesting
-                    ? SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          value: speedTestProgress,
-                          strokeWidth: 2,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 104,
+                  child: DropdownButtonFormField<int>(
+                    initialValue: speedTestHop,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Hop',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const <DropdownMenuItem<int>>[
+                      DropdownMenuItem(
+                        value: 0,
+                        child:
+                            Text('0 (Auto)', overflow: TextOverflow.ellipsis),
+                      ),
+                      DropdownMenuItem(value: 1, child: Text('1')),
+                      DropdownMenuItem(value: 2, child: Text('2')),
+                      DropdownMenuItem(value: 3, child: Text('3')),
+                    ],
+                    onChanged: speedTesting
+                        ? null
+                        : (value) => setState(() => speedTestHop = value ?? 0),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: canSpeedTest && !speedTesting
+                        ? () => unawaited(_startSpeedTest())
+                        : null,
+                    child: Row(
+                      children: <Widget>[
+                        if (speedTesting)
+                          SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              value: speedTestProgress,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        else
+                          const Icon(Icons.speed),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            speedTesting
+                                ? 'Speed test $speedTestPercent% · '
+                                    '$speedTestSentKiB KiB / '
+                                    '${speedTestTotalMiB.toStringAsFixed(1)} MiB'
+                                : 'Speed test (2 MiB)',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                      )
-                    : const Icon(Icons.speed),
-                label: Text(speedTesting
-                    ? 'Speed test $speedTestPercent% · $speedTestSentKiB KiB / '
-                        '${speedTestTotalMiB.toStringAsFixed(1)} MiB'
-                    : 'Speed test (2 MiB)'),
-              ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             GestureDetector(
