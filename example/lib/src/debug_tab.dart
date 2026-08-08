@@ -21,6 +21,7 @@ class DebugScreen extends StatelessWidget {
     required this.debugLogs,
     required this.logLevel,
     required this.onLogLevelChanged,
+    required this.onExportLogs,
     required this.onClose,
     super.key,
   });
@@ -37,6 +38,7 @@ class DebugScreen extends StatelessWidget {
   final List<String> debugLogs;
   final EdgezDeviceLogLevel logLevel;
   final ValueChanged<EdgezDeviceLogLevel>? onLogLevelChanged;
+  final VoidCallback? onExportLogs;
   final VoidCallback onClose;
 
   @override
@@ -266,6 +268,15 @@ class DebugScreen extends StatelessWidget {
                                       onLogLevelChanged!(level);
                                     }
                                   },
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              onPressed: onExportLogs,
+                              icon: const Icon(Icons.file_download_outlined),
+                              label: const Text('Export logs'),
+                            ),
                           ),
                           const SizedBox(height: 12),
                           if (debugLogs.isEmpty)

@@ -55,6 +55,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   late final EdgezIdentityStore identityStore;
   late final EdgezBleConfigurationStore bleConfigurationStore;
   late final EdgezDriverStore driverStore;
+  late final EdgezDeviceLogStore deviceLogStore;
   late final AppLinks appLinks;
   StreamSubscription<Uri>? driverLinkSubscription;
   AppDestination destination = AppDestination.dashboard;
@@ -127,9 +128,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    deviceLogStore = EdgezDeviceLogStore();
     session = EdgezMeshSession(
       onIncomingMessage: _showIncomingMessage,
       onIncomingCall: _showIncomingCall,
+      deviceLogStore: deviceLogStore,
     );
     database = ExampleDatabase();
     identityStore = EdgezIdentityStore();
@@ -138,6 +141,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     appLinks = AppLinks();
     session.addListener(_persistSessionSnapshot);
     session.addListener(_handleCallNotificationState);
+    unawaited(session.restoreDeviceLogs());
     unawaited(_loadIdentityAndBleConfiguration());
     unawaited(_hydrateFromDatabase());
     unawaited(_loadInstalledDrivers());
@@ -739,6 +743,21 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     }
   }
 
+  Future<void> _exportDeviceLogs() async {
+    try {
+      final file = await deviceLogStore.export();
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Logs exported to ${file.path}')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('Unable to export device logs')),
+      );
+    }
+  }
+
   Future<void> _saveAppSettings() async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
     final identity = await identityStore.updateName(userName);
@@ -1173,6 +1192,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       meshState.connection != EdgezConnectionType.none
                           ? (level) => unawaited(_setDeviceLogLevel(level))
                           : null,
+                  onExportLogs: () => unawaited(_exportDeviceLogs()),
                   onClose: () => setState(() => showDebug = false),
                 )
               : SettingsScreen(

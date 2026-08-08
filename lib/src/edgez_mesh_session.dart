@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'edgez_mesh_sdk.dart';
+import 'edgez_device_log_store.dart';
 import 'models.dart';
 import 'proto/edgez_mesh.pb.dart' as proto;
 
@@ -225,6 +226,7 @@ class EdgezMeshSession extends ChangeNotifier {
     EdgezMeshSdk? sdk,
     this.onIncomingMessage,
     this.onIncomingCall,
+    this.deviceLogStore,
     this.speedTestInactivityTimeout = const Duration(seconds: 30),
   }) : sdk = sdk ?? EdgezMeshSdk() {
     _subscription = this.sdk.events.listen(_handleEvent);
@@ -233,6 +235,7 @@ class EdgezMeshSession extends ChangeNotifier {
   final EdgezMeshSdk sdk;
   final EdgezIncomingMessageCallback? onIncomingMessage;
   final EdgezIncomingCallCallback? onIncomingCall;
+  final EdgezDeviceLogStore? deviceLogStore;
   final Duration speedTestInactivityTimeout;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
@@ -277,6 +280,18 @@ class EdgezMeshSession extends ChangeNotifier {
   };
 
   EdgezMeshState get state => _state;
+
+  /// Restores the retained firmware log window from the optional log store.
+  Future<void> restoreDeviceLogs() async {
+    final store = deviceLogStore;
+    if (store == null) return;
+    try {
+      final logs = await store.load();
+      _setState(_state.copyWith(debugLogs: logs));
+    } catch (_) {
+      // Log persistence must never prevent a session from starting.
+    }
+  }
 
   void beginProvisioning() {
     _provisioning = true;
@@ -1143,6 +1158,10 @@ class EdgezMeshSession extends ChangeNotifier {
           logs.removeRange(0, logs.length - 500);
         }
         _setState(_state.copyWith(statusLine: event.log, debugLogs: logs));
+        final store = deviceLogStore;
+        if (store != null) {
+          unawaited(store.append(logs.last).catchError((_) {}));
+        }
     }
   }
 
