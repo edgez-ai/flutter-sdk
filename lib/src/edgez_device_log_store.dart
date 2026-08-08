@@ -119,7 +119,11 @@ class EdgezDeviceLogStore {
   }
 
   static Future<Directory> _defaultExportDirectory() async {
+    final downloads = await getDownloadsDirectory();
+    if (downloads != null) {
+      return Directory('${downloads.path}/EdgeZ');
+    }
     final documents = await getApplicationDocumentsDirectory();
-    return Directory('${documents.path}/EdgeZ logs');
+    return Directory('${documents.path}/EdgeZ/Downloads');
   }
 }

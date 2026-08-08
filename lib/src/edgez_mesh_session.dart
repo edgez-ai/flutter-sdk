@@ -239,6 +239,7 @@ class EdgezMeshSession extends ChangeNotifier {
   final Duration speedTestInactivityTimeout;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
+  EdgezDeviceLogLevel _appLogLevel = EdgezDeviceLogLevel.warning;
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
   Timer? _deviceStatusTimeout;
@@ -619,7 +620,13 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> setDeviceLogLevel(EdgezDeviceLogLevel level) {
+    _appLogLevel = level;
     return sdk.setDeviceLogLevel(level);
+  }
+
+  Future<void> configureLogLevel(EdgezDeviceLogLevel level) {
+    _appLogLevel = level;
+    return sdk.configureDeviceLogLevel(level);
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) async {
@@ -1144,16 +1151,20 @@ class EdgezMeshSession extends ChangeNotifier {
           ),
         );
       case EdgezMeshEventType.log:
-        // Firmware lines arrive as FW-tagged events over either BLE or USB.
-        // Keep the Debug page focused on firmware output; mobile transport
-        // diagnostics remain status-only.
-        if (!event.log.startsWith('FW:')) {
+        // Preserve a combined timeline: firmware records arrive as FW-tagged
+        // events and transport/SDK diagnostics are explicitly APP-tagged.
+        final timestamp = DateTime.now().toIso8601String().substring(11, 23);
+        final source =
+            event.log.startsWith('FW:') || event.log.startsWith('APP:')
+                ? event.log
+                : 'APP: ${event.log}';
+        if (!source.startsWith('FW:') &&
+            _appLogLevel.wireValue < _appEventLevel(event.log).wireValue) {
           _setState(_state.copyWith(statusLine: event.log));
           return;
         }
-        final timestamp = DateTime.now().toIso8601String().substring(11, 23);
         final logs = List<String>.of(_state.debugLogs)
-          ..add('$timestamp ${event.log}');
+          ..add('$timestamp $source');
         if (logs.length > 500) {
           logs.removeRange(0, logs.length - 500);
         }
@@ -1163,6 +1174,17 @@ class EdgezMeshSession extends ChangeNotifier {
           unawaited(store.append(logs.last).catchError((_) {}));
         }
     }
+  }
+
+  EdgezDeviceLogLevel _appEventLevel(String message) {
+    final normalized = message.toLowerCase();
+    if (normalized.contains('error') || normalized.contains('failed')) {
+      return EdgezDeviceLogLevel.error;
+    }
+    if (normalized.contains('warning') || normalized.contains('timeout')) {
+      return EdgezDeviceLogLevel.warning;
+    }
+    return EdgezDeviceLogLevel.debug;
   }
 
   Future<void> _refreshOtaReadiness() async {

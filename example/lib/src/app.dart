@@ -413,7 +413,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       selectedUsbDevice = restoredUsbDevice;
       bleAutoConnect = bleConfiguration.autoConnect;
       shareLocation = bleConfiguration.shareLocation;
+      deviceLogLevel = bleConfiguration.logLevel;
     });
+    await session.configureLogLevel(bleConfiguration.logLevel);
     if (bleConfiguration.preferredTransport == EdgezPreferredTransport.ble &&
         bleConfiguration.autoConnect &&
         bleConfiguration.hasSelectedDevice) {
@@ -734,7 +736,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
 
   Future<void> _setDeviceLogLevel(EdgezDeviceLogLevel level) async {
     try {
-      await session.setDeviceLogLevel(level);
+      await session.configureLogLevel(level);
+      if (session.state.connection != EdgezConnectionType.none) {
+        await session.setDeviceLogLevel(level);
+      }
+      await bleConfigurationStore.setLogLevel(level);
       if (mounted) setState(() => deviceLogLevel = level);
     } catch (error) {
       scaffoldMessengerKey.currentState?.showSnackBar(
@@ -1187,11 +1193,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   databaseReady: databaseReady,
                   speedMetrics: speedMetrics,
                   debugLogs: meshState.debugLogs,
-                  logLevel: deviceLogLevel,
-                  onLogLevelChanged:
-                      meshState.connection != EdgezConnectionType.none
-                          ? (level) => unawaited(_setDeviceLogLevel(level))
-                          : null,
                   onExportLogs: () => unawaited(_exportDeviceLogs()),
                   onClose: () => setState(() => showDebug = false),
                 )
@@ -1255,6 +1256,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceUpstreamWifiPassphrase: deviceUpstreamWifiPassphrase,
                   deviceBeaconMulticast: deviceBeaconMulticast,
                   deviceSleepModeEnabled: deviceSleepModeEnabled,
+                  logLevel: deviceLogLevel,
                   onConnectBle: _connectBle,
                   onStopBleScan: _stopBleScan,
                   onConnectBleDevice: _connectBleDevice,
@@ -1354,6 +1356,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       setState(() => deviceBeaconMulticast = value),
                   onDeviceSleepModeChanged: (value) =>
                       setState(() => deviceSleepModeEnabled = value),
+                  onLogLevelChanged: (level) =>
+                      unawaited(_setDeviceLogLevel(level)),
                 ),
         };
 

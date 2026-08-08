@@ -226,6 +226,7 @@ class EdgezFlutterSdkPlugin :
     private var usbHeartbeatTimeouts = 0
     private var usbAwaitingPongSequence = 0
     private var usbAwaitingPongNonce: ByteArray? = null
+    @Volatile private var preferredDeviceLogLevel: Int = 2
     private var usbPingSentAtMs = 0L
     private var usbLastRttMs = 0L
     private var usbProtocolReady = false
@@ -847,13 +848,14 @@ class EdgezFlutterSdkPlugin :
                     usbHeartbeatSent++
                     usbAwaitingPongSequence = usbHeartbeatSequence
                     val nonce = ByteArray(EDGEZ_USB_NONCE_SIZE).also(usbNonceRandom::nextBytes)
-                    usbAwaitingPongNonce = nonce
+                    val handshakePayload = nonce + byteArrayOf(preferredDeviceLogLevel.toByte())
+                    usbAwaitingPongNonce = handshakePayload
                     usbPingSentAtMs = System.currentTimeMillis()
                     Pair(
                         buildLegacyUsbEcho(
                             LEGACY_USB_ECHO_REQUEST,
                             usbHeartbeatSequence,
-                            nonce,
+                            handshakePayload,
                         ),
                         usbHeartbeatSequence,
                     )
@@ -1184,6 +1186,7 @@ class EdgezFlutterSdkPlugin :
                 } else if (gatt == null && (!usbProtocolReady || usbConnection == null)) {
                     result.error("transport_not_ready", "BLE/USB stream is not ready", null)
                 } else {
+                    preferredDeviceLogLevel = level
                     sendRealtimePacket(
                         protocolMagic = byteArrayOf(),
                         packet = buildLogStreamCommand(level, tagBytes),
@@ -1192,6 +1195,15 @@ class EdgezFlutterSdkPlugin :
                         onSuccess = { result.success(null) },
                         onFailure = { result.error("transport_write_failed", it.message, null) },
                     )
+                }
+            }
+            "configureDeviceLogLevel" -> {
+                val level = call.argument<Int>("level") ?: 2
+                if (level !in 0..5) {
+                    result.error("invalid_log_level", "Log level must be between 0 and 5", null)
+                } else {
+                    preferredDeviceLogLevel = level
+                    result.success(null)
                 }
             }
             "reportUsbPacketLoss" -> {

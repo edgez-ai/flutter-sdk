@@ -105,6 +105,7 @@ class SettingsScreen extends StatefulWidget {
     required this.deviceUpstreamWifiPassphrase,
     required this.deviceBeaconMulticast,
     required this.deviceSleepModeEnabled,
+    required this.logLevel,
     required this.onConnectBle,
     required this.onStopBleScan,
     required this.onConnectBleDevice,
@@ -151,6 +152,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onDeviceUpstreamWifiPassphraseChanged,
     required this.onDeviceBeaconMulticastChanged,
     required this.onDeviceSleepModeChanged,
+    required this.onLogLevelChanged,
     super.key,
   });
 
@@ -205,6 +207,7 @@ class SettingsScreen extends StatefulWidget {
   final String deviceUpstreamWifiPassphrase;
   final String deviceBeaconMulticast;
   final bool deviceSleepModeEnabled;
+  final EdgezDeviceLogLevel logLevel;
   final VoidCallback onConnectBle;
   final VoidCallback onStopBleScan;
   final ValueChanged<String> onConnectBleDevice;
@@ -251,6 +254,7 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<String> onDeviceUpstreamWifiPassphraseChanged;
   final ValueChanged<String> onDeviceBeaconMulticastChanged;
   final ValueChanged<bool> onDeviceSleepModeChanged;
+  final ValueChanged<EdgezDeviceLogLevel> onLogLevelChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -823,6 +827,30 @@ class SettingsScreen extends StatefulWidget {
           ],
           if (!deviceModeEnabled &&
               selectedTab == _SettingsTab.others) ...<Widget>[
+            cardGap,
+            InfoCard(
+              title: 'Logging',
+              children: <Widget>[
+                DropdownButtonFormField<EdgezDeviceLogLevel>(
+                  initialValue: logLevel,
+                  decoration: const InputDecoration(
+                    labelText: 'Log level',
+                    helperText: 'Applies to device output and app log storage',
+                  ),
+                  items: EdgezDeviceLogLevel.values
+                      .map(
+                        (level) => DropdownMenuItem<EdgezDeviceLogLevel>(
+                          value: level,
+                          child: Text(level.label),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (level) {
+                    if (level != null) onLogLevelChanged(level);
+                  },
+                ),
+              ],
+            ),
             cardGap,
             InfoCard(
               title: 'Chat',

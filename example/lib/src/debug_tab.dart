@@ -19,8 +19,6 @@ class DebugScreen extends StatelessWidget {
     required this.databaseReady,
     required this.speedMetrics,
     required this.debugLogs,
-    required this.logLevel,
-    required this.onLogLevelChanged,
     required this.onExportLogs,
     required this.onClose,
     super.key,
@@ -36,8 +34,6 @@ class DebugScreen extends StatelessWidget {
   final bool databaseReady;
   final List<ExampleSpeedMetric> speedMetrics;
   final List<String> debugLogs;
-  final EdgezDeviceLogLevel logLevel;
-  final ValueChanged<EdgezDeviceLogLevel>? onLogLevelChanged;
   final VoidCallback? onExportLogs;
   final VoidCallback onClose;
 
@@ -245,31 +241,6 @@ class DebugScreen extends StatelessWidget {
                       InfoCard(
                         title: 'Log stream',
                         children: <Widget>[
-                          DropdownButtonFormField<EdgezDeviceLogLevel>(
-                            initialValue: logLevel,
-                            decoration: const InputDecoration(
-                              labelText: 'Log level',
-                              helperText:
-                                  'Applies to the connected BLE or USB device',
-                            ),
-                            items: EdgezDeviceLogLevel.values
-                                .map(
-                                  (level) =>
-                                      DropdownMenuItem<EdgezDeviceLogLevel>(
-                                    value: level,
-                                    child: Text(level.label),
-                                  ),
-                                )
-                                .toList(growable: false),
-                            onChanged: onLogLevelChanged == null
-                                ? null
-                                : (level) {
-                                    if (level != null) {
-                                      onLogLevelChanged!(level);
-                                    }
-                                  },
-                          ),
-                          const SizedBox(height: 12),
                           Align(
                             alignment: Alignment.centerRight,
                             child: OutlinedButton.icon(

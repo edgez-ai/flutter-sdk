@@ -225,6 +225,12 @@ class EdgezMeshSdk {
     });
   }
 
+  Future<void> configureDeviceLogLevel(EdgezDeviceLogLevel level) {
+    return _transport.invokeMethod<void>('configureDeviceLogLevel', {
+      'level': level.wireValue,
+    });
+  }
+
   Future<int> reportUsbPacketLoss(double lossPercent) async {
     return await _transport.invokeMethod<int>('reportUsbPacketLoss', {
           'lossPercent': lossPercent,

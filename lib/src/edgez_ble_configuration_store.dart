@@ -14,6 +14,7 @@ class EdgezBleConfiguration {
     this.usbVendorId = 0,
     this.usbProductId = 0,
     this.usbDeviceName = '',
+    this.logLevel = EdgezDeviceLogLevel.warning,
   });
 
   final String deviceId;
@@ -24,6 +25,7 @@ class EdgezBleConfiguration {
   final int usbVendorId;
   final int usbProductId;
   final String usbDeviceName;
+  final EdgezDeviceLogLevel logLevel;
 
   bool get hasSelectedDevice => deviceId.isNotEmpty;
 
@@ -48,6 +50,7 @@ class EdgezBleConfigurationStore {
   static const _keyUsbVendorId = 'edgez_usb_vendor_id';
   static const _keyUsbProductId = 'edgez_usb_product_id';
   static const _keyUsbDeviceName = 'edgez_usb_device_name';
+  static const _keyLogLevel = 'edgez_log_level';
 
   Future<EdgezBleConfiguration> load() async {
     final preferences = await SharedPreferences.getInstance();
@@ -62,6 +65,10 @@ class EdgezBleConfigurationStore {
       usbVendorId: preferences.getInt(_keyUsbVendorId) ?? 0,
       usbProductId: preferences.getInt(_keyUsbProductId) ?? 0,
       usbDeviceName: preferences.getString(_keyUsbDeviceName) ?? '',
+      logLevel: EdgezDeviceLogLevel.values.firstWhere(
+        (level) => level.wireValue == preferences.getInt(_keyLogLevel),
+        orElse: () => EdgezDeviceLogLevel.warning,
+      ),
     );
   }
 
@@ -93,6 +100,11 @@ class EdgezBleConfigurationStore {
   Future<void> setShareLocation(bool enabled) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_keyShareLocation, enabled);
+  }
+
+  Future<void> setLogLevel(EdgezDeviceLogLevel level) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setInt(_keyLogLevel, level.wireValue);
   }
 
   Future<void> clearSelectedDevice() async {
