@@ -52,6 +52,7 @@ import io.flutter.plugin.common.PluginRegistry
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.SecureRandom
 import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -110,7 +111,7 @@ private const val SERVICE_DISCOVERY_TIMEOUT_MS = 5_000L
 private const val MAX_SERVICE_DISCOVERY_ATTEMPTS = 2
 private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 2)
 private val EDGEZ_SPEED_PROTOCOL_MAGIC = byteArrayOf('S'.code.toByte(), 'T'.code.toByte(), 2)
-private val EDGEZ_USB_ECHO_PAYLOAD = "edgez-raw-ping".toByteArray(Charsets.US_ASCII)
+private const val EDGEZ_USB_NONCE_SIZE = 16
 private const val EDGEZ_VOICE_NONCE_SIZE = 12
 private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
 private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
@@ -224,9 +225,11 @@ class EdgezFlutterSdkPlugin :
     private var usbHeartbeatPongsReceived = 0
     private var usbHeartbeatTimeouts = 0
     private var usbAwaitingPongSequence = 0
+    private var usbAwaitingPongNonce: ByteArray? = null
     private var usbPingSentAtMs = 0L
     private var usbLastRttMs = 0L
     private var usbProtocolReady = false
+    private val usbNonceRandom = SecureRandom()
     @Volatile private var usbInterFrameGapMs = USB_GAP_INITIAL_MS
     // The firmware acknowledges every application frame after accepting it
     // from the serial stream. Track control and realtime traffic together so
@@ -843,12 +846,14 @@ class EdgezFlutterSdkPlugin :
                     usbHeartbeatSequence++
                     usbHeartbeatSent++
                     usbAwaitingPongSequence = usbHeartbeatSequence
+                    val nonce = ByteArray(EDGEZ_USB_NONCE_SIZE).also(usbNonceRandom::nextBytes)
+                    usbAwaitingPongNonce = nonce
                     usbPingSentAtMs = System.currentTimeMillis()
                     Pair(
                         buildLegacyUsbEcho(
                             LEGACY_USB_ECHO_REQUEST,
                             usbHeartbeatSequence,
-                            EDGEZ_USB_ECHO_PAYLOAD,
+                            nonce,
                         ),
                         usbHeartbeatSequence,
                     )
@@ -898,14 +903,20 @@ class EdgezFlutterSdkPlugin :
             markUsbProtocolReady()
         } else if (type == LEGACY_USB_ECHO_RESPONSE) {
             var rttMs: Long? = null
-            synchronized(usbStatsLock) {
-                usbHeartbeatPongsReceived++
-                if (sequence == (usbAwaitingPongSequence and 0xffff)) {
+            val validPong = synchronized(usbStatsLock) {
+                val expectedNonce = usbAwaitingPongNonce
+                val matches = sequence == (usbAwaitingPongSequence and 0xffff) &&
+                    expectedNonce != null && payload.contentEquals(expectedNonce)
+                if (matches) {
+                    usbHeartbeatPongsReceived++
                     usbLastRttMs = (System.currentTimeMillis() - usbPingSentAtMs).coerceAtLeast(0)
                     rttMs = usbLastRttMs
                     usbAwaitingPongSequence = 0
+                    usbAwaitingPongNonce = null
                 }
+                matches
             }
+            if (!validPong) return
             markUsbProtocolReady()
             emit(
                 mapOf(
@@ -1003,6 +1014,7 @@ class EdgezFlutterSdkPlugin :
             usbHeartbeatPongsReceived = 0
             usbHeartbeatTimeouts = 0
             usbAwaitingPongSequence = 0
+            usbAwaitingPongNonce = null
             usbPingSentAtMs = 0
             usbLastRttMs = 0
             usbProtocolReady = false

@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import 'example_database.dart';
 import 'shared_widgets.dart';
@@ -43,7 +44,7 @@ class DebugScreen extends StatelessWidget {
     final status = meshStatus;
     return SafeArea(
       child: ListView(
-        scrollCacheExtent: 2400,
+        scrollCacheExtent: const ScrollCacheExtent.pixels(2400),
         padding: const EdgeInsets.all(16),
         children: <Widget>[
           Row(
