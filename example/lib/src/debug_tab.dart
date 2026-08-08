@@ -42,202 +42,304 @@ class DebugScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = meshStatus;
-    return SafeArea(
-      child: ListView(
-        scrollCacheExtent: const ScrollCacheExtent.pixels(2400),
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              IconButton(
-                onPressed: onClose,
-                tooltip: 'Back to settings',
-                icon: const Icon(Icons.arrow_back),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text('Debug',
-                    style: Theme.of(context).textTheme.headlineMedium),
-              ),
-              HaLowMeshStatusIcon(status: status),
-            ],
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            title: 'Speed and loss · last 30 minutes',
-            children: <Widget>[
-              if (speedMetrics.isEmpty)
-                const Text('No transport traffic in this time window.')
-              else ...<Widget>[
-                DebugValue(
-                  label: 'Moving speed',
-                  value: _formatBitRate(speedMetrics.last.bitsPerSecond),
-                ),
-                DebugValue(
-                  label: 'Moving loss',
-                  value:
-                      '${speedMetrics.last.packetLossPercent.toStringAsFixed(2)}%',
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: <Widget>[
-                    _ChartLegend(
-                      color: Colors.green.shade600,
-                      label: 'Speed',
-                    ),
-                    const SizedBox(width: 16),
-                    _ChartLegend(
-                      color: Colors.red.shade600,
-                      label: 'Loss',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 200,
-                  width: double.infinity,
-                  child: CustomPaint(
-                    painter: _SpeedHistoryPainter(
-                      metrics: speedMetrics,
-                      speedColor: Colors.green.shade600,
-                      lossColor: Colors.red.shade600,
-                      gridColor: Theme.of(context).dividerColor,
-                      labelColor:
-                          Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+    return DefaultTabController(
+      length: 2,
+      child: SafeArea(
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Row(
+                children: <Widget>[
+                  IconButton(
+                    onPressed: onClose,
+                    tooltip: 'Back to settings',
+                    icon: const Icon(Icons.arrow_back),
                   ),
-                ),
-                Text(
-                  '${speedMetrics.length} sample${speedMetrics.length == 1 ? '' : 's'}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Debug',
+                        style: Theme.of(context).textTheme.headlineMedium),
+                  ),
+                  HaLowMeshStatusIcon(status: status),
+                ],
+              ),
+            ),
+            const TabBar(
+              tabs: <Widget>[
+                Tab(text: 'System'),
+                Tab(text: 'Device logs'),
               ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            title: 'Transport',
-            children: <Widget>[
-              DebugValue(
-                  label: 'Active connection',
-                  value: activeConnection.name.toUpperCase()),
-              DebugValue(
-                  label: 'Status',
-                  value: statusLine.isEmpty ? 'No status' : statusLine),
-              DebugValue(label: 'Known nodes', value: nodeCount.toString()),
-              DebugValue(
-                  label: 'Conversations', value: conversationCount.toString()),
-              DebugValue(
-                  label: 'Share location',
-                  value: shareLocation ? 'Enabled' : 'Disabled'),
-              DebugValue(
-                  label: 'Device mode',
-                  value: deviceModeEnabled ? 'Enabled' : 'Disabled'),
-              DebugValue(
-                  label: 'SQLite',
-                  value: databaseReady ? 'Enabled' : 'Memory only'),
-            ],
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            title: 'HaLow mesh',
-            children: status == null
-                ? const <Widget>[Text('No HaLow status received yet')]
-                : <Widget>[
-                    DebugValue(
-                        label: 'Supported', value: status.supported.toString()),
-                    DebugValue(
-                        label: 'Initialized',
-                        value: status.stackInitialized.toString()),
-                    DebugValue(
-                        label: 'Mesh mode', value: status.meshMode.toString()),
-                    DebugValue(
-                        label: 'Link up', value: status.linkUp.toString()),
-                    DebugValue(
-                        label: 'Route ready',
-                        value: status.routeReady.toString()),
-                    DebugValue(
-                        label: 'Ready for report',
-                        value: status.readyForReport.toString()),
-                    DebugValue(
-                        label: 'License', value: status.licenseStatus.label),
-                    DebugValue(
-                        label: 'Mesh ID',
-                        value: status.meshId.isEmpty ? 'none' : status.meshId),
-                    DebugValue(
-                        label: 'IP',
-                        value: status.ipAddress.isEmpty
-                            ? 'none'
-                            : status.ipAddress),
-                    DebugValue(
-                        label: 'Gateway',
-                        value:
-                            status.gateway.isEmpty ? 'none' : status.gateway),
-                    DebugValue(
-                        label: 'MAC',
-                        value: status.macAddress == 0
-                            ? 'none'
-                            : status.macAddress.toRadixString(16)),
-                  ],
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            title: 'SDK events',
-            children: <Widget>[
-              Text(
-                statusLine.isEmpty
-                    ? 'Events from the BLE SDK will appear here as status text.'
-                    : statusLine,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            title: 'Device logs',
-            children: <Widget>[
-              DropdownButtonFormField<EdgezDeviceLogLevel>(
-                initialValue: logLevel,
-                decoration: const InputDecoration(
-                  labelText: 'Log level',
-                  helperText: 'Applies to the connected BLE or USB device',
-                ),
-                items: EdgezDeviceLogLevel.values
-                    .map(
-                      (level) => DropdownMenuItem<EdgezDeviceLogLevel>(
-                        value: level,
-                        child: Text(level.label),
+            ),
+            Expanded(
+              child: TabBarView(
+                children: <Widget>[
+                  ListView(
+                    scrollCacheExtent: const ScrollCacheExtent.pixels(2400),
+                    padding: const EdgeInsets.all(16),
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Text('System diagnostics',
+                              style: Theme.of(context).textTheme.titleMedium),
+                        ],
                       ),
-                    )
-                    .toList(growable: false),
-                onChanged: onLogLevelChanged == null
-                    ? null
-                    : (level) {
-                        if (level != null) onLogLevelChanged!(level);
-                      },
-              ),
-              const SizedBox(height: 12),
-              if (debugLogs.isEmpty)
-                const Text('No device logs received on this connection yet.')
-              else
-                SizedBox(
-                  height: 240,
-                  child: ListView.builder(
-                    reverse: true,
-                    itemCount: debugLogs.length,
-                    itemBuilder: (context, index) {
-                      final line = debugLogs[debugLogs.length - 1 - index];
-                      return SelectableText(
-                        line,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontFamily: 'monospace',
+                      const SizedBox(height: 12),
+                      InfoCard(
+                        title: 'Speed and loss · last 30 minutes',
+                        children: <Widget>[
+                          if (speedMetrics.isEmpty)
+                            const Text(
+                                'No transport traffic in this time window.')
+                          else ...<Widget>[
+                            DebugValue(
+                              label: 'Moving speed',
+                              value: _formatBitRate(
+                                  speedMetrics.last.bitsPerSecond),
                             ),
-                      );
-                    },
+                            DebugValue(
+                              label: 'Moving loss',
+                              value:
+                                  '${speedMetrics.last.packetLossPercent.toStringAsFixed(2)}%',
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: <Widget>[
+                                _ChartLegend(
+                                  color: Colors.green.shade600,
+                                  label: 'Speed',
+                                ),
+                                const SizedBox(width: 16),
+                                _ChartLegend(
+                                  color: Colors.red.shade600,
+                                  label: 'Loss',
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 200,
+                              width: double.infinity,
+                              child: CustomPaint(
+                                painter: _SpeedHistoryPainter(
+                                  metrics: speedMetrics,
+                                  speedColor: Colors.green.shade600,
+                                  lossColor: Colors.red.shade600,
+                                  gridColor: Theme.of(context).dividerColor,
+                                  labelColor: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${speedMetrics.length} sample${speedMetrics.length == 1 ? '' : 's'}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      InfoCard(
+                        title: 'Transport',
+                        children: <Widget>[
+                          DebugValue(
+                              label: 'Active connection',
+                              value: activeConnection.name.toUpperCase()),
+                          DebugValue(
+                              label: 'Status',
+                              value: statusLine.isEmpty
+                                  ? 'No status'
+                                  : statusLine),
+                          DebugValue(
+                              label: 'Known nodes',
+                              value: nodeCount.toString()),
+                          DebugValue(
+                              label: 'Conversations',
+                              value: conversationCount.toString()),
+                          DebugValue(
+                              label: 'Share location',
+                              value: shareLocation ? 'Enabled' : 'Disabled'),
+                          DebugValue(
+                              label: 'Device mode',
+                              value:
+                                  deviceModeEnabled ? 'Enabled' : 'Disabled'),
+                          DebugValue(
+                              label: 'SQLite',
+                              value: databaseReady ? 'Enabled' : 'Memory only'),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      InfoCard(
+                        title: 'HaLow mesh',
+                        children: status == null
+                            ? const <Widget>[
+                                Text('No HaLow status received yet')
+                              ]
+                            : <Widget>[
+                                DebugValue(
+                                    label: 'Supported',
+                                    value: status.supported.toString()),
+                                DebugValue(
+                                    label: 'Initialized',
+                                    value: status.stackInitialized.toString()),
+                                DebugValue(
+                                    label: 'Mesh mode',
+                                    value: status.meshMode.toString()),
+                                DebugValue(
+                                    label: 'Link up',
+                                    value: status.linkUp.toString()),
+                                DebugValue(
+                                    label: 'Route ready',
+                                    value: status.routeReady.toString()),
+                                DebugValue(
+                                    label: 'Ready for report',
+                                    value: status.readyForReport.toString()),
+                                DebugValue(
+                                    label: 'License',
+                                    value: status.licenseStatus.label),
+                                DebugValue(
+                                    label: 'Mesh ID',
+                                    value: status.meshId.isEmpty
+                                        ? 'none'
+                                        : status.meshId),
+                                DebugValue(
+                                    label: 'IP',
+                                    value: status.ipAddress.isEmpty
+                                        ? 'none'
+                                        : status.ipAddress),
+                                DebugValue(
+                                    label: 'Gateway',
+                                    value: status.gateway.isEmpty
+                                        ? 'none'
+                                        : status.gateway),
+                                DebugValue(
+                                    label: 'MAC',
+                                    value: status.macAddress == 0
+                                        ? 'none'
+                                        : status.macAddress.toRadixString(16)),
+                              ],
+                      ),
+                      const SizedBox(height: 12),
+                      InfoCard(
+                        title: 'SDK events',
+                        children: <Widget>[
+                          Text(
+                            statusLine.isEmpty
+                                ? 'Events from the BLE SDK will appear here as status text.'
+                                : statusLine,
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ),
-            ],
-          ),
-        ],
+                  ListView(
+                    scrollCacheExtent: const ScrollCacheExtent.pixels(2400),
+                    padding: const EdgeInsets.all(16),
+                    children: <Widget>[
+                      Text('Device logs',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      InfoCard(
+                        title: 'Log stream',
+                        children: <Widget>[
+                          DropdownButtonFormField<EdgezDeviceLogLevel>(
+                            initialValue: logLevel,
+                            decoration: const InputDecoration(
+                              labelText: 'Log level',
+                              helperText:
+                                  'Applies to the connected BLE or USB device',
+                            ),
+                            items: EdgezDeviceLogLevel.values
+                                .map(
+                                  (level) =>
+                                      DropdownMenuItem<EdgezDeviceLogLevel>(
+                                    value: level,
+                                    child: Text(level.label),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: onLogLevelChanged == null
+                                ? null
+                                : (level) {
+                                    if (level != null) {
+                                      onLogLevelChanged!(level);
+                                    }
+                                  },
+                          ),
+                          const SizedBox(height: 12),
+                          if (debugLogs.isEmpty)
+                            const Text(
+                                'No device logs received on this connection yet.')
+                          else
+                            SizedBox(
+                              height: 520,
+                              child: _DeviceLogList(lines: debugLogs),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeviceLogList extends StatefulWidget {
+  const _DeviceLogList({required this.lines});
+
+  final List<String> lines;
+
+  @override
+  State<_DeviceLogList> createState() => _DeviceLogListState();
+}
+
+class _DeviceLogListState extends State<_DeviceLogList> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollToBottomAfterLayout();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DeviceLogList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lines.isEmpty && widget.lines.isNotEmpty) {
+      _scrollToBottomAfterLayout();
+    }
+  }
+
+  void _scrollToBottomAfterLayout() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      controller: _scrollController,
+      itemCount: widget.lines.length,
+      itemBuilder: (context, index) => SelectableText(
+        widget.lines[index],
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontFamily: 'monospace',
+            ),
       ),
     );
   }
