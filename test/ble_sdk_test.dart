@@ -134,6 +134,14 @@ void main() {
       expect(ble.callsFor('connectUsb').single.argumentMap['deviceId'], 7);
     });
 
+    test('sets device log level', () async {
+      await sdk.setDeviceLogLevel(EdgezDeviceLogLevel.debug);
+
+      final call = ble.callsFor('setDeviceLogLevel').single;
+      expect(call.argumentMap['level'], 4);
+      expect(call.argumentMap['tag'], '');
+    });
+
     test('returns the best known phone location from the platform', () async {
       ble.results['getBestKnownLocation'] = <Object?, Object?>{
         'latitude': 59.3293,

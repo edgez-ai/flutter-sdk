@@ -76,6 +76,7 @@ private const val LEGACY_USB_HEADER_LEN = 8
 private const val LEGACY_USB_MAX_PAYLOAD = 256
 private const val EDGEZ_TINYUSB_VID = 0x303A
 private const val EDGEZ_TINYUSB_CDC_PID = 0x4001
+private const val EDGEZ_USB_SERIAL_JTAG_PID = 0x1001
 private const val CP2102_VID = 0x10C4
 private const val CP2102_PID = 0xEA60
 private const val USB_CDC_BAUD = 921_600
@@ -87,6 +88,12 @@ private const val EDGEZ_HEADER_LEN = 4
 private const val SERIAL_STREAM_HEADER_LEN = 4
 private const val SERIAL_STREAM_MAGIC_0: Byte = 0x94.toByte()
 private const val SERIAL_STREAM_MAGIC_1: Byte = 0xC3.toByte()
+private const val LOG_STREAM_VERSION: Byte = 2
+private const val LOG_STREAM_RECORD: Byte = 1
+private const val LOG_STREAM_SET_LEVEL: Byte = 2
+private const val LOG_STREAM_LEVEL_RESPONSE: Byte = 3
+private const val LOG_STREAM_HEADER_LEN = 5
+private const val LOG_STREAM_LEVEL_ERROR = 0xff
 private const val EDGEZ_MAX_PAYLOAD = 512
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val EDGEZ_BLE_REQUESTED_MTU = 517
@@ -192,9 +199,15 @@ class EdgezFlutterSdkPlugin :
     private var scanGeneration = 0
     private var usbConnection: UsbDeviceConnection? = null
     private var usbSerialPort: UsbSerialPort? = null
+    private var usbConsolePort: UsbSerialPort? = null
+    private val usbConsoleLineBuffer = StringBuilder()
+    private val usbDebugLineBuffer = StringBuilder()
     private var usbInterface: UsbInterface? = null
     private var usbInEndpoint: UsbEndpoint? = null
     private var usbOutEndpoint: UsbEndpoint? = null
+    private var usbVendorEchoTransport = false
+    private var usbVendorConsoleInterface: UsbInterface? = null
+    private var usbVendorConsoleInEndpoint: UsbEndpoint? = null
     private val usbRunning = AtomicBoolean(false)
     private val usbWriteLock = Object()
     private val usbRealtimeLock = Object()
@@ -393,6 +406,9 @@ class EdgezFlutterSdkPlugin :
 
     private fun usbTransportName(device: UsbDevice): String = when {
         device.vendorId == EDGEZ_TINYUSB_VID &&
+            device.productId == EDGEZ_USB_SERIAL_JTAG_PID ->
+            "esp32s3-usb-serial-jtag"
+        device.vendorId == EDGEZ_TINYUSB_VID &&
             (device.productId == EDGEZ_TINYUSB_CDC_PID ||
                 (0 until device.interfaceCount).any {
                     device.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_CDC_DATA
@@ -539,10 +555,25 @@ class EdgezFlutterSdkPlugin :
         logUsbEnumeration(device)
         val endpoints = findUsbInterface(device)
             ?: throw IllegalStateException("USB bulk endpoints are unavailable")
+        if (device.vendorId == EDGEZ_TINYUSB_VID &&
+            endpoints.first.interfaceClass == UsbConstants.USB_CLASS_VENDOR_SPEC
+        ) {
+            connectUsbVendorEcho(device, endpoints)
+            return@runCatching
+        }
         val driver = UsbSerialProber.getDefaultProber().probeDevice(device)
             ?: throw IllegalStateException("No supported USB serial driver for this device")
-        val port = driver.ports.firstOrNull()
-            ?: throw IllegalStateException("USB serial device has no ports")
+        // The root TinyUSB console test exposes two CDC interfaces. CDC0 is
+        // the framed mobile data channel; CDC1 is an independent log console.
+        // Always bind the app to port zero so console text cannot enter the
+        // mobile protocol stream.
+        val port = driver.ports.getOrNull(0)
+            ?: throw IllegalStateException("USB serial device has no CDC data port")
+        val consolePort = if (usbTransportName(device) == "tinyusb-cdc-uart") {
+            driver.ports.getOrNull(1)
+        } else {
+            null
+        }
         closeUsb(false)
         closeGatt()
         val connection = usbManager.openDevice(device)
@@ -557,13 +588,24 @@ class EdgezFlutterSdkPlugin :
             )
             port.dtr = true
             port.rts = true
+            consolePort?.open(connection)
+            consolePort?.setParameters(
+                USB_CDC_BAUD,
+                8,
+                UsbSerialPort.STOPBITS_1,
+                UsbSerialPort.PARITY_NONE,
+            )
+            consolePort?.dtr = true
+            consolePort?.rts = true
         } catch (error: Throwable) {
+            runCatching { consolePort?.close() }
             runCatching { port.close() }
             connection.close()
             throw error
         }
         usbConnection = connection
         usbSerialPort = port
+        usbConsolePort = consolePort
         usbInterface = endpoints.first
         usbInEndpoint = endpoints.second
         usbOutEndpoint = endpoints.third
@@ -577,14 +619,133 @@ class EdgezFlutterSdkPlugin :
         rxLen = 0
         usbRunning.set(true)
         startUsbReader()
+        startUsbConsoleReader()
         startUsbHeartbeat()
         emit(mapOf("type" to "connection", "connection" to "usb"))
         emit(
             mapOf(
                 "type" to "log",
-                "log" to "USB UART connected; waiting for firmware handshake",
+                "log" to "USB CDC data port connected; sending mobile-initiated ping",
             ),
         )
+        if (consolePort != null) {
+            emit(mapOf("type" to "log", "log" to "TinyUSB CDC console port connected"))
+        }
+    }
+
+    /** Raw TinyUSB vendor echo, matching 48acba6: EZ/version/type/seq/len. */
+    private fun connectUsbVendorEcho(
+        device: UsbDevice,
+        endpoints: Triple<UsbInterface, UsbEndpoint, UsbEndpoint>,
+    ) {
+        closeUsb(false)
+        closeGatt()
+        val connection = usbManager.openDevice(device)
+            ?: throw IllegalStateException("Unable to open USB vendor device")
+        if (!connection.claimInterface(endpoints.first, true)) {
+            connection.close()
+            throw IllegalStateException("Unable to claim USB vendor interface")
+        }
+        usbConnection = connection
+        usbInterface = endpoints.first
+        usbInEndpoint = endpoints.second
+        usbOutEndpoint = endpoints.third
+        usbVendorEchoTransport = true
+        val console = findUsbCdcConsoleInterface(device, endpoints.first)
+        if (console != null && !connection.claimInterface(console.first, true)) {
+            connection.releaseInterface(endpoints.first)
+            connection.close()
+            throw IllegalStateException("Unable to claim TinyUSB console interface")
+        }
+        usbVendorConsoleInterface = console?.first
+        usbVendorConsoleInEndpoint = console?.second
+        usbRxLen = 0
+        usbRunning.set(true)
+        startUsbVendorReader()
+        startUsbVendorConsoleReader()
+        startUsbHeartbeat()
+        emit(mapOf("type" to "connection", "connection" to "usb"))
+        emit(mapOf("type" to "log", "log" to "USB vendor echo connected; sending mobile ping"))
+        if (console != null) {
+            emit(mapOf("type" to "log", "log" to "TinyUSB CDC console connected"))
+        } else {
+            emit(mapOf("type" to "log", "log" to "TinyUSB CDC console interface not found"))
+        }
+    }
+
+    private fun startUsbVendorReader() {
+        thread(name = "edgez-usb-vendor-rx") {
+            val buffer = ByteArray(16 * 1024)
+            while (usbRunning.get() && usbVendorEchoTransport) {
+                val connection = usbConnection ?: break
+                val endpoint = usbInEndpoint ?: break
+                val read = runCatching { connection.bulkTransfer(endpoint, buffer, buffer.size, 1000) }
+                if (read.isFailure) break
+                val count = read.getOrThrow()
+                if (count > 0) handleUsbVendorBytes(buffer.copyOf(count))
+            }
+        }
+    }
+
+    private fun startUsbVendorConsoleReader() {
+        if (usbVendorConsoleInEndpoint == null) return
+        thread(name = "edgez-usb-vendor-console") {
+            val buffer = ByteArray(4096)
+            while (usbRunning.get() && usbVendorEchoTransport) {
+                val connection = usbConnection ?: break
+                val endpoint = usbVendorConsoleInEndpoint ?: break
+                val read = runCatching { connection.bulkTransfer(endpoint, buffer, buffer.size, 1000) }
+                if (read.isFailure) break
+                val count = read.getOrThrow()
+                if (count > 0) appendUsbConsoleBytes(buffer, count)
+            }
+        }
+    }
+
+    private fun handleUsbVendorBytes(bytes: ByteArray) {
+        if (usbRxLen + bytes.size > usbRxBuffer.size) usbRxLen = 0
+        System.arraycopy(bytes, 0, usbRxBuffer, usbRxLen, bytes.size)
+        usbRxLen += bytes.size
+        while (usbRxLen >= LEGACY_USB_HEADER_LEN) {
+            if (usbRxBuffer[0] != EDGEZ_MAGIC_0 || usbRxBuffer[1] != EDGEZ_MAGIC_1 ||
+                usbRxBuffer[2] != LEGACY_USB_VERSION) {
+                consumeUsbBytes(1)
+                continue
+            }
+            val payloadLength = (usbRxBuffer[6].toInt() and 0xff) or
+                ((usbRxBuffer[7].toInt() and 0xff) shl 8)
+            if (payloadLength > LEGACY_USB_MAX_PAYLOAD) {
+                consumeUsbBytes(1)
+                continue
+            }
+            val frameLength = LEGACY_USB_HEADER_LEN + payloadLength
+            if (usbRxLen < frameLength) return
+            val type = usbRxBuffer[3]
+            val sequence = (usbRxBuffer[4].toInt() and 0xff) or
+                ((usbRxBuffer[5].toInt() and 0xff) shl 8)
+            handleLegacyUsbEcho(type, sequence,
+                usbRxBuffer.copyOfRange(LEGACY_USB_HEADER_LEN, frameLength))
+            consumeUsbBytes(frameLength)
+        }
+    }
+
+    private fun findUsbCdcConsoleInterface(
+        device: UsbDevice,
+        vendorInterface: UsbInterface,
+    ): Pair<UsbInterface, UsbEndpoint>? {
+        for (index in 0 until device.interfaceCount) {
+            val intf = device.getInterface(index)
+            if (intf.id == vendorInterface.id ||
+                intf.interfaceClass != UsbConstants.USB_CLASS_CDC_DATA
+            ) continue
+            for (endpointIndex in 0 until intf.endpointCount) {
+                val endpoint = intf.getEndpoint(endpointIndex)
+                if (endpoint.type == UsbConstants.USB_ENDPOINT_XFER_BULK &&
+                    endpoint.direction == UsbConstants.USB_DIR_IN
+                ) return intf to endpoint
+            }
+        }
+        return null
     }
 
     private fun startUsbReader() {
@@ -592,27 +753,107 @@ class EdgezFlutterSdkPlugin :
             val buffer = ByteArray(16 * 1024)
             while (usbRunning.get()) {
                 val port = usbSerialPort ?: break
-                val count = port.read(buffer, 1000)
+                val read = runCatching { port.read(buffer, 1000) }
+                if (read.isFailure) {
+                    val error = read.exceptionOrNull() ?: break
+                    // A detach broadcast can race this blocking read. Never let
+                    // the background reader terminate the entire Flutter app.
+                    if (usbRunning.get()) {
+                        Log.w(LOG_TAG, "USB data reader stopped", error)
+                        emit(mapOf("type" to "log", "log" to "USB data reader stopped: ${error.message}"))
+                    }
+                    break
+                }
+                val count = read.getOrThrow()
                 if (count > 0) handleUsbBytes(buffer.copyOf(count))
             }
+        }
+    }
+
+    private fun startUsbConsoleReader() {
+        if (usbConsolePort == null) return
+        thread(name = "edgez-usb-console") {
+            val buffer = ByteArray(4096)
+            while (usbRunning.get()) {
+                val port = usbConsolePort ?: break
+                val read = runCatching { port.read(buffer, 1000) }
+                if (read.isFailure) {
+                    val error = read.exceptionOrNull() ?: break
+                    if (usbRunning.get()) {
+                        Log.w(LOG_TAG, "USB console reader stopped", error)
+                        emit(mapOf("type" to "log", "log" to "USB console reader stopped: ${error.message}"))
+                    }
+                    break
+                }
+                val count = read.getOrThrow()
+                if (count > 0) appendUsbConsoleBytes(buffer, count)
+            }
+        }
+    }
+
+    private fun appendUsbConsoleBytes(bytes: ByteArray, count: Int) {
+        val lines = mutableListOf<String>()
+        synchronized(usbConsoleLineBuffer) {
+            usbConsoleLineBuffer.append(String(bytes, 0, count, Charsets.UTF_8))
+            while (true) {
+                val newline = usbConsoleLineBuffer.indexOf("\n")
+                if (newline < 0) break
+                val line = usbConsoleLineBuffer.substring(0, newline).trimEnd('\r')
+                usbConsoleLineBuffer.delete(0, newline + 1)
+                if (line.isNotBlank()) lines += line
+            }
+            if (usbConsoleLineBuffer.length > 4096) usbConsoleLineBuffer.clear()
+        }
+        for (line in lines) emit(mapOf("type" to "log", "log" to "FW: $line"))
+    }
+
+    /**
+     * USB Serial/JTAG exposes one USB serial stream, so ESP_LOG output and
+     * framed protocol responses share it. Protocol parsing resynchronizes on
+     * the frame magic; every discarded printable byte is reconstructed here
+     * as an ESP32 log line for the Debug page.
+     */
+    private fun appendUsbDebugByte(value: Byte) {
+        val unsigned = value.toInt() and 0xff
+        var line: String? = null
+        synchronized(usbDebugLineBuffer) {
+            when (unsigned) {
+                '\n'.code -> {
+                    line = usbDebugLineBuffer.toString().trimEnd('\r')
+                    usbDebugLineBuffer.clear()
+                }
+                '\r'.code -> Unit
+                '\t'.code -> usbDebugLineBuffer.append('\t')
+                in 0x20..0x7e -> usbDebugLineBuffer.append(unsigned.toChar())
+                else -> usbDebugLineBuffer.clear()
+            }
+            if (usbDebugLineBuffer.length > 4096) usbDebugLineBuffer.clear()
+        }
+        line?.takeIf { it.isNotBlank() }?.let {
+            Log.i(LOG_TAG, "FW: $it")
+            emit(mapOf("type" to "log", "log" to "FW: $it"))
         }
     }
 
     private fun startUsbHeartbeat() {
         thread(name = "edgez-usb-heartbeat") {
             while (usbRunning.get()) {
-                val heartbeat = synchronized(usbStatsLock) {
+                val (heartbeat, sequence) = synchronized(usbStatsLock) {
                     if (usbAwaitingPongSequence != 0) usbHeartbeatTimeouts++
                     usbHeartbeatSequence++
                     usbHeartbeatSent++
                     usbAwaitingPongSequence = usbHeartbeatSequence
                     usbPingSentAtMs = System.currentTimeMillis()
-                    buildLegacyUsbEcho(
-                        LEGACY_USB_ECHO_REQUEST,
+                    Pair(
+                        buildLegacyUsbEcho(
+                            LEGACY_USB_ECHO_REQUEST,
+                            usbHeartbeatSequence,
+                            EDGEZ_USB_ECHO_PAYLOAD,
+                        ),
                         usbHeartbeatSequence,
-                        EDGEZ_USB_ECHO_PAYLOAD,
                     )
                 }
+                emit(mapOf("type" to "log", "log" to "USB PING seq=$sequence"))
                 writeUsbRaw(heartbeat).onFailure {
                     if (usbRunning.get()) {
                         emit(mapOf("type" to "log", "log" to "USB heartbeat write failed: ${it.message}"))
@@ -641,20 +882,37 @@ class EdgezFlutterSdkPlugin :
             .put(payload)
             .array()
 
+    private fun buildLogStreamCommand(level: Int, tag: ByteArray): ByteArray =
+        byteArrayOf(
+            'L'.code.toByte(),
+            'G'.code.toByte(),
+            LOG_STREAM_VERSION,
+            LOG_STREAM_SET_LEVEL,
+            level.toByte(),
+        ) + tag
+
     private fun handleLegacyUsbEcho(type: Byte, sequence: Int, payload: ByteArray) {
         if (type == LEGACY_USB_ECHO_REQUEST) {
             synchronized(usbStatsLock) { usbHeartbeatPingsReceived++ }
             writeUsbRaw(buildLegacyUsbEcho(LEGACY_USB_ECHO_RESPONSE, sequence, payload))
             markUsbProtocolReady()
         } else if (type == LEGACY_USB_ECHO_RESPONSE) {
+            var rttMs: Long? = null
             synchronized(usbStatsLock) {
                 usbHeartbeatPongsReceived++
                 if (sequence == (usbAwaitingPongSequence and 0xffff)) {
                     usbLastRttMs = (System.currentTimeMillis() - usbPingSentAtMs).coerceAtLeast(0)
+                    rttMs = usbLastRttMs
                     usbAwaitingPongSequence = 0
                 }
             }
             markUsbProtocolReady()
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "USB PONG seq=$sequence${rttMs?.let { " rtt=${it}ms" } ?: ""}",
+                ),
+            )
         } else if (type == LEGACY_USB_TX_ACK) {
             synchronized(usbStatsLock) {
                 usbApplicationFramesAcked++
@@ -671,6 +929,7 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun markUsbProtocolReady() {
+        if (usbVendorEchoTransport) return
         synchronized(usbStatsLock) {
             if (usbProtocolReady || !usbRunning.get()) return
             usbProtocolReady = true
@@ -706,15 +965,29 @@ class EdgezFlutterSdkPlugin :
         usbRunning.set(false)
         val connection = usbConnection
         val port = usbSerialPort
+        val consolePort = usbConsolePort
+        if (usbVendorEchoTransport) {
+            runCatching { usbVendorConsoleInterface?.let { connection?.releaseInterface(it) } }
+            runCatching { usbInterface?.let { connection?.releaseInterface(it) } }
+        }
+        runCatching { consolePort?.dtr = false }
+        runCatching { consolePort?.rts = false }
+        runCatching { consolePort?.close() }
         runCatching { port?.dtr = false }
         runCatching { port?.rts = false }
         runCatching { port?.close() }
         connection?.close()
         usbConnection = null
         usbSerialPort = null
+        usbConsolePort = null
+        synchronized(usbConsoleLineBuffer) { usbConsoleLineBuffer.clear() }
+        synchronized(usbDebugLineBuffer) { usbDebugLineBuffer.clear() }
         usbInterface = null
         usbInEndpoint = null
         usbOutEndpoint = null
+        usbVendorEchoTransport = false
+        usbVendorConsoleInterface = null
+        usbVendorConsoleInEndpoint = null
         rxLen = 0
         usbRxLen = 0
         synchronized(usbRealtimeLock) {
@@ -846,6 +1119,17 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun writeUsbRaw(bytes: ByteArray): Result<String> = runCatching {
+        if (usbVendorEchoTransport) {
+            val connection = usbConnection ?: throw IllegalStateException("USB vendor device is not connected")
+            val endpoint = usbOutEndpoint ?: throw IllegalStateException("USB vendor write endpoint is not connected")
+            synchronized(usbWriteLock) {
+                val written = connection.bulkTransfer(endpoint, bytes, bytes.size, USB_IO_TIMEOUT_MS)
+                if (written != bytes.size) {
+                    throw IllegalStateException("USB vendor short write: $written/${bytes.size}")
+                }
+            }
+            return@runCatching "USB vendor frame sent"
+        }
         val frame = buildSerialStreamFrame(bytes)
         synchronized(usbWriteLock) {
             val port = usbSerialPort ?: throw IllegalStateException("USB UART is not connected")
@@ -877,6 +1161,27 @@ class EdgezFlutterSdkPlugin :
         when (call.method) {
             "listUsbDevices" -> result.success(listUsbDevices())
             "connectUsb" -> connectUsb(call.argument<Int>("deviceId"), result)
+            "setDeviceLogLevel" -> {
+                val level = call.argument<Int>("level") ?: 2
+                val tag = call.argument<String>("tag").orEmpty()
+                val tagBytes = tag.toByteArray(Charsets.UTF_8)
+                if (level !in 0..5) {
+                    result.error("invalid_log_level", "Log level must be between 0 and 5", null)
+                } else if (tagBytes.size > LEGACY_USB_MAX_PAYLOAD) {
+                    result.error("invalid_log_tag", "Log tag is too long", null)
+                } else if (gatt == null && (!usbProtocolReady || usbConnection == null)) {
+                    result.error("transport_not_ready", "BLE/USB stream is not ready", null)
+                } else {
+                    sendRealtimePacket(
+                        protocolMagic = byteArrayOf(),
+                        packet = buildLogStreamCommand(level, tagBytes),
+                        dropStale = false,
+                    ).fold(
+                        onSuccess = { result.success(null) },
+                        onFailure = { result.error("transport_write_failed", it.message, null) },
+                    )
+                }
+            }
             "reportUsbPacketLoss" -> {
                 val loss = call.argument<Number>("lossPercent")?.toDouble() ?: 0.0
                 usbInterFrameGapMs = when {
@@ -2645,6 +2950,7 @@ class EdgezFlutterSdkPlugin :
             if (usbRxBuffer[0] != SERIAL_STREAM_MAGIC_0 ||
                 usbRxBuffer[1] != SERIAL_STREAM_MAGIC_1
             ) {
+                appendUsbDebugByte(usbRxBuffer[0])
                 consumeUsbBytes(1)
                 continue
             }
@@ -2694,6 +3000,7 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun dispatchUsbPayload(payload: ByteArray) {
+        if (handleLogStreamFrame(payload)) return
         // A valid framed payload is also proof that the firmware UART parser is
         // running, even when heartbeat diagnostics are disabled in the future.
         markUsbProtocolReady()
@@ -2906,6 +3213,7 @@ class EdgezFlutterSdkPlugin :
         bytes: ByteArray,
         receivedAtUs: Long = SystemClock.elapsedRealtimeNanos() / 1_000L,
     ) {
+        if (handleLogStreamFrame(bytes)) return
         val hasVoiceEnvelope = bytes.size > EDGEZ_VOICE_PROTOCOL_MAGIC.size &&
             bytes.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size)
                 .contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)
@@ -2955,6 +3263,33 @@ class EdgezFlutterSdkPlugin :
                 ),
             )
         }
+    }
+
+    private fun handleLogStreamFrame(bytes: ByteArray): Boolean {
+        if (bytes.size < LOG_STREAM_HEADER_LEN ||
+            bytes[0] != 'L'.code.toByte() ||
+            bytes[1] != 'G'.code.toByte() ||
+            bytes[2] != LOG_STREAM_VERSION
+        ) return false
+
+        val payload = bytes.copyOfRange(LOG_STREAM_HEADER_LEN, bytes.size)
+        when (bytes[3]) {
+            LOG_STREAM_RECORD -> {
+                val text = payload.toString(Charsets.UTF_8).trimEnd('\r', '\n')
+                if (text.isNotBlank()) emit(mapOf("type" to "log", "log" to "FW: $text"))
+            }
+            LOG_STREAM_LEVEL_RESPONSE -> {
+                val tag = payload.toString(Charsets.UTF_8).ifBlank { "*" }
+                val level = bytes[4].toInt() and 0xff
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "Device log level=${if (level == LOG_STREAM_LEVEL_ERROR) "error" else level} tag=$tag",
+                    ),
+                )
+            }
+        }
+        return true
     }
 
     private fun findMagicOffset(buffer: ByteArray, length: Int): Int {

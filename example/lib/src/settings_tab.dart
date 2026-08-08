@@ -889,7 +889,11 @@ class SettingsScreen extends StatefulWidget {
                 child: ListTile(
                   leading: const Icon(Icons.usb),
                   title: Text(device.label),
-                  subtitle: const Text('High-speed wired transport'),
+                  subtitle: Text(
+                    device.transport == 'tinyusb-cdc-uart'
+                        ? 'TinyUSB CDC · mobile ping/pong on data port 0'
+                        : 'High-speed wired transport',
+                  ),
                   trailing: selectedUsbDevice?.id == device.id
                       ? const Icon(Icons.check_circle)
                       : null,

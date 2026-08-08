@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:fixnum/fixnum.dart';
@@ -214,6 +213,16 @@ class EdgezMeshSdk {
 
   Future<void> disconnect() {
     return _transport.invokeMethod<void>('disconnect');
+  }
+
+  Future<void> setDeviceLogLevel(
+    EdgezDeviceLogLevel level, {
+    String tag = '',
+  }) {
+    return _transport.invokeMethod<void>('setDeviceLogLevel', {
+      'level': level.wireValue,
+      'tag': tag,
+    });
   }
 
   Future<int> reportUsbPacketLoss(double lossPercent) async {

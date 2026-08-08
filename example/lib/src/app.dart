@@ -61,6 +61,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   int? selectedNodeNum;
   bool showTopology = false;
   bool showDebug = false;
+  EdgezDeviceLogLevel deviceLogLevel = EdgezDeviceLogLevel.warning;
   EdgezUserIdentity? userIdentity;
   bool databaseReady = false;
   bool persistenceEnabled = false;
@@ -727,6 +728,17 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     });
   }
 
+  Future<void> _setDeviceLogLevel(EdgezDeviceLogLevel level) async {
+    try {
+      await session.setDeviceLogLevel(level);
+      if (mounted) setState(() => deviceLogLevel = level);
+    } catch (error) {
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to set device log level: $error')),
+      );
+    }
+  }
+
   Future<void> _saveAppSettings() async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
     final identity = await identityStore.updateName(userName);
@@ -1155,6 +1167,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceModeEnabled: deviceModeEnabled,
                   databaseReady: databaseReady,
                   speedMetrics: speedMetrics,
+                  debugLogs: meshState.debugLogs,
+                  logLevel: deviceLogLevel,
+                  onLogLevelChanged:
+                      meshState.connection != EdgezConnectionType.none
+                          ? (level) => unawaited(_setDeviceLogLevel(level))
+                          : null,
                   onClose: () => setState(() => showDebug = false),
                 )
               : SettingsScreen(

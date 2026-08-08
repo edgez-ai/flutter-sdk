@@ -70,6 +70,7 @@ class EdgezMeshState {
     required this.voiceCall,
     required this.statusLine,
     required this.bleReady,
+    this.debugLogs = const <String>[],
     this.usbLinkStats = const EdgezUsbLinkStats(),
     this.sharedLinkStats,
     this.bleConnecting = false,
@@ -118,6 +119,9 @@ class EdgezMeshState {
   final EdgezVoiceCallState voiceCall;
   final String statusLine;
   final bool bleReady;
+
+  /// Most recent transport and firmware-console lines, bounded by the session.
+  final List<String> debugLogs;
   final EdgezUsbLinkStats usbLinkStats;
   final EdgezLinkStats? sharedLinkStats;
   final bool bleConnecting;
@@ -157,6 +161,7 @@ class EdgezMeshState {
     EdgezVoiceCallState? voiceCall,
     String? statusLine,
     bool? bleReady,
+    List<String>? debugLogs,
     EdgezUsbLinkStats? usbLinkStats,
     EdgezLinkStats? sharedLinkStats,
     bool? bleConnecting,
@@ -179,6 +184,7 @@ class EdgezMeshState {
       voiceCall: voiceCall ?? this.voiceCall,
       statusLine: statusLine ?? this.statusLine,
       bleReady: bleReady ?? this.bleReady,
+      debugLogs: List<String>.unmodifiable(debugLogs ?? this.debugLogs),
       usbLinkStats: usbLinkStats ?? this.usbLinkStats,
       sharedLinkStats: sharedLinkStats ?? this.sharedLinkStats,
       bleConnecting: bleConnecting ?? this.bleConnecting,
@@ -595,6 +601,10 @@ class EdgezMeshSession extends ChangeNotifier {
     _setState(
       EdgezMeshState.initial().copyWith(statusLine: 'Disconnected'),
     );
+  }
+
+  Future<void> setDeviceLogLevel(EdgezDeviceLogLevel level) {
+    return sdk.setDeviceLogLevel(level);
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) async {
@@ -1119,7 +1129,20 @@ class EdgezMeshSession extends ChangeNotifier {
           ),
         );
       case EdgezMeshEventType.log:
-        _setState(_state.copyWith(statusLine: event.log));
+        // Firmware lines arrive as FW-tagged events over either BLE or USB.
+        // Keep the Debug page focused on firmware output; mobile transport
+        // diagnostics remain status-only.
+        if (!event.log.startsWith('FW:')) {
+          _setState(_state.copyWith(statusLine: event.log));
+          return;
+        }
+        final timestamp = DateTime.now().toIso8601String().substring(11, 23);
+        final logs = List<String>.of(_state.debugLogs)
+          ..add('$timestamp ${event.log}');
+        if (logs.length > 500) {
+          logs.removeRange(0, logs.length - 500);
+        }
+        _setState(_state.copyWith(statusLine: event.log, debugLogs: logs));
     }
   }
 

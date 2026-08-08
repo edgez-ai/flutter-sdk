@@ -17,6 +17,9 @@ class DebugScreen extends StatelessWidget {
     required this.deviceModeEnabled,
     required this.databaseReady,
     required this.speedMetrics,
+    required this.debugLogs,
+    required this.logLevel,
+    required this.onLogLevelChanged,
     required this.onClose,
     super.key,
   });
@@ -30,6 +33,9 @@ class DebugScreen extends StatelessWidget {
   final bool deviceModeEnabled;
   final bool databaseReady;
   final List<ExampleSpeedMetric> speedMetrics;
+  final List<String> debugLogs;
+  final EdgezDeviceLogLevel logLevel;
+  final ValueChanged<EdgezDeviceLogLevel>? onLogLevelChanged;
   final VoidCallback onClose;
 
   @override
@@ -37,7 +43,7 @@ class DebugScreen extends StatelessWidget {
     final status = meshStatus;
     return SafeArea(
       child: ListView(
-        cacheExtent: 2400,
+        scrollCacheExtent: 2400,
         padding: const EdgeInsets.all(16),
         children: <Widget>[
           Row(
@@ -182,6 +188,52 @@ class DebugScreen extends StatelessWidget {
                     ? 'Events from the BLE SDK will appear here as status text.'
                     : statusLine,
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          InfoCard(
+            title: 'Device logs',
+            children: <Widget>[
+              DropdownButtonFormField<EdgezDeviceLogLevel>(
+                initialValue: logLevel,
+                decoration: const InputDecoration(
+                  labelText: 'Log level',
+                  helperText: 'Applies to the connected BLE or USB device',
+                ),
+                items: EdgezDeviceLogLevel.values
+                    .map(
+                      (level) => DropdownMenuItem<EdgezDeviceLogLevel>(
+                        value: level,
+                        child: Text(level.label),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: onLogLevelChanged == null
+                    ? null
+                    : (level) {
+                        if (level != null) onLogLevelChanged!(level);
+                      },
+              ),
+              const SizedBox(height: 12),
+              if (debugLogs.isEmpty)
+                const Text('No device logs received on this connection yet.')
+              else
+                SizedBox(
+                  height: 240,
+                  child: ListView.builder(
+                    reverse: true,
+                    itemCount: debugLogs.length,
+                    itemBuilder: (context, index) {
+                      final line = debugLogs[debugLogs.length - 1 - index];
+                      return SelectableText(
+                        line,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                            ),
+                      );
+                    },
+                  ),
+                ),
             ],
           ),
         ],

@@ -11,6 +11,20 @@ enum EdgezConnectionType {
   }
 }
 
+enum EdgezDeviceLogLevel {
+  none(0, 'None'),
+  error(1, 'Error'),
+  warning(2, 'Warn'),
+  info(3, 'Info'),
+  debug(4, 'Debug'),
+  verbose(5, 'Verbose');
+
+  const EdgezDeviceLogLevel(this.wireValue, this.label);
+
+  final int wireValue;
+  final String label;
+}
+
 enum EdgezMeshEventType {
   connection,
   bleDevice,
@@ -150,12 +164,17 @@ class EdgezUsbDevice {
     required this.name,
     required this.vendorId,
     required this.productId,
+    this.transport = 'generic-usb',
   });
 
   final int id;
   final String name;
   final int vendorId;
   final int productId;
+
+  /// Native transport exposed by the Android USB plugin, for example
+  /// `tinyusb-cdc-uart` or `cp2102-uart`.
+  final String transport;
 
   String get label => '$name (${vendorId.toRadixString(16).padLeft(4, '0')}:'
       '${productId.toRadixString(16).padLeft(4, '0')})';
@@ -165,6 +184,7 @@ class EdgezUsbDevice {
         name: map['name'] as String? ?? 'ESP32-S3 USB',
         vendorId: map['vendorId'] as int? ?? 0,
         productId: map['productId'] as int? ?? 0,
+        transport: map['transport'] as String? ?? 'generic-usb',
       );
 }
 
