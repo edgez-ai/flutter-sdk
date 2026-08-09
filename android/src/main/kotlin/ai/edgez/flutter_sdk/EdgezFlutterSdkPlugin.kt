@@ -67,12 +67,15 @@ private const val USB_IO_TIMEOUT_MS = 10_000
 private const val USB_GAP_MIN_MS = 1L
 private const val USB_GAP_INITIAL_MS = 3L
 private const val USB_GAP_MAX_MS = 10L
-private const val USB_HEARTBEAT_INTERVAL_MS = 60_000L
+// The firmware treats 25 seconds without a valid host frame as removal. This
+// keeps physical cable removal detection responsive without affecting streams.
+private const val USB_HEARTBEAT_INTERVAL_MS = 10_000L
 private const val LEGACY_USB_VERSION: Byte = 1
 private const val LEGACY_USB_ECHO_REQUEST: Byte = 1
 private const val LEGACY_USB_ECHO_RESPONSE: Byte = 2
 private const val LEGACY_USB_TX_ACK: Byte = 3
 private const val LEGACY_USB_FLOW_CONTROL: Byte = 4
+private const val LEGACY_USB_EXIT_CONTROL: Byte = 8
 private const val LEGACY_USB_HEADER_LEN = 8
 private const val LEGACY_USB_MAX_PAYLOAD = 256
 private const val EDGEZ_TINYUSB_VID = 0x303A
@@ -975,6 +978,20 @@ class EdgezFlutterSdkPlugin :
 
     private fun closeUsb(emitDisconnected: Boolean) {
         val wasConnected = usbConnection != null
+        // A graceful app-side disconnect can start the firmware's one-minute
+        // grace period immediately. Physical removal is covered by its
+        // heartbeat timeout.
+        if (wasConnected && usbProtocolReady) {
+            runCatching {
+                writeUsbRaw(
+                    buildLegacyUsbEcho(
+                        LEGACY_USB_EXIT_CONTROL,
+                        0,
+                        byteArrayOf(),
+                    ),
+                )
+            }
+        }
         usbRunning.set(false)
         val connection = usbConnection
         val port = usbSerialPort

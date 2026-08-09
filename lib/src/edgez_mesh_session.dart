@@ -542,6 +542,10 @@ class EdgezMeshSession extends ChangeNotifier {
     // a device reset, so the init/auth packet must be sent again even when the
     // saved mesh configuration itself has not changed.
     _lastInitKey = null;
+    _recordAppDiagnostic(
+      EdgezDeviceLogLevel.debug,
+      'BLE reconnect requested device=$deviceId previous=${_state.connection.name}',
+    );
     // A session owns exactly one physical transport. Close USB (or a previous
     // BLE link) before Android starts a new BLE connection.
     if (_state.connection != EdgezConnectionType.none) {
@@ -581,6 +585,10 @@ class EdgezMeshSession extends ChangeNotifier {
     // Opening a CP2102 commonly resets the ESP32. Never reuse initialization
     // deduplication state from BLE or an earlier USB connection.
     _lastInitKey = null;
+    _recordAppDiagnostic(
+      EdgezDeviceLogLevel.debug,
+      'USB reconnect requested device=${device.id} previous=${_state.connection.name}',
+    );
     // Do not leave a GATT connection alive while opening the USB serial port.
     if (_state.connection != EdgezConnectionType.none) {
       await sdk.disconnect();
@@ -627,6 +635,21 @@ class EdgezMeshSession extends ChangeNotifier {
   Future<void> configureLogLevel(EdgezDeviceLogLevel level) {
     _appLogLevel = level;
     return sdk.configureDeviceLogLevel(level);
+  }
+
+  Future<void> _applyConfiguredDeviceLogLevel() async {
+    try {
+      await sdk.setDeviceLogLevel(_appLogLevel);
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.debug,
+        'Applied device log level=${_appLogLevel.name} after transport ready',
+      );
+    } catch (error) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.warning,
+        'Unable to apply device log level after transport ready: $error',
+      );
+    }
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) async {
@@ -749,6 +772,10 @@ class EdgezMeshSession extends ChangeNotifier {
     final config = _lastMeshConfig;
     final fromNode = _state.status?.macAddress ?? 0;
     if (config == null || fromNode == 0) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.warning,
+        'Conversation send blocked to=$toNode: mesh config=${config != null} local=0x${fromNode.toRadixString(16)}',
+      );
       _replaceMessage(
         pendingUuid,
         status: 'Failed: save settings and wait for mesh status',
@@ -757,6 +784,10 @@ class EdgezMeshSession extends ChangeNotifier {
       return;
     }
     try {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.debug,
+        'Conversation send start to=0x${toNode.toRadixString(16)} bytes=${text.length} hop=$maxHop transport=${_state.connection.name}',
+      );
       final messageUuid = await sdk.sendTextMessage(
         config: config,
         toNode: node!,
@@ -777,6 +808,10 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Message sent',
       );
     } catch (error) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.error,
+        'Conversation send failed to=0x${toNode.toRadixString(16)} error=$error',
+      );
       _replaceMessage(
         pendingUuid,
         status: 'Failed: $error',
@@ -875,6 +910,10 @@ class EdgezMeshSession extends ChangeNotifier {
     }
     _setState(_state.copyWith(statusLine: 'Sending link measurement'));
     try {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.debug,
+        'Speed test start to=0x${toNode.toRadixString(16)} bytes=$totalBytes hop=$hop transport=${_state.connection.name}',
+      );
       await sdk.sendSpeedTest(
         toNode: toNode,
         fromNode: fromNode,
@@ -890,6 +929,10 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       _setState(_state.copyWith(statusLine: 'Link measurement sent'));
     } catch (error) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.error,
+        'Speed test send failed to=0x${toNode.toRadixString(16)} error=$error',
+      );
       _setState(_state.copyWith(statusLine: 'Link measurement failed: $error'));
       rethrow;
     }
@@ -1016,6 +1059,12 @@ class EdgezMeshSession extends ChangeNotifier {
             },
           ),
         );
+        _recordAppDiagnostic(
+          event.connection == EdgezConnectionType.none
+              ? EdgezDeviceLogLevel.warning
+              : EdgezDeviceLogLevel.debug,
+          'Transport state=${event.connection.name} ready=$_bleReady initReset=${_lastInitKey == null}',
+        );
       case EdgezMeshEventType.bleDevice:
         final device = event.bleDevice;
         if (device == null || device.id.isEmpty) return;
@@ -1037,7 +1086,14 @@ class EdgezMeshSession extends ChangeNotifier {
               : 'BLE control channel ready; requesting device status',
           bleReady: true,
         ));
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.debug,
+          'Transport ready=${_state.connection.name}; reinitializing mesh=${!_provisioning}',
+        );
         unawaited(_refreshOtaReadiness());
+        // USB receives this level in the nonce handshake; BLE has no handshake
+        // payload, so send LG2 when either control stream becomes writable.
+        unawaited(_applyConfiguredDeviceLogLevel());
         if (!_provisioning) {
           if (_state.connection == EdgezConnectionType.usb) {
             unawaited(_authorizeAndInitializeUsb());
@@ -1185,6 +1241,21 @@ class EdgezMeshSession extends ChangeNotifier {
       return EdgezDeviceLogLevel.warning;
     }
     return EdgezDeviceLogLevel.debug;
+  }
+
+  void _recordAppDiagnostic(EdgezDeviceLogLevel level, String message) {
+    if (_appLogLevel.wireValue < level.wireValue) return;
+    final timestamp = DateTime.now().toIso8601String().substring(11, 23);
+    final logs = List<String>.of(_state.debugLogs)
+      ..add('$timestamp APP: $message');
+    if (logs.length > 500) {
+      logs.removeRange(0, logs.length - 500);
+    }
+    _setState(_state.copyWith(debugLogs: logs));
+    final store = deviceLogStore;
+    if (store != null) {
+      unawaited(store.append(logs.last).catchError((_) {}));
+    }
   }
 
   Future<void> _refreshOtaReadiness() async {
@@ -1635,16 +1706,6 @@ class EdgezMeshSession extends ChangeNotifier {
         receivedAtUs: receivedAtUs,
       );
     }
-    if (frame.type != EdgezSpeedTestFrameType.data ||
-        frame.chunkIndex == 0 ||
-        (frame.chunkIndex + 1) % 128 == 0) {
-      debugPrint(
-        'EdgeZ speed RX from=${fromNode.toRadixString(16)} '
-        'transfer=${frame.transferId} '
-        'type=${frame.type.name} chunk=${frame.chunkIndex}/${frame.totalChunks} '
-        'data=${frame.data.length}',
-      );
-    }
     final key = '$fromNode:${frame.transferId}';
     late final _PendingSpeedTest pending;
     if (frame.type == EdgezSpeedTestFrameType.start) {
@@ -1657,9 +1718,9 @@ class EdgezMeshSession extends ChangeNotifier {
     } else {
       final existing = _pendingSpeedTests[key];
       if (existing == null) {
-        debugPrint(
-          'EdgeZ speed RX ignored orphan ${frame.type.name} '
-          'from=${fromNode.toRadixString(16)} transfer=${frame.transferId}',
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.warning,
+          'Speed RX orphan type=${frame.type.name} from=0x${fromNode.toRadixString(16)} transfer=${frame.transferId}',
         );
         return;
       }
@@ -1701,9 +1762,9 @@ class EdgezMeshSession extends ChangeNotifier {
       pending.timer = Timer(const Duration(minutes: 10), () {
         final stale = _pendingSpeedTests.remove(key);
         stale?.timer?.cancel();
-        debugPrint(
-          'EdgeZ speed RX discarded stale pre-END transfer '
-          '${frame.transferId} from=${fromNode.toRadixString(16)}',
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.warning,
+          'Speed RX discarded stale pre-END transfer=${frame.transferId} from=0x${fromNode.toRadixString(16)}',
         );
       });
     }
@@ -1777,11 +1838,9 @@ class EdgezMeshSession extends ChangeNotifier {
         unawaited(sdk.reportUsbPacketLoss(rawLossPercent));
       }
       unawaited(_sendSpeedTestResult(fromNode, testStats));
-      debugPrint(
-        'EdgeZ speed result from=${fromNode.toRadixString(16)} '
-        'averageBps=${rawBitsPerSecond.toStringAsFixed(0)} '
-        'averageLoss=${rawLossPercent.toStringAsFixed(2)}% '
-        'received=${pending.receivedChunks}/$expectedPackets bytes=${pending.receivedBytes}',
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.debug,
+        'Speed result from=0x${fromNode.toRadixString(16)} bps=${rawBitsPerSecond.toStringAsFixed(0)} loss=${rawLossPercent.toStringAsFixed(2)}% received=${pending.receivedChunks}/$expectedPackets bytes=${pending.receivedBytes}',
       );
     }
   }
@@ -1794,8 +1853,9 @@ class EdgezMeshSession extends ChangeNotifier {
     final sender = _state.nodes[senderNodeNum];
     final localNode = _state.status?.macAddress ?? 0;
     if (config == null || sender == null || localNode == 0) {
-      debugPrint(
-        'EdgeZ speed result reply skipped: conversation identity unavailable',
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.warning,
+        'Speed result reply skipped: conversation identity unavailable',
       );
       return;
     }
@@ -1840,7 +1900,10 @@ class EdgezMeshSession extends ChangeNotifier {
         status: 'Failed: $error',
         statusLine: 'Speed test result failed: $error',
       );
-      debugPrint('EdgeZ speed result reply failed: $error');
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.error,
+        'Speed result reply failed: $error',
+      );
     }
   }
 

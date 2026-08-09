@@ -722,10 +722,6 @@ class EdgezMeshSdk {
       ),
       1,
     );
-    debugPrint(
-      'EdgeZ speed TX start transport=compact '
-      'transfer=$transferId chunks=$totalChunks bytes=$totalBytes',
-    );
     var sentBytes = 0;
     var lastProgressAt = DateTime.now();
     for (var index = 0; index < totalChunks; index++) {
@@ -748,12 +744,6 @@ class EdgezMeshSdk {
         waitForDrain: (index + 1) % _speedTestDrainBatchChunks == 0,
       );
       sentBytes += length;
-      if (index == 0 || (index + 1) % 128 == 0) {
-        debugPrint(
-          'EdgeZ speed TX data transfer=$transferId chunk=${index + 1}/$totalChunks '
-          'sent=$sentBytes',
-        );
-      }
       final now = DateTime.now();
       if (sentBytes == totalBytes ||
           now.difference(lastProgressAt) >= _speedTestProgressInterval) {
@@ -769,9 +759,6 @@ class EdgezMeshSdk {
       ),
       totalChunks + 2,
       waitForDrain: true,
-    );
-    debugPrint(
-      'EdgeZ speed TX end transfer=$transferId chunks=$totalChunks bytes=$sentBytes',
     );
     return transferId.toRadixString(16).padLeft(16, '0');
   }
