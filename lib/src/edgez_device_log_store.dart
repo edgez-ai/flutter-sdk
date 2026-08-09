@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 
 import 'package:path_provider/path_provider.dart';
+
+import 'models.dart';
 
 typedef EdgezDeviceLogDirectoryProvider = Future<Directory> Function();
 typedef EdgezDeviceLogExportDirectoryProvider = Future<Directory> Function();
@@ -17,6 +20,9 @@ class EdgezDeviceLogStore {
     this.maxFileBytes = 10 * 1024 * 1024,
     this.maxFiles = 5,
     this.maxInMemoryLines = 500,
+    this.standardFlushLineCount = 100,
+    this.debugFlushLineCount = 250,
+    this.idleFlushInterval = const Duration(seconds: 1),
     EdgezDeviceLogDirectoryProvider? directoryProvider,
     EdgezDeviceLogExportDirectoryProvider? exportDirectoryProvider,
   })  : _directoryProvider = directoryProvider ?? _defaultDirectory,
@@ -26,11 +32,24 @@ class EdgezDeviceLogStore {
   final int maxFileBytes;
   final int maxFiles;
   final int maxInMemoryLines;
+  final int standardFlushLineCount;
+  final int debugFlushLineCount;
+  final Duration idleFlushInterval;
   final EdgezDeviceLogDirectoryProvider _directoryProvider;
   final EdgezDeviceLogExportDirectoryProvider _exportDirectoryProvider;
   Future<void> _tail = Future<void>.value();
+  final List<String> _pendingLines = <String>[];
+  Timer? _idleFlushTimer;
+
+  int _flushLineCount(EdgezDeviceLogLevel configuredLevel) {
+    return configuredLevel == EdgezDeviceLogLevel.debug ||
+            configuredLevel == EdgezDeviceLogLevel.verbose
+        ? debugFlushLineCount
+        : standardFlushLineCount;
+  }
 
   Future<List<String>> load() => _enqueue(() async {
+        await _flushPending();
         final directory = await _directoryProvider();
         final lines = <String>[];
         for (var index = maxFiles - 1; index >= 0; index--) {
@@ -42,24 +61,28 @@ class EdgezDeviceLogStore {
         return List<String>.unmodifiable(_tailLines(lines));
       });
 
-  Future<void> append(String line) => _enqueue(() async {
-        final directory = await _directoryProvider();
-        await directory.create(recursive: true);
-        final file = _file(directory, 0);
-        final bytes = utf8.encode('$line\n');
-        if (await file.exists() &&
-            (await file.length()) + bytes.length > maxFileBytes) {
-          await _rotate(directory);
+  Future<void> append(
+    String line, {
+    EdgezDeviceLogLevel configuredLevel = EdgezDeviceLogLevel.info,
+  }) =>
+      _enqueue(() async {
+        _pendingLines.add(line);
+        if (_pendingLines.length >= _flushLineCount(configuredLevel)) {
+          await _flushPending();
+        } else {
+          _scheduleIdleFlush();
         }
-        await _file(directory, 0).writeAsBytes(
-          bytes,
-          mode: FileMode.append,
-          flush: true,
-        );
       });
+
+  /// Persists records that have not yet reached their configured level's
+  /// normal batch size.
+  Future<void> flush() => _enqueue(_flushPending);
 
   /// Deletes the active log and every rotated backup.
   Future<void> clear() => _enqueue(() async {
+        _idleFlushTimer?.cancel();
+        _idleFlushTimer = null;
+        _pendingLines.clear();
         final directory = await _directoryProvider();
         for (var index = 0; index < maxFiles; index++) {
           final file = _file(directory, index);
@@ -69,6 +92,7 @@ class EdgezDeviceLogStore {
 
   /// Combines the current log and its rotated backups into one export file.
   Future<File> export() => _enqueue(() async {
+        await _flushPending();
         final sourceDirectory = await _directoryProvider();
         final exportDirectory = await _exportDirectoryProvider();
         await exportDirectory.create(recursive: true);
@@ -106,6 +130,36 @@ class EdgezDeviceLogStore {
       final source = _file(directory, index - 1);
       if (await source.exists()) await source.rename(destination.path);
     }
+  }
+
+  void _scheduleIdleFlush() {
+    if (_idleFlushTimer != null || idleFlushInterval <= Duration.zero) return;
+    _idleFlushTimer = Timer(idleFlushInterval, () {
+      _idleFlushTimer = null;
+      unawaited(flush());
+    });
+  }
+
+  Future<void> _flushPending() async {
+    _idleFlushTimer?.cancel();
+    _idleFlushTimer = null;
+    if (_pendingLines.isEmpty) return;
+
+    final lines = List<String>.of(_pendingLines);
+    _pendingLines.clear();
+    final directory = await _directoryProvider();
+    await directory.create(recursive: true);
+    final file = _file(directory, 0);
+    final bytes = utf8.encode('${lines.join('\n')}\n');
+    if (await file.exists() &&
+        (await file.length()) + bytes.length > maxFileBytes) {
+      await _rotate(directory);
+    }
+    await _file(directory, 0).writeAsBytes(
+      bytes,
+      mode: FileMode.append,
+      flush: true,
+    );
   }
 
   List<String> _tailLines(List<String> lines) {

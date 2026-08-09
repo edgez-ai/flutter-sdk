@@ -626,6 +626,7 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> disconnect() async {
     await sdk.disconnect();
+    await deviceLogStore?.flush();
     _deviceStatusTimeout?.cancel();
     _stopLocationTracking();
     _bleReady = false;
@@ -1239,7 +1240,11 @@ class EdgezMeshSession extends ChangeNotifier {
         _setState(_state.copyWith(statusLine: event.log, debugLogs: logs));
         final store = deviceLogStore;
         if (store != null) {
-          unawaited(store.append(logs.last).catchError((_) {}));
+          unawaited(
+            store
+                .append(logs.last, configuredLevel: _appLogLevel)
+                .catchError((_) {}),
+          );
         }
     }
   }
@@ -1266,7 +1271,11 @@ class EdgezMeshSession extends ChangeNotifier {
     _setState(_state.copyWith(debugLogs: logs));
     final store = deviceLogStore;
     if (store != null) {
-      unawaited(store.append(logs.last).catchError((_) {}));
+      unawaited(
+        store
+            .append(logs.last, configuredLevel: _appLogLevel)
+            .catchError((_) {}),
+      );
     }
   }
 
