@@ -630,8 +630,12 @@ class EdgezMeshSession extends ChangeNotifier {
     _stopLocationTracking();
     _bleReady = false;
     _lastInitKey = null;
+    final retainedLogs = _state.debugLogs;
     _setState(
-      EdgezMeshState.initial().copyWith(statusLine: 'Disconnected'),
+      EdgezMeshState.initial().copyWith(
+        statusLine: 'Disconnected',
+        debugLogs: retainedLogs,
+      ),
     );
   }
 
