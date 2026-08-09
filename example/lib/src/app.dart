@@ -38,6 +38,9 @@ enum AppDestination {
 
 const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
 const _speedHistoryWindow = Duration(minutes: 30);
+const _downloadsChannel = MethodChannel(
+  'ai.edgez.flutter_sdk_example/downloads',
+);
 
 class EdgezExampleApp extends StatefulWidget {
   const EdgezExampleApp({super.key});
@@ -750,16 +753,50 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   Future<void> _exportDeviceLogs() async {
+    File? stagedFile;
     try {
-      final file = await deviceLogStore.export();
-      if (!mounted) return;
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('Logs exported to ${file.path}')),
+      stagedFile = await deviceLogStore.export();
+      final fileName = stagedFile.uri.pathSegments.last;
+      final downloadedName = await _downloadsChannel.invokeMethod<String>(
+        'saveToDownloads',
+        <String, String>{
+          'sourcePath': stagedFile.path,
+          'fileName': fileName,
+        },
       );
-    } catch (_) {
       if (!mounted) return;
       scaffoldMessengerKey.currentState?.showSnackBar(
-        const SnackBar(content: Text('Unable to export device logs')),
+        SnackBar(
+          content: Text(
+            'Downloaded to Downloads/${downloadedName ?? fileName}',
+          ),
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Public Downloads write failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to download logs: $error')),
+      );
+    } finally {
+      if (stagedFile != null && await stagedFile.exists()) {
+        await stagedFile.delete();
+      }
+    }
+  }
+
+  Future<void> _pruneDeviceLogs() async {
+    try {
+      await session.pruneDeviceLogs();
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('Logs pruned')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to prune logs: $error')),
       );
     }
   }
@@ -1194,6 +1231,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   speedMetrics: speedMetrics,
                   debugLogs: meshState.debugLogs,
                   onExportLogs: () => unawaited(_exportDeviceLogs()),
+                  onPruneLogs: () => unawaited(_pruneDeviceLogs()),
                   onClose: () => setState(() => showDebug = false),
                 )
               : SettingsScreen(

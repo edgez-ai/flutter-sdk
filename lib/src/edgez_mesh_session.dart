@@ -294,6 +294,14 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  /// Clears both the retained UI window and all rotated log files.
+  Future<void> pruneDeviceLogs() async {
+    // Clear the visible cache before yielding. Any new event received after
+    // this point is appended behind the serialized file clear and is retained.
+    _setState(_state.copyWith(debugLogs: const <String>[]));
+    await deviceLogStore?.clear();
+  }
+
   void beginProvisioning() {
     _provisioning = true;
   }

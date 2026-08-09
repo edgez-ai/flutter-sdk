@@ -58,6 +58,15 @@ class EdgezDeviceLogStore {
         );
       });
 
+  /// Deletes the active log and every rotated backup.
+  Future<void> clear() => _enqueue(() async {
+        final directory = await _directoryProvider();
+        for (var index = 0; index < maxFiles; index++) {
+          final file = _file(directory, index);
+          if (await file.exists()) await file.delete();
+        }
+      });
+
   /// Combines the current log and its rotated backups into one export file.
   Future<File> export() => _enqueue(() async {
         final sourceDirectory = await _directoryProvider();

@@ -20,6 +20,7 @@ class DebugScreen extends StatelessWidget {
     required this.speedMetrics,
     required this.debugLogs,
     required this.onExportLogs,
+    required this.onPruneLogs,
     required this.onClose,
     super.key,
   });
@@ -35,6 +36,7 @@ class DebugScreen extends StatelessWidget {
   final List<ExampleSpeedMetric> speedMetrics;
   final List<String> debugLogs;
   final VoidCallback? onExportLogs;
+  final VoidCallback? onPruneLogs;
   final VoidCallback onClose;
 
   @override
@@ -241,13 +243,49 @@ class DebugScreen extends StatelessWidget {
                       InfoCard(
                         title: 'Log stream',
                         children: <Widget>[
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: OutlinedButton.icon(
-                              onPressed: onExportLogs,
-                              icon: const Icon(Icons.file_download_outlined),
-                              label: const Text('Export logs'),
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: <Widget>[
+                              OutlinedButton.icon(
+                                onPressed: onExportLogs,
+                                icon: const Icon(Icons.file_download_outlined),
+                                label: const Text('Download'),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                onPressed: onPruneLogs == null
+                                    ? null
+                                    : () async {
+                                        final confirmed =
+                                            await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: const Text('Prune logs?'),
+                                            content: const Text(
+                                              'This permanently clears the log files and the current log view.',
+                                            ),
+                                            actions: <Widget>[
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                    context, false),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              FilledButton(
+                                                onPressed: () => Navigator.pop(
+                                                    context, true),
+                                                child: const Text('Prune'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirmed == true) {
+                                          onPruneLogs?.call();
+                                        }
+                                      },
+                                icon: const Icon(Icons.delete_sweep_outlined),
+                                label: const Text('Prune'),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 12),
                           if (debugLogs.isEmpty)

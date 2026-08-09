@@ -30,5 +30,10 @@ void main() {
       await (await store.export()).readAsLines(),
       <String>['one', 'two', 'three'],
     );
+
+    await store.clear();
+    expect(await store.load(), isEmpty);
+    expect(await File('${directory.path}/device.log').exists(), isFalse);
+    expect(await File('${directory.path}/device.log.1').exists(), isFalse);
   });
 }
