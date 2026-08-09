@@ -1144,7 +1144,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       sensorSamples:
                           meshState.sensorSamples[selected.nodeNum] ??
                               const <EdgezSensorSample>[],
-                      linkStats: meshState.sharedLinkStats,
+                      linkStats: meshState.linkStats[selected.nodeNum],
                       onBack: () => setState(() => selectedNodeNum = null),
                       onSendMessage: _sendMessage,
                       onStartVoiceMessage: _startVoiceMessage,
@@ -1191,7 +1191,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                           sensorSamples:
                               meshState.sensorSamples[selected.nodeNum] ??
                                   const <EdgezSensorSample>[],
-                          linkStats: meshState.sharedLinkStats,
+                          linkStats: meshState.linkStats[selected.nodeNum],
                           onBack: () => setState(() => selectedNodeNum = null),
                           onSendMessage: _sendMessage,
                           onStartVoiceMessage: _startVoiceMessage,

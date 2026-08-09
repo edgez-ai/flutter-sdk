@@ -514,6 +514,46 @@ void main() {
       session.dispose();
     });
 
+    test('session keeps cached nodes and conversations across disconnect',
+        () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      const nodeNum = 0x112233445566;
+      const node = EdgezMeshNode(
+        nodeNum: nodeNum,
+        userUuid: 'remote-user',
+        displayName: 'Remote user',
+        route: 'BLE',
+        lastSeenMs: 100,
+        marker: 'green',
+        deviceType: 'User',
+      );
+      const message = EdgezConversationMessage(
+        nodeNum: nodeNum,
+        text: 'Retained message',
+        mine: false,
+        timestampMs: 100,
+        messageUuid: 'retained-message',
+        status: '',
+      );
+      session.restoreCachedMeshData(
+        nodes: const <int, EdgezMeshNode>{nodeNum: node},
+        conversations: const <int, List<EdgezConversationMessage>>{
+          nodeNum: <EdgezConversationMessage>[message],
+        },
+      );
+
+      await session.disconnect();
+
+      expect(session.state.connection, EdgezConnectionType.none);
+      expect(session.state.status, isNull);
+      expect(session.state.nodes[nodeNum], node);
+      expect(session.state.conversations[nodeNum], <EdgezConversationMessage>[
+        message,
+      ]);
+      expect(session.state.statusLine, 'Disconnected');
+      session.dispose();
+    });
+
     test('session decodes an inbound BLE beacon and typed sensors', () async {
       final session = EdgezMeshSession(sdk: sdk);
       final packet = NetworkPacket(

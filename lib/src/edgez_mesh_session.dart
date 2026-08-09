@@ -248,6 +248,7 @@ class EdgezMeshSession extends ChangeNotifier {
   Timer? _voiceCallTimeout;
   var _provisioning = false;
   var _initInFlight = false;
+  var _initRetryRequested = false;
   var _locationUpdateInFlight = false;
   String? _lastInitKey;
   var _voiceCallSequence = 1;
@@ -631,11 +632,22 @@ class EdgezMeshSession extends ChangeNotifier {
     _stopLocationTracking();
     _bleReady = false;
     _lastInitKey = null;
-    final retainedLogs = _state.debugLogs;
+    // Nodes, conversations, samples, and measured peer links are cached app
+    // data, not properties of the physical transport. Keep them available so
+    // a disconnect/reconnect does not empty the example UI while rediscovery
+    // is still in progress.
+    final retainedState = _state;
     _setState(
       EdgezMeshState.initial().copyWith(
+        bleDevices: retainedState.bleDevices,
+        nodes: retainedState.nodes,
+        sensorSamples: retainedState.sensorSamples,
+        topologyLinks: retainedState.topologyLinks,
+        conversations: retainedState.conversations,
+        linkStats: retainedState.linkStats,
+        sharedLinkStats: retainedState.sharedLinkStats,
         statusLine: 'Disconnected',
-        debugLogs: retainedLogs,
+        debugLogs: retainedState.debugLogs,
       ),
     );
   }
@@ -2022,7 +2034,13 @@ class EdgezMeshSession extends ChangeNotifier {
     }
     final initKey = _initKey(config);
     if (!force && _lastInitKey == initKey) return;
-    if (_initInFlight) return;
+    if (_initInFlight) {
+      // A reconnect can become ready while initialization from the previous
+      // transport is still unwinding. Remember that ready event so the new
+      // connection is initialized after the older request completes.
+      _initRetryRequested = true;
+      return;
+    }
 
     _initInFlight = true;
     try {
@@ -2040,6 +2058,12 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
     } finally {
       _initInFlight = false;
+      if (_initRetryRequested) {
+        _initRetryRequested = false;
+        if (_bleReady && _state.connection != EdgezConnectionType.none) {
+          unawaited(_sendInitIfReady(force: true));
+        }
+      }
     }
   }
 

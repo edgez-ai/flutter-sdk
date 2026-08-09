@@ -2553,6 +2553,16 @@ class EdgezFlutterSdkPlugin :
     private val gattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) {
+                emit(
+                    mapOf(
+                        "type" to "log",
+                        "log" to "Ignoring stale BLE connection callback status=$status state=$newState",
+                    ),
+                )
+                gatt.close()
+                return
+            }
             emit(mapOf("type" to "log", "log" to "BLE connection status=$status state=$newState"))
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 serviceDiscoveryStarted = false
@@ -2638,12 +2648,15 @@ class EdgezFlutterSdkPlugin :
                 rxLen = 0
                 forwardRxLen = 0
                 clearTxQueue()
+                this@EdgezFlutterSdkPlugin.gatt = null
+                gatt.close()
                 emit(mapOf("type" to "connection", "connection" to "none"))
             }
         }
 
         @SuppressLint("MissingPermission")
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             emit(mapOf("type" to "log", "log" to "BLE MTU mtu=$mtu status=$status"))
             if (status == BluetoothGatt.GATT_SUCCESS) negotiatedMtu = mtu
             discoverServicesOnce(gatt, "MTU callback")
@@ -2655,6 +2668,7 @@ class EdgezFlutterSdkPlugin :
             rxPhy: Int,
             status: Int,
         ) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             emit(
                 mapOf(
                     "type" to "log",
@@ -2665,6 +2679,7 @@ class EdgezFlutterSdkPlugin :
 
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             emit(mapOf("type" to "log", "log" to "BLE services status=$status"))
             synchronized(this@EdgezFlutterSdkPlugin) {
                 serviceDiscoveryStarted = false
@@ -2741,6 +2756,7 @@ class EdgezFlutterSdkPlugin :
             descriptor: BluetoothGattDescriptor,
             status: Int,
         ) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             if (descriptor.uuid != CCCD_UUID) return
             notificationDescriptorWriteInFlight = false
             val isControlNotification = descriptor.characteristic.uuid == txCharacteristic?.uuid
@@ -2784,6 +2800,7 @@ class EdgezFlutterSdkPlugin :
 
         @SuppressLint("MissingPermission")
         private fun writeNextNotificationDescriptor(gatt: BluetoothGatt) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             if (notificationDescriptorWriteInFlight || notificationDescriptors.isEmpty()) return
             val descriptor = notificationDescriptors.removeFirst()
             notificationDescriptorWriteInFlight = true
@@ -2811,6 +2828,7 @@ class EdgezFlutterSdkPlugin :
             gatt: BluetoothGatt,
             allowPendingNotifications: Boolean = false,
         ) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             if (!serviceReadyPending) return
             if (controlNotificationFailed) {
                 serviceReadyPending = false
@@ -2857,6 +2875,7 @@ class EdgezFlutterSdkPlugin :
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             if (characteristic.uuid == otaCharacteristic?.uuid) {
                 synchronized(otaWriteLock) {
                     otaWriteStatus = status
@@ -2895,6 +2914,7 @@ class EdgezFlutterSdkPlugin :
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray,
         ) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             when (characteristic.uuid) {
                 txCharacteristic?.uuid -> handleBytes(value)
                 forwardTxCharacteristic?.uuid -> handleForwardBytes(value)
@@ -2913,6 +2933,7 @@ class EdgezFlutterSdkPlugin :
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
         ) {
+            if (this@EdgezFlutterSdkPlugin.gatt !== gatt) return
             val value = characteristic.value ?: return
             when (characteristic.uuid) {
                 txCharacteristic?.uuid -> handleBytes(value)
