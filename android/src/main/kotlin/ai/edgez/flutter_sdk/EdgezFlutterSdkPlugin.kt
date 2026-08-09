@@ -1589,13 +1589,9 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun getBestKnownLocation(result: MethodChannel.Result) {
-        val permissions = arrayOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        )
-        if (permissions.none {
-                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-            }
+        val permission = Manifest.permission.ACCESS_FINE_LOCATION
+        if (ContextCompat.checkSelfPermission(context, permission) !=
+            PackageManager.PERMISSION_GRANTED
         ) {
             val currentActivity = activity
             if (currentActivity == null) {
@@ -1603,7 +1599,7 @@ class EdgezFlutterSdkPlugin :
                 return
             }
             pendingLocationResult = result
-            currentActivity.requestPermissions(permissions, LOCATION_PERMISSION_REQUEST)
+            currentActivity.requestPermissions(arrayOf(permission), LOCATION_PERMISSION_REQUEST)
             return
         }
         returnBestKnownLocation(result)
@@ -1616,53 +1612,18 @@ class EdgezFlutterSdkPlugin :
             context,
             Manifest.permission.ACCESS_FINE_LOCATION,
         ) == PackageManager.PERMISSION_GRANTED
-        val hasCoarse = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
         val manager = context.getSystemService(LocationManager::class.java)
-        if (manager == null || (!hasFine && !hasCoarse)) {
+        if (manager == null || !hasFine) {
             result.success(null)
             return
         }
-        val cachedProviders = if (hasFine) {
-            listOf(
-                LocationManager.GPS_PROVIDER,
-                LocationManager.NETWORK_PROVIDER,
-                LocationManager.PASSIVE_PROVIDER,
-            )
-        } else {
-            listOf(LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
-        }
-        val cachedLocation = cachedProviders.mapNotNull { provider ->
-            runCatching {
-                if (manager.isProviderEnabled(provider)) {
-                    manager.getLastKnownLocation(provider)
-                } else {
-                    null
-                }
-            }.getOrNull()
-        }.maxByOrNull { it.time }
-
-        val refreshProviders = buildList {
-            if (hasFine && runCatching {
-                    manager.isProviderEnabled(LocationManager.GPS_PROVIDER)
-                }.getOrDefault(false)
-            ) {
-                add(LocationManager.GPS_PROVIDER)
-            }
-            if (runCatching {
-                    manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-                }.getOrDefault(false)
-            ) {
-                add(LocationManager.NETWORK_PROVIDER)
-            }
-        }
-        if (refreshProviders.isEmpty()) {
-            returnLocation(result, cachedLocation)
+        val gpsEnabled = runCatching {
+            manager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        }.getOrDefault(false)
+        if (!gpsEnabled) {
+            returnLocation(result, null)
             return
         }
-
         var completed = false
         var timeout: Runnable? = null
         lateinit var listener: LocationListener
@@ -1671,20 +1632,20 @@ class EdgezFlutterSdkPlugin :
                 completed = true
                 timeout?.let(mainHandler::removeCallbacks)
                 runCatching { manager.removeUpdates(listener) }
-                returnLocation(result, freshLocation ?: cachedLocation)
+                returnLocation(result, freshLocation)
             }
         }
         listener = LocationListener { location -> complete(location) }
         timeout = Runnable { complete(null) }
         mainHandler.postDelayed(timeout, LOCATION_REFRESH_TIMEOUT_MS)
 
-        var refreshRequested = false
-        for (provider in refreshProviders) {
-            val requested = runCatching {
-                manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
-            }.isSuccess
-            refreshRequested = refreshRequested || requested
-        }
+        val refreshRequested = runCatching {
+            manager.requestSingleUpdate(
+                LocationManager.GPS_PROVIDER,
+                listener,
+                Looper.getMainLooper(),
+            )
+        }.isSuccess
         if (!refreshRequested) complete(null)
     }
 
