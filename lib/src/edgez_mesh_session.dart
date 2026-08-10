@@ -736,7 +736,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _setState(
       _state.copyWith(
         clearStatus: true,
-        statusLine: 'Checking device license',
+        statusLine: 'Starting device session',
       ),
     );
     await sdk.authorizeSession();
@@ -2129,19 +2129,20 @@ class EdgezMeshSession extends ChangeNotifier {
   Future<void> _authorizeAndInitializeUsb() async {
     try {
       _setState(
-        _state.copyWith(statusLine: 'Authorizing SDK release over USB'),
+        _state.copyWith(statusLine: 'Starting device session over USB'),
       );
       // Firmware explicitly supports an init containing only the signed SDK
       // release credential. Complete that handshake before sending mesh config
       // or status/settings requests on a newly opened UART session.
       await sdk.authorizeSession();
       _setState(
-        _state.copyWith(statusLine: 'SDK release sent; initializing mesh'),
+        _state.copyWith(
+            statusLine: 'Device session started; initializing mesh'),
       );
       await _sendInitIfReady(force: true);
     } catch (error) {
       _setState(
-        _state.copyWith(statusLine: 'USB SDK authorization failed: $error'),
+        _state.copyWith(statusLine: 'USB device session failed: $error'),
       );
     }
   }

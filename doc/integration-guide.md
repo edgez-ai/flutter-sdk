@@ -202,9 +202,9 @@ Provisioning is a separate control flow from normal mesh use:
 1. Disconnect the current device and call `session.beginProvisioning()`.
 2. Scan, select the target, stop scanning, and connect.
 3. Wait for `state.bleReady`.
-4. Call `authorizeSession()` and wait for an authorized license in
-   `state.status.licenseStatus`.
-5. Call `requestDeviceSettings()` and wait for `state.deviceSettings`.
+4. Call `authorizeSession()` to send the empty compatibility handshake.
+5. Call `requestDeviceSettings()` and wait for `state.deviceSettings`; no
+   license-status validation is required.
 6. Let the user edit settings and create a separate device identity with
    `EdgezIdentityStore().createIdentity(...)`.
 7. Call `sendDeviceSettings(settings, identity: deviceIdentity, scripts: ...)`.
@@ -215,7 +215,7 @@ When it is `false`, provisioning may supply static `latitude` and `longitude`;
 when it is `true`, leave those fields unset and let the device acquire fixes.
 
 Use [`provisioning_screen.dart`](../example/lib/src/provisioning_screen.dart) as
-the detailed reference, including timeouts and rejected-license handling.
+the detailed reference.
 
 ## 9. Install and upload sensor drivers
 
