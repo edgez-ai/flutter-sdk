@@ -202,15 +202,14 @@ Provisioning is a separate control flow from normal mesh use:
 1. Disconnect the current device and call `session.beginProvisioning()`.
 2. Scan, select the target, stop scanning, and connect.
 3. Wait for `state.bleReady`.
-4. Call `authorizeSession()` to send the empty compatibility handshake.
-5. Call `requestDeviceSettings()` and wait for `state.deviceSettings`; no
-   license-status validation is required.
-6. Let the user edit settings and create a separate device identity with
+4. Call `requestDeviceSettings()` and wait for `state.deviceSettings`; no
+   authorization handshake or license-status validation is required.
+5. Let the user edit settings and create a separate device identity with
    `EdgezIdentityStore().createIdentity(...)`.
-7. Call `sendDeviceSettings(settings, identity: deviceIdentity, scripts: ...)`.
-8. Disconnect and call `session.endProvisioning()`.
+6. Call `sendDeviceSettings(settings, identity: deviceIdentity, scripts: ...)`.
+7. Disconnect and call `session.endProvisioning()`.
 
-Set `EdgezDeviceSettings.deviceGpsEnabled` during step 7 to choose the L76K.
+Set `EdgezDeviceSettings.deviceGpsEnabled` when sending settings to choose the L76K.
 When it is `false`, provisioning may supply static `latitude` and `longitude`;
 when it is `true`, leave those fields unset and let the device acquire fixes.
 

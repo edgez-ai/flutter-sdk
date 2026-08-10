@@ -553,9 +553,8 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> connectBle(String deviceId) async {
     _deviceStatusTimeout?.cancel();
-    // SDK release authorization lives in firmware RAM. A reconnect may follow
-    // a device reset, so the init/auth packet must be sent again even when the
-    // saved mesh configuration itself has not changed.
+    // A reconnect may follow a device reset, so the real mesh init packet must
+    // be sent again even when the saved configuration has not changed.
     _lastInitKey = null;
     _recordAppDiagnostic(
       EdgezDeviceLogLevel.debug,
@@ -1150,11 +1149,11 @@ class EdgezMeshSession extends ChangeNotifier {
         // payload, so send LG2 when either control stream becomes writable.
         unawaited(_applyConfiguredDeviceLogLevel());
         if (!_provisioning) {
-          if (_state.connection == EdgezConnectionType.usb) {
-            unawaited(_authorizeAndInitializeUsb());
-          } else {
-            unawaited(_sendInitIfReady());
-          }
+          unawaited(
+            _sendInitIfReady(
+              force: _state.connection == EdgezConnectionType.usb,
+            ),
+          );
         }
       case EdgezMeshEventType.status:
         _deviceStatusTimeout?.cancel();
@@ -2123,27 +2122,6 @@ class EdgezMeshSession extends ChangeNotifier {
           unawaited(_sendInitIfReady(force: true));
         }
       }
-    }
-  }
-
-  Future<void> _authorizeAndInitializeUsb() async {
-    try {
-      _setState(
-        _state.copyWith(statusLine: 'Starting device session over USB'),
-      );
-      // Firmware explicitly supports an init containing only the signed SDK
-      // release credential. Complete that handshake before sending mesh config
-      // or status/settings requests on a newly opened UART session.
-      await sdk.authorizeSession();
-      _setState(
-        _state.copyWith(
-            statusLine: 'Device session started; initializing mesh'),
-      );
-      await _sendInitIfReady(force: true);
-    } catch (error) {
-      _setState(
-        _state.copyWith(statusLine: 'USB device session failed: $error'),
-      );
     }
   }
 

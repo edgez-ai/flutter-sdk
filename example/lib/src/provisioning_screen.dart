@@ -71,7 +71,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   EdgezBleDevice? selectedBle;
   late EdgezUserIdentity deviceIdentity;
   bool waitingForSettings = false;
-  bool requestedAuthorization = false;
   bool requestedSettings = false;
   bool saving = false;
   String? error;
@@ -124,9 +123,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   void _sessionChanged() {
     if (!mounted || !waitingForSettings) return;
     final state = widget.session.state;
-    if (state.bleReady && !requestedAuthorization) {
-      requestedAuthorization = true;
-      unawaited(_authorizeDevice());
+    if (state.bleReady && !requestedSettings) {
+      requestedSettings = true;
+      unawaited(widget.session.requestDeviceSettings());
     }
 
     final settings = state.deviceSettings;
@@ -138,21 +137,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
       });
     } else {
       setState(() {});
-    }
-  }
-
-  Future<void> _authorizeDevice() async {
-    try {
-      await widget.session.authorizeSession();
-      if (!mounted || !waitingForSettings || requestedSettings) return;
-      requestedSettings = true;
-      await widget.session.requestDeviceSettings();
-    } catch (exception) {
-      if (!mounted) return;
-      setState(() {
-        waitingForSettings = false;
-        error = 'Unable to start device session: $exception';
-      });
     }
   }
 
@@ -199,7 +183,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     if (device == null) return;
     setState(() {
       waitingForSettings = true;
-      requestedAuthorization = false;
       requestedSettings = false;
       error = null;
     });

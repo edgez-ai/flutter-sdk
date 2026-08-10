@@ -409,8 +409,8 @@ void main() {
       expect(session.state.usbLinkStats.bidirectional, isTrue);
       expect(session.state.usbLinkStats.rttMs, 12);
 
-      // Reopening CP2102 can reset the ESP32 and clear its in-RAM SDK release
-      // authorization. The identical init packet must therefore be resent.
+      // Reopening CP2102 can reset the ESP32 and clear its active mesh state.
+      // The identical real init packet must therefore be resent directly.
       await session.connectUsb(device);
       ble.emitConnection(EdgezConnectionType.usb);
       ble.emitReady();
