@@ -76,6 +76,7 @@ class EdgezMeshState {
     this.sharedLinkStats,
     this.bleConnecting = false,
     this.deviceSettings,
+    this.selfLocation,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         sensorSamples = _freezeSensorSamples(sensorSamples),
@@ -127,6 +128,7 @@ class EdgezMeshState {
   final EdgezLinkStats? sharedLinkStats;
   final bool bleConnecting;
   final EdgezDeviceSettings? deviceSettings;
+  final EdgezLocation? selfLocation;
 
   double get otaProgress =>
       otaTotalBytes <= 0 ? 0 : otaSentBytes / otaTotalBytes;
@@ -168,6 +170,8 @@ class EdgezMeshState {
     bool? bleConnecting,
     EdgezDeviceSettings? deviceSettings,
     bool clearDeviceSettings = false,
+    EdgezLocation? selfLocation,
+    bool clearSelfLocation = false,
   }) {
     return EdgezMeshState(
       connection: connection ?? this.connection,
@@ -191,6 +195,8 @@ class EdgezMeshState {
       bleConnecting: bleConnecting ?? this.bleConnecting,
       deviceSettings:
           clearDeviceSettings ? null : deviceSettings ?? this.deviceSettings,
+      selfLocation:
+          clearSelfLocation ? null : selfLocation ?? this.selfLocation,
     );
   }
 
@@ -764,6 +770,30 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'Device settings failed: $error'));
       rethrow;
     }
+  }
+
+  Future<void> setDeviceGpsEnabled(bool enabled) async {
+    final settings = _state.deviceSettings;
+    if (settings == null) {
+      throw StateError('Read device settings before changing device GPS');
+    }
+    EdgezUserIdentity? identity;
+    if (settings.userIdHigh != 0 ||
+        settings.userIdLow != 0 ||
+        settings.userPublicKey.isNotEmpty ||
+        settings.userPrivateKey.isNotEmpty) {
+      identity = EdgezUserIdentity(
+        userIdHigh: settings.userIdHigh,
+        userIdLow: settings.userIdLow,
+        name: settings.userName,
+        publicKey: settings.userPublicKey,
+        privateKey: settings.userPrivateKey,
+      );
+    }
+    await sendDeviceSettings(
+      settings.copyWith(deviceGpsEnabled: enabled),
+      identity: identity,
+    );
   }
 
   Future<void> sendTextMessage({
@@ -1372,6 +1402,7 @@ class EdgezMeshSession extends ChangeNotifier {
           beaconUnicast: settings.beaconUnicast.toInt(),
           deviceType: _deviceTypeLabel(settings.deviceType).toLowerCase(),
           sleepModeEnabled: settings.sleepModeEnabled,
+          deviceGpsEnabled: settings.deviceGpsEnabled,
           meshFrequencyKhz: settings.meshFrequencyKhz,
           meshBandwidthMhz: settings.meshBandwidthMhz,
           userIdHigh: settings.userIdHigh.toInt(),
@@ -1380,6 +1411,11 @@ class EdgezMeshSession extends ChangeNotifier {
           userPrivateKey: settings.userPrivateKey,
         ),
       ));
+      if (settings.deviceGpsEnabled) {
+        _stopLocationTracking();
+      } else {
+        _updateLocationTrackingForStatus(_state.status);
+      }
     }
 
     if (packet.hasReport()) {
@@ -1490,6 +1526,29 @@ class EdgezMeshSession extends ChangeNotifier {
                 localIdentity.userIdLow == beacon.userIdLow.toInt()));
     if ((localNode != null && localNode != 0 && localNode == nodeNum) ||
         isLocalIdentity) {
+      final sensorData = _sensorData(beacon.sensorData);
+      final latitude = sensorData?.latitude ??
+          (beacon.hasLatitude() ? beacon.latitude : null);
+      final longitude = sensorData?.longitude ??
+          (beacon.hasLongitude() ? beacon.longitude : null);
+      if (latitude != null &&
+          longitude != null &&
+          latitude.isFinite &&
+          longitude.isFinite &&
+          latitude >= -90 &&
+          latitude <= 90 &&
+          longitude >= -180 &&
+          longitude <= 180 &&
+          (latitude != 0 || longitude != 0)) {
+        _setState(_state.copyWith(
+          selfLocation: EdgezLocation(
+            latitude: latitude,
+            longitude: longitude,
+            timestampMs: now,
+          ),
+          statusLine: 'Device GPS location received',
+        ));
+      }
       return;
     }
 
@@ -2092,6 +2151,8 @@ class EdgezMeshSession extends ChangeNotifier {
     final status = _state.status;
     if (config == null ||
         !config.beacon.shareLocation ||
+        config.beacon.useDeviceGps ||
+        _state.deviceSettings?.deviceGpsEnabled == true ||
         !_bleReady ||
         status == null ||
         !status.meshMode ||

@@ -128,6 +128,14 @@ dedicated `NetworkPacket.location_update` message. Firmware `0.5.5` or newer is
 required. Incoming `(0,0)` coordinates are ignored, so a missing device fix
 cannot overwrite the last valid position.
 
+For hardware with an L76K, set `EdgezBeaconConfig(useDeviceGps: true)` and,
+after `state.deviceSettings` has been read, call
+`session.setDeviceGpsEnabled(true)` when the reported setting is off. The
+session stops sending phone locations while device GPS is selected. Read the
+latest valid fix from `state.selfLocation`; it is populated from the connected
+device's self beacon. If no receiver or fix is available, firmware simply
+omits location until a later acquisition succeeds.
+
 ## 6. Render live state
 
 ```dart
@@ -201,6 +209,10 @@ Provisioning is a separate control flow from normal mesh use:
    `EdgezIdentityStore().createIdentity(...)`.
 7. Call `sendDeviceSettings(settings, identity: deviceIdentity, scripts: ...)`.
 8. Disconnect and call `session.endProvisioning()`.
+
+Set `EdgezDeviceSettings.deviceGpsEnabled` during step 7 to choose the L76K.
+When it is `false`, provisioning may supply static `latitude` and `longitude`;
+when it is `true`, leave those fields unset and let the device acquire fixes.
 
 Use [`provisioning_screen.dart`](../example/lib/src/provisioning_screen.dart) as
 the detailed reference, including timeouts and rejected-license handling.

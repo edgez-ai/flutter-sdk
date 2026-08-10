@@ -92,6 +92,8 @@ class SettingsScreen extends StatefulWidget {
     required this.deviceMaxHop,
     required this.deviceBeaconIntervalSeconds,
     required this.deviceShareLocation,
+    required this.deviceGpsEnabled,
+    required this.deviceGpsLocation,
     required this.deviceLatitude,
     required this.deviceLongitude,
     required this.deviceGeoFenceName,
@@ -138,6 +140,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onDeviceMaxHopChanged,
     required this.onDeviceBeaconIntervalChanged,
     required this.onDeviceShareLocationChanged,
+    required this.onDeviceGpsEnabledChanged,
     required this.onRefreshDeviceLocation,
     required this.onDeviceLatitudeChanged,
     required this.onDeviceLongitudeChanged,
@@ -194,6 +197,8 @@ class SettingsScreen extends StatefulWidget {
   final String deviceMaxHop;
   final String deviceBeaconIntervalSeconds;
   final bool deviceShareLocation;
+  final bool deviceGpsEnabled;
+  final EdgezLocation? deviceGpsLocation;
   final String deviceLatitude;
   final String deviceLongitude;
   final String deviceGeoFenceName;
@@ -240,6 +245,7 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<String> onDeviceMaxHopChanged;
   final ValueChanged<String> onDeviceBeaconIntervalChanged;
   final ValueChanged<bool> onDeviceShareLocationChanged;
+  final ValueChanged<bool> onDeviceGpsEnabledChanged;
   final FutureOr<void> Function() onRefreshDeviceLocation;
   final ValueChanged<String> onDeviceLatitudeChanged;
   final ValueChanged<String> onDeviceLongitudeChanged;
@@ -565,6 +571,23 @@ class SettingsScreen extends StatefulWidget {
                       ? onDeviceShareLocationChanged
                       : onShareLocationChanged,
                 ),
+                if (deviceModeEnabled ? deviceShareLocation : shareLocation)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Use device GPS (L76K)'),
+                    subtitle: const Text(
+                      'Use periodic low-power device fixes instead of phone/static location',
+                    ),
+                    value: deviceGpsEnabled,
+                    onChanged: onDeviceGpsEnabledChanged,
+                  ),
+                if (deviceGpsEnabled && deviceGpsLocation != null)
+                  Text(
+                    'Device fix: '
+                    '${deviceGpsLocation!.latitude.toStringAsFixed(6)}, '
+                    '${deviceGpsLocation!.longitude.toStringAsFixed(6)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 if (locationMessage.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 4),
                   Text(
@@ -572,7 +595,9 @@ class SettingsScreen extends StatefulWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
-                if (deviceModeEnabled && deviceShareLocation) ...<Widget>[
+                if (deviceModeEnabled &&
+                    deviceShareLocation &&
+                    !deviceGpsEnabled) ...<Widget>[
                   Row(
                     children: <Widget>[
                       Expanded(

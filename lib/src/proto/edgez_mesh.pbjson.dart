@@ -777,6 +777,13 @@ const DeviceSettings$json = {
       '5': 13,
       '10': 'meshBandwidthMhz'
     },
+    {
+      '1': 'device_gps_enabled',
+      '3': 28,
+      '4': 1,
+      '5': 8,
+      '10': 'deviceGpsEnabled'
+    },
   ],
 };
 
@@ -801,7 +808,8 @@ final $typed_data.Uint8List deviceSettingsDescriptor = $convert.base64Decode(
     'c3QYFiABKARSDWJlYWNvblVuaWNhc3QSOwoLZGV2aWNlX3R5cGUYGCABKA4yGi5haS5lZGdlei'
     '5oYWxvdy5EZXZpY2VUeXBlUgpkZXZpY2VUeXBlEiwKEnNsZWVwX21vZGVfZW5hYmxlZBgZIAEo'
     'CFIQc2xlZXBNb2RlRW5hYmxlZBIsChJtZXNoX2ZyZXF1ZW5jeV9raHoYGiABKA1SEG1lc2hGcm'
-    'VxdWVuY3lLaHoSLAoSbWVzaF9iYW5kd2lkdGhfbWh6GBsgASgNUhBtZXNoQmFuZHdpZHRoTWh6');
+    'VxdWVuY3lLaHoSLAoSbWVzaF9iYW5kd2lkdGhfbWh6GBsgASgNUhBtZXNoQmFuZHdpZHRoTWh6'
+    'EiwKEmRldmljZV9ncHNfZW5hYmxlZBgcIAEoCFIQZGV2aWNlR3BzRW5hYmxlZA==');
 
 @$core.Deprecated('Use scriptConfigDescriptor instead')
 const ScriptConfig$json = {

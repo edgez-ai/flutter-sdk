@@ -111,6 +111,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   String deviceMaxHop = '4';
   String deviceBeaconIntervalSeconds = '10';
   bool deviceShareLocation = false;
+  bool deviceGpsEnabled = false;
+  EdgezDeviceSettings? observedDeviceSettings;
+  EdgezLocation? observedSelfLocation;
   String deviceLatitude = '';
   String deviceLongitude = '';
   String deviceGeoFenceName = '';
@@ -144,6 +147,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     appLinks = AppLinks();
     session.addListener(_persistSessionSnapshot);
     session.addListener(_handleCallNotificationState);
+    session.addListener(_handleDeviceGpsState);
     unawaited(session.restoreDeviceLogs());
     unawaited(_loadIdentityAndBleConfiguration());
     unawaited(_hydrateFromDatabase());
@@ -434,6 +438,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     persistenceEnabled = false;
     session.removeListener(_persistSessionSnapshot);
     session.removeListener(_handleCallNotificationState);
+    session.removeListener(_handleDeviceGpsState);
     session.dispose();
     unawaited(database.close());
     super.dispose();
@@ -804,7 +809,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   Future<void> _saveAppSettings() async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
     final identity = await identityStore.updateName(userName);
-    final location = shareLocation ? await _getBestKnownLocation() : null;
+    final location = shareLocation && !deviceGpsEnabled
+        ? await _getBestKnownLocation()
+        : null;
     if (mounted) {
       setState(() {
         userIdentity = identity;
@@ -823,6 +830,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
           intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 10,
           marker: userMarker.name,
           shareLocation: shareLocation,
+          useDeviceGps: deviceGpsEnabled,
           latitude: location?.latitude,
           longitude: location?.longitude,
           locationTimestampMs: location?.timestampMs ?? 0,
@@ -837,6 +845,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         ),
       ),
     );
+    final currentSettings = session.state.deviceSettings;
+    if (currentSettings != null &&
+        currentSettings.deviceGpsEnabled != deviceGpsEnabled) {
+      await session.setDeviceGpsEnabled(deviceGpsEnabled);
+    }
   }
 
   Future<void> _regenerateUserKeyPair() async {
@@ -846,10 +859,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   Future<void> _saveDeviceSettings() async {
-    if (deviceShareLocation) await _refreshDeviceLocation();
+    if (deviceShareLocation && !deviceGpsEnabled) {
+      await _refreshDeviceLocation();
+    }
     final latitude = double.tryParse(deviceLatitude);
     final longitude = double.tryParse(deviceLongitude);
-    if (deviceShareLocation && (latitude == null || longitude == null)) {
+    if (deviceShareLocation &&
+        !deviceGpsEnabled &&
+        (latitude == null || longitude == null)) {
       throw StateError('No phone location is available for the device');
     }
     final scripts = <EdgezSensorScriptConfig>[];
@@ -867,8 +884,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         marker: deviceMarker.name,
         beaconIntervalSeconds: int.tryParse(deviceBeaconIntervalSeconds) ?? 10,
         maxHop: int.tryParse(deviceMaxHop) ?? 0,
-        latitude: deviceShareLocation ? latitude : null,
-        longitude: deviceShareLocation ? longitude : null,
+        latitude: deviceShareLocation && !deviceGpsEnabled ? latitude : null,
+        longitude: deviceShareLocation && !deviceGpsEnabled ? longitude : null,
         geoFenceName: deviceGeoFenceName.trim(),
         geoIndex: deviceGeoIndex,
         uartI2cSensorType: uartI2cSensorType,
@@ -883,6 +900,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
             : 0,
         deviceType: deviceType,
         sleepModeEnabled: deviceSleepModeEnabled,
+        deviceGpsEnabled: deviceGpsEnabled,
         meshFrequencyKhz: meshFrequencyKhz,
         meshBandwidthMhz: meshBandwidthMhz,
       ),
@@ -930,12 +948,45 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   void _setShareLocation(bool value) {
     setState(() => shareLocation = value);
     unawaited(bleConfigurationStore.setShareLocation(value));
-    if (value) unawaited(_getBestKnownLocation());
+    if (value && !deviceGpsEnabled) unawaited(_getBestKnownLocation());
   }
 
   void _setDeviceShareLocation(bool value) {
     setState(() => deviceShareLocation = value);
-    if (value) unawaited(_refreshDeviceLocation());
+    if (value && !deviceGpsEnabled) unawaited(_refreshDeviceLocation());
+  }
+
+  void _setDeviceGpsEnabled(bool value) {
+    setState(() => deviceGpsEnabled = value);
+    if (!value) {
+      if (deviceModeEnabled && deviceShareLocation) {
+        unawaited(_refreshDeviceLocation());
+      } else if (!deviceModeEnabled && shareLocation) {
+        unawaited(_getBestKnownLocation());
+      }
+    }
+  }
+
+  void _handleDeviceGpsState() {
+    final settings = session.state.deviceSettings;
+    final selfLocation = session.state.selfLocation;
+    if (identical(settings, observedDeviceSettings) &&
+        identical(selfLocation, observedSelfLocation)) {
+      return;
+    }
+    observedDeviceSettings = settings;
+    observedSelfLocation = selfLocation;
+    if (!mounted) return;
+    setState(() {
+      if (settings != null) {
+        deviceGpsEnabled = settings.deviceGpsEnabled;
+      }
+      if (selfLocation != null) {
+        locationMessage = 'Device GPS: '
+            '${selfLocation.latitude.toStringAsFixed(6)}, '
+            '${selfLocation.longitude.toStringAsFixed(6)}';
+      }
+    });
   }
 
   Future<void> _checkForOtaUpdate() async {
@@ -1281,6 +1332,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceMaxHop: deviceMaxHop,
                   deviceBeaconIntervalSeconds: deviceBeaconIntervalSeconds,
                   deviceShareLocation: deviceShareLocation,
+                  deviceGpsEnabled: deviceGpsEnabled,
+                  deviceGpsLocation: meshState.selfLocation,
                   deviceLatitude: deviceLatitude,
                   deviceLongitude: deviceLongitude,
                   deviceGeoFenceName: deviceGeoFenceName,
@@ -1367,6 +1420,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   onDeviceBeaconIntervalChanged: (value) =>
                       setState(() => deviceBeaconIntervalSeconds = value),
                   onDeviceShareLocationChanged: _setDeviceShareLocation,
+                  onDeviceGpsEnabledChanged: _setDeviceGpsEnabled,
                   onRefreshDeviceLocation: _refreshDeviceLocation,
                   onDeviceLatitudeChanged: (value) =>
                       setState(() => deviceLatitude = value),

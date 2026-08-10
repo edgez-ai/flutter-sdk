@@ -89,6 +89,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   late int meshFrequencyKhz;
   late int meshBandwidthMhz;
   bool shareLocation = false;
+  bool deviceGpsEnabled = false;
   String latitude = '';
   String longitude = '';
   String geoFenceName = '';
@@ -226,6 +227,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     userName = settings.userName.isEmpty ? userName : settings.userName;
     marker = ExampleMarker.fromId(settings.marker);
     shareLocation = settings.shareLocation;
+    deviceGpsEnabled = settings.deviceGpsEnabled;
     latitude = settings.latitude?.toString() ?? '';
     longitude = settings.longitude?.toString() ?? '';
     geoFenceName = settings.geoFenceName;
@@ -352,13 +354,18 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           maxHop: int.tryParse(maxHop) ?? 4,
           beaconIntervalSeconds: int.tryParse(beaconInterval) ?? 10,
           shareLocation: shareLocation,
-          latitude: shareLocation ? double.tryParse(latitude) : null,
-          longitude: shareLocation ? double.tryParse(longitude) : null,
+          latitude: shareLocation && !deviceGpsEnabled
+              ? double.tryParse(latitude)
+              : null,
+          longitude: shareLocation && !deviceGpsEnabled
+              ? double.tryParse(longitude)
+              : null,
           geoFenceName: geoFenceName.trim(),
           geoIndex: geoIndex,
           uartI2cSensorType: uartI2cDriver,
           rs485SensorType: rs485Driver,
           sleepModeEnabled: deviceType == 'relay' ? false : sleepMode,
+          deviceGpsEnabled: deviceGpsEnabled,
           meshFrequencyKhz: meshFrequencyKhz,
           meshBandwidthMhz: meshBandwidthMhz,
         ),
@@ -601,6 +608,17 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
               onChanged: (value) => setState(() => shareLocation = value),
             ),
             if (shareLocation) ...<Widget>[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Use device GPS (L76K)'),
+                subtitle: const Text(
+                  'Wake for periodic fixes, then power the receiver down',
+                ),
+                value: deviceGpsEnabled,
+                onChanged: (value) => setState(() => deviceGpsEnabled = value),
+              ),
+            ],
+            if (shareLocation && !deviceGpsEnabled) ...<Widget>[
               SettingsTextField(
                   label: 'Latitude',
                   value: latitude,

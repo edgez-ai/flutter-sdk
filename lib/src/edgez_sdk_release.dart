@@ -2,11 +2,11 @@ import 'dart:typed_data';
 
 import 'edgez_sdk_release.g.dart';
 
-/// Private-key-signed credential attached to every HaLow initialization.
+/// Release metadata attached to every HaLow initialization.
 ///
-/// The signature is the raw 64-byte P-256 ECDSA `r || s` signature over the
-/// SHA-256 digest of [signingPayload]. The private key must never be included
-/// in this package.
+/// [signatureHex] is empty in current releases because firmware no longer
+/// validates an SDK license signature. Non-empty legacy credentials remain
+/// supported for wire compatibility.
 final class EdgezSdkReleaseCredential {
   const EdgezSdkReleaseCredential({
     required this.compatibility,
@@ -16,7 +16,7 @@ final class EdgezSdkReleaseCredential {
 
   static const String signingPrefix = 'EDGEZ-FLUTTER-SDK-RELEASE-V1:';
 
-  /// Replace this credential as part of every signed SDK release.
+  /// Updated as part of every SDK release.
   static const EdgezSdkReleaseCredential current = EdgezSdkReleaseCredential(
     compatibility: edgezSdkCompatibility,
     releaseId: edgezSdkReleaseId,
@@ -36,6 +36,9 @@ final class EdgezSdkReleaseCredential {
     if (releaseId.isEmpty || releaseId.length > 32) {
       throw StateError('EdgeZ SDK release ID must contain 1-32 characters');
     }
+    // Firmware no longer validates the SDK release signature. Keep the field
+    // in the wire format for compatibility, but send an empty byte string.
+    if (signatureHex.isEmpty) return Uint8List(0);
     if (signatureHex.length != 128 ||
         !RegExp(r'^[0-9a-fA-F]{128}$').hasMatch(signatureHex)) {
       throw StateError(
