@@ -135,6 +135,7 @@ private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b3
 private data class EdgezBleWrite(
     val frame: ByteArray,
     val writeType: Int,
+    val spacingAfterMs: Long = 0,
 )
 
 class EdgezFlutterSdkPlugin :
@@ -196,6 +197,8 @@ class EdgezFlutterSdkPlugin :
     private val voiceTxQueue = ArrayDeque<EdgezBleWrite>()
     private var txWriteInFlight = false
     private var voiceTxWriteInFlight = false
+    private var nextVoiceTxAllowedAtMs = 0L
+    private var voiceTxWakeScheduled = false
     private var dataWriteInFlight = false
     private var capturedVoiceFrames = 0
     private var transmittedVoiceFrames = 0
@@ -2011,6 +2014,12 @@ class EdgezFlutterSdkPlugin :
             protocolMagic = EDGEZ_SPEED_PROTOCOL_MAGIC,
             packet = packet.array(),
             dropStale = false,
+            spacingAfterMs = when (maxHop) {
+                1 -> 2L
+                2 -> 5L
+                3 -> 10L
+                else -> 0L
+            },
         )
     }
 
@@ -2028,6 +2037,7 @@ class EdgezFlutterSdkPlugin :
         protocolMagic: ByteArray,
         packet: ByteArray,
         dropStale: Boolean,
+        spacingAfterMs: Long = 0,
     ): Result<String> {
         val frame = protocolMagic + packet
         val activeGatt = gatt
@@ -2057,7 +2067,11 @@ class EdgezFlutterSdkPlugin :
                 if (voiceTxWriteInFlight) voiceTxQueue.pollLast() else voiceTxQueue.pollFirst()
             }
             voiceTxQueue.addLast(
-                EdgezBleWrite(frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT),
+                EdgezBleWrite(
+                    frame,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                    spacingAfterMs,
+                ),
             )
             if (dropStale) transmittedVoiceFrames++
         }
@@ -2469,6 +2483,21 @@ class EdgezFlutterSdkPlugin :
         val frame = synchronized(this) {
             if (dataWriteInFlight || voiceTxWriteInFlight) return true
             val nextFrame = voiceTxQueue.peekFirst() ?: return true
+            val waitMs = nextVoiceTxAllowedAtMs - SystemClock.elapsedRealtime()
+            if (waitMs > 0) {
+                if (!voiceTxWakeScheduled) {
+                    voiceTxWakeScheduled = true
+                    mainHandler.postDelayed({
+                        synchronized(this) {
+                            voiceTxWakeScheduled = false
+                        }
+                        if (gatt === currentGatt) {
+                            writeNextDataFrame(currentGatt)
+                        }
+                    }, waitMs)
+                }
+                return true
+            }
             voiceTxWriteInFlight = true
             dataWriteInFlight = true
             nextFrame
@@ -2509,6 +2538,8 @@ class EdgezFlutterSdkPlugin :
         txWriteInFlight = false
         voiceTxWriteInFlight = false
         dataWriteInFlight = false
+        nextVoiceTxAllowedAtMs = 0
+        voiceTxWakeScheduled = false
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -2850,6 +2881,13 @@ class EdgezFlutterSdkPlugin :
                 if (isVoiceWrite) {
                     voiceTxWriteInFlight = false
                     if (status == BluetoothGatt.GATT_SUCCESS) {
+                        val completed = voiceTxQueue.peekFirst()
+                        if (completed != null && completed.spacingAfterMs > 0) {
+                            nextVoiceTxAllowedAtMs = maxOf(
+                                nextVoiceTxAllowedAtMs,
+                                SystemClock.elapsedRealtime() + completed.spacingAfterMs,
+                            )
+                        }
                         voiceTxQueue.pollFirst()
                     } else {
                         voiceTxQueue.clear()
