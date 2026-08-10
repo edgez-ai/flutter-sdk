@@ -76,7 +76,6 @@ class EdgezMeshState {
     this.sharedLinkStats,
     this.bleConnecting = false,
     this.deviceSettings,
-    this.selfLocation,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         sensorSamples = _freezeSensorSamples(sensorSamples),
@@ -128,7 +127,6 @@ class EdgezMeshState {
   final EdgezLinkStats? sharedLinkStats;
   final bool bleConnecting;
   final EdgezDeviceSettings? deviceSettings;
-  final EdgezLocation? selfLocation;
 
   double get otaProgress =>
       otaTotalBytes <= 0 ? 0 : otaSentBytes / otaTotalBytes;
@@ -170,8 +168,6 @@ class EdgezMeshState {
     bool? bleConnecting,
     EdgezDeviceSettings? deviceSettings,
     bool clearDeviceSettings = false,
-    EdgezLocation? selfLocation,
-    bool clearSelfLocation = false,
   }) {
     return EdgezMeshState(
       connection: connection ?? this.connection,
@@ -195,8 +191,6 @@ class EdgezMeshState {
       bleConnecting: bleConnecting ?? this.bleConnecting,
       deviceSettings:
           clearDeviceSettings ? null : deviceSettings ?? this.deviceSettings,
-      selfLocation:
-          clearSelfLocation ? null : selfLocation ?? this.selfLocation,
     );
   }
 
@@ -553,8 +547,9 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> connectBle(String deviceId) async {
     _deviceStatusTimeout?.cancel();
-    // A reconnect may follow a device reset, so the real mesh init packet must
-    // be sent again even when the saved configuration has not changed.
+    // SDK release authorization lives in firmware RAM. A reconnect may follow
+    // a device reset, so the init/auth packet must be sent again even when the
+    // saved mesh configuration itself has not changed.
     _lastInitKey = null;
     _recordAppDiagnostic(
       EdgezDeviceLogLevel.debug,
@@ -735,7 +730,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _setState(
       _state.copyWith(
         clearStatus: true,
-        statusLine: 'Starting device session',
+        statusLine: 'Checking device license',
       ),
     );
     await sdk.authorizeSession();
@@ -769,30 +764,6 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(_state.copyWith(statusLine: 'Device settings failed: $error'));
       rethrow;
     }
-  }
-
-  Future<void> setDeviceGpsEnabled(bool enabled) async {
-    final settings = _state.deviceSettings;
-    if (settings == null) {
-      throw StateError('Read device settings before changing device GPS');
-    }
-    EdgezUserIdentity? identity;
-    if (settings.userIdHigh != 0 ||
-        settings.userIdLow != 0 ||
-        settings.userPublicKey.isNotEmpty ||
-        settings.userPrivateKey.isNotEmpty) {
-      identity = EdgezUserIdentity(
-        userIdHigh: settings.userIdHigh,
-        userIdLow: settings.userIdLow,
-        name: settings.userName,
-        publicKey: settings.userPublicKey,
-        privateKey: settings.userPrivateKey,
-      );
-    }
-    await sendDeviceSettings(
-      settings.copyWith(deviceGpsEnabled: enabled),
-      identity: identity,
-    );
   }
 
   Future<void> sendTextMessage({
@@ -1149,11 +1120,11 @@ class EdgezMeshSession extends ChangeNotifier {
         // payload, so send LG2 when either control stream becomes writable.
         unawaited(_applyConfiguredDeviceLogLevel());
         if (!_provisioning) {
-          unawaited(
-            _sendInitIfReady(
-              force: _state.connection == EdgezConnectionType.usb,
-            ),
-          );
+          if (_state.connection == EdgezConnectionType.usb) {
+            unawaited(_authorizeAndInitializeUsb());
+          } else {
+            unawaited(_sendInitIfReady());
+          }
         }
       case EdgezMeshEventType.status:
         _deviceStatusTimeout?.cancel();
@@ -1401,7 +1372,6 @@ class EdgezMeshSession extends ChangeNotifier {
           beaconUnicast: settings.beaconUnicast.toInt(),
           deviceType: _deviceTypeLabel(settings.deviceType).toLowerCase(),
           sleepModeEnabled: settings.sleepModeEnabled,
-          deviceGpsEnabled: settings.deviceGpsEnabled,
           meshFrequencyKhz: settings.meshFrequencyKhz,
           meshBandwidthMhz: settings.meshBandwidthMhz,
           userIdHigh: settings.userIdHigh.toInt(),
@@ -1410,11 +1380,6 @@ class EdgezMeshSession extends ChangeNotifier {
           userPrivateKey: settings.userPrivateKey,
         ),
       ));
-      if (settings.deviceGpsEnabled) {
-        _stopLocationTracking();
-      } else {
-        _updateLocationTrackingForStatus(_state.status);
-      }
     }
 
     if (packet.hasReport()) {
@@ -1525,29 +1490,6 @@ class EdgezMeshSession extends ChangeNotifier {
                 localIdentity.userIdLow == beacon.userIdLow.toInt()));
     if ((localNode != null && localNode != 0 && localNode == nodeNum) ||
         isLocalIdentity) {
-      final sensorData = _sensorData(beacon.sensorData);
-      final latitude = sensorData?.latitude ??
-          (beacon.hasLatitude() ? beacon.latitude : null);
-      final longitude = sensorData?.longitude ??
-          (beacon.hasLongitude() ? beacon.longitude : null);
-      if (latitude != null &&
-          longitude != null &&
-          latitude.isFinite &&
-          longitude.isFinite &&
-          latitude >= -90 &&
-          latitude <= 90 &&
-          longitude >= -180 &&
-          longitude <= 180 &&
-          (latitude != 0 || longitude != 0)) {
-        _setState(_state.copyWith(
-          selfLocation: EdgezLocation(
-            latitude: latitude,
-            longitude: longitude,
-            timestampMs: now,
-          ),
-          statusLine: 'Device GPS location received',
-        ));
-      }
       return;
     }
 
@@ -2125,13 +2067,31 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<void> _authorizeAndInitializeUsb() async {
+    try {
+      _setState(
+        _state.copyWith(statusLine: 'Authorizing SDK release over USB'),
+      );
+      // Firmware explicitly supports an init containing only the signed SDK
+      // release credential. Complete that handshake before sending mesh config
+      // or status/settings requests on a newly opened UART session.
+      await sdk.authorizeSession();
+      _setState(
+        _state.copyWith(statusLine: 'SDK release sent; initializing mesh'),
+      );
+      await _sendInitIfReady(force: true);
+    } catch (error) {
+      _setState(
+        _state.copyWith(statusLine: 'USB SDK authorization failed: $error'),
+      );
+    }
+  }
+
   void _startLocationTracking() {
     final config = _lastMeshConfig;
     final status = _state.status;
     if (config == null ||
         !config.beacon.shareLocation ||
-        config.beacon.useDeviceGps ||
-        _state.deviceSettings?.deviceGpsEnabled == true ||
         !_bleReady ||
         status == null ||
         !status.meshMode ||

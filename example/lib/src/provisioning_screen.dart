@@ -71,9 +71,12 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   EdgezBleDevice? selectedBle;
   late EdgezUserIdentity deviceIdentity;
   bool waitingForSettings = false;
+  bool requestedAuthorization = false;
   bool requestedSettings = false;
+  bool licenseDialogShown = false;
   bool saving = false;
   String? error;
+  Timer? authorizationTimeout;
 
   String deviceType = '';
   String userName = 'EdgeZ Device';
@@ -86,7 +89,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   late int meshFrequencyKhz;
   late int meshBandwidthMhz;
   bool shareLocation = false;
-  bool deviceGpsEnabled = false;
   String latitude = '';
   String longitude = '';
   String geoFenceName = '';
@@ -113,6 +115,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
 
   @override
   void dispose() {
+    authorizationTimeout?.cancel();
     widget.session.removeListener(_sessionChanged);
     if (step == _ProvisionStep.selectBle) {
       unawaited(widget.session.stopBleScan());
@@ -123,7 +126,40 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   void _sessionChanged() {
     if (!mounted || !waitingForSettings) return;
     final state = widget.session.state;
-    if (state.bleReady && !requestedSettings) {
+    if (state.bleReady && !requestedAuthorization) {
+      requestedAuthorization = true;
+      authorizationTimeout?.cancel();
+      authorizationTimeout = Timer(const Duration(seconds: 8), () {
+        if (!mounted || !waitingForSettings || requestedSettings) return;
+        final status = widget.session.state.status?.licenseStatus ??
+            EdgezLicenseStatus.unspecified;
+        setState(() {
+          waitingForSettings = false;
+          error = 'Device license check timed out';
+        });
+        if (!licenseDialogShown) {
+          licenseDialogShown = true;
+          unawaited(_showInvalidLicenseDialog(status));
+        }
+      });
+      unawaited(_authorizeDevice());
+    }
+
+    final licenseStatus = state.status?.licenseStatus;
+    if (requestedAuthorization &&
+        licenseStatus != null &&
+        _isRejectedLicense(licenseStatus)) {
+      authorizationTimeout?.cancel();
+      if (!licenseDialogShown) {
+        licenseDialogShown = true;
+        waitingForSettings = false;
+        error = 'Provisioning unavailable: ${licenseStatus.label}';
+        unawaited(_showInvalidLicenseDialog(licenseStatus));
+      }
+    } else if (requestedAuthorization &&
+        licenseStatus?.isAuthorized == true &&
+        !requestedSettings) {
+      authorizationTimeout?.cancel();
       requestedSettings = true;
       unawaited(widget.session.requestDeviceSettings());
     }
@@ -140,6 +176,46 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     }
   }
 
+  Future<void> _authorizeDevice() async {
+    try {
+      await widget.session.authorizeSession();
+    } catch (exception) {
+      authorizationTimeout?.cancel();
+      if (!mounted) return;
+      setState(() {
+        waitingForSettings = false;
+        error = 'Device license check failed: $exception';
+      });
+    }
+  }
+
+  bool _isRejectedLicense(EdgezLicenseStatus status) {
+    return status == EdgezLicenseStatus.deviceNotLicensed ||
+        status == EdgezLicenseStatus.sdkVersionIncompatible ||
+        status == EdgezLicenseStatus.sdkReleaseInvalid;
+  }
+
+  Future<void> _showInvalidLicenseDialog(EdgezLicenseStatus status) {
+    final detail = status == EdgezLicenseStatus.unspecified
+        ? 'The device did not return a valid license response.'
+        : '${status.label}.';
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Device license invalid'),
+        content: Text(
+          '$detail Provisioning cannot continue on this device.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _applySettings(EdgezDeviceSettings settings) {
     deviceType = switch (settings.deviceType) {
       'beacon' => 'beacon',
@@ -150,7 +226,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     userName = settings.userName.isEmpty ? userName : settings.userName;
     marker = ExampleMarker.fromId(settings.marker);
     shareLocation = settings.shareLocation;
-    deviceGpsEnabled = settings.deviceGpsEnabled;
     latitude = settings.latitude?.toString() ?? '';
     longitude = settings.longitude?.toString() ?? '';
     geoFenceName = settings.geoFenceName;
@@ -183,7 +258,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     if (device == null) return;
     setState(() {
       waitingForSettings = true;
+      requestedAuthorization = false;
       requestedSettings = false;
+      licenseDialogShown = false;
       error = null;
     });
     await widget.session.stopBleScan();
@@ -275,18 +352,13 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           maxHop: int.tryParse(maxHop) ?? 4,
           beaconIntervalSeconds: int.tryParse(beaconInterval) ?? 10,
           shareLocation: shareLocation,
-          latitude: shareLocation && !deviceGpsEnabled
-              ? double.tryParse(latitude)
-              : null,
-          longitude: shareLocation && !deviceGpsEnabled
-              ? double.tryParse(longitude)
-              : null,
+          latitude: shareLocation ? double.tryParse(latitude) : null,
+          longitude: shareLocation ? double.tryParse(longitude) : null,
           geoFenceName: geoFenceName.trim(),
           geoIndex: geoIndex,
           uartI2cSensorType: uartI2cDriver,
           rs485SensorType: rs485Driver,
           sleepModeEnabled: deviceType == 'relay' ? false : sleepMode,
-          deviceGpsEnabled: deviceGpsEnabled,
           meshFrequencyKhz: meshFrequencyKhz,
           meshBandwidthMhz: meshBandwidthMhz,
         ),
@@ -329,6 +401,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
             Text('Interface: ${state.connection.name.toUpperCase()}'),
             Text(state.statusLine,
                 style: Theme.of(context).textTheme.bodySmall),
+            if (state.status?.licenseStatus case final status?
+                when _isRejectedLicense(status))
+              Text('${status.label}. Provisioning is unavailable.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (error != null) ...<Widget>[
               const SizedBox(height: 8),
               Text(error!,
@@ -353,7 +429,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: _canContinue() ? _next : null,
+                  onPressed: _canContinue(state) ? _next : null,
                   child: Text(saving
                       ? 'Saving'
                       : step == _ProvisionStep.sleepMode ||
@@ -372,8 +448,13 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     );
   }
 
-  bool _canContinue() {
+  bool _canContinue(EdgezMeshState state) {
     if (saving || waitingForSettings) return false;
+    if (state.connection == EdgezConnectionType.ble &&
+        state.status != null &&
+        !state.status!.licenseStatus.isAuthorized) {
+      return false;
+    }
     return step != _ProvisionStep.selectBle || selectedBle != null;
   }
 
@@ -520,17 +601,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
               onChanged: (value) => setState(() => shareLocation = value),
             ),
             if (shareLocation) ...<Widget>[
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Use device GPS (L76K)'),
-                subtitle: const Text(
-                  'Wake for periodic fixes, then power the receiver down',
-                ),
-                value: deviceGpsEnabled,
-                onChanged: (value) => setState(() => deviceGpsEnabled = value),
-              ),
-            ],
-            if (shareLocation && !deviceGpsEnabled) ...<Widget>[
               SettingsTextField(
                   label: 'Latitude',
                   value: latitude,

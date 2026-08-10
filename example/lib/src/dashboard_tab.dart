@@ -66,6 +66,9 @@ class DashboardScreen extends StatelessWidget {
                   value: activeConnection.name.toUpperCase()),
               _DashboardValue(
                   label: 'Known nodes', value: users.length.toString()),
+              _DashboardValue(
+                  label: 'License',
+                  value: status?.licenseStatus.label ?? 'Waiting for device'),
             ],
           ),
           const SizedBox(height: 16),
