@@ -64,6 +64,23 @@ class MockBleTransport implements EdgezPlatformTransport {
     _events.add(const <Object?, Object?>{'type': 'ready'});
   }
 
+  void emitUsbLinkStats({
+    required int sentPings,
+    required int receivedPings,
+    required int receivedPongs,
+    int timeouts = 0,
+    int rttMs = 0,
+  }) {
+    _events.add(<Object?, Object?>{
+      'type': 'usbLinkStats',
+      'sentPings': sentPings,
+      'receivedPings': receivedPings,
+      'receivedPongs': receivedPongs,
+      'timeouts': timeouts,
+      'rttMs': rttMs,
+    });
+  }
+
   void emitBleDevice({
     required String id,
     required String name,
@@ -109,6 +126,21 @@ class MockBleTransport implements EdgezPlatformTransport {
     _events.add(<Object?, Object?>{
       'type': 'packet',
       'packet': Uint8List.fromList(bytes),
+    });
+  }
+
+  void emitSpeedTestFrame({
+    required int fromNode,
+    required EdgezSpeedTestFrame frame,
+    int receivedAtUs = 0,
+  }) {
+    _events.add(<Object?, Object?>{
+      'type': 'speedTestFrame',
+      'packet': Uint8List.fromList(<int>[
+        for (var shift = 40; shift >= 0; shift -= 8) (fromNode >> shift) & 0xff,
+        ...frame.encode(),
+      ]),
+      'receivedAtUs': receivedAtUs,
     });
   }
 

@@ -1,6 +1,7 @@
 enum EdgezConnectionType {
   none,
-  ble;
+  ble,
+  usb;
 
   static EdgezConnectionType fromWire(String? value) {
     return EdgezConnectionType.values.firstWhere(
@@ -8,6 +9,20 @@ enum EdgezConnectionType {
       orElse: () => EdgezConnectionType.none,
     );
   }
+}
+
+enum EdgezDeviceLogLevel {
+  none(0, 'None'),
+  error(1, 'Error'),
+  warning(2, 'Warn'),
+  info(3, 'Info'),
+  debug(4, 'Debug'),
+  verbose(5, 'Verbose');
+
+  const EdgezDeviceLogLevel(this.wireValue, this.label);
+
+  final int wireValue;
+  final String label;
 }
 
 enum EdgezMeshEventType {
@@ -19,6 +34,8 @@ enum EdgezMeshEventType {
   node,
   message,
   voiceFrame,
+  speedTestFrame,
+  usbLinkStats,
   voiceAudio,
   otaProgress,
   log;
@@ -141,6 +158,36 @@ class EdgezBleDevice {
   }
 }
 
+class EdgezUsbDevice {
+  const EdgezUsbDevice({
+    required this.id,
+    required this.name,
+    required this.vendorId,
+    required this.productId,
+    this.transport = 'generic-usb',
+  });
+
+  final int id;
+  final String name;
+  final int vendorId;
+  final int productId;
+
+  /// Native transport exposed by the Android USB plugin, for example
+  /// `tinyusb-cdc-uart` or `cp2102-uart`.
+  final String transport;
+
+  String get label => '$name (${vendorId.toRadixString(16).padLeft(4, '0')}:'
+      '${productId.toRadixString(16).padLeft(4, '0')})';
+
+  factory EdgezUsbDevice.fromMap(Map<Object?, Object?> map) => EdgezUsbDevice(
+        id: map['id'] as int? ?? 0,
+        name: map['name'] as String? ?? 'ESP32-S3 USB',
+        vendorId: map['vendorId'] as int? ?? 0,
+        productId: map['productId'] as int? ?? 0,
+        transport: map['transport'] as String? ?? 'generic-usb',
+      );
+}
+
 class EdgezUserIdentity {
   const EdgezUserIdentity({
     this.userUuid = '',
@@ -221,6 +268,7 @@ class EdgezBeaconConfig {
     this.intervalSeconds = 30,
     this.marker = 'blue',
     this.shareLocation = false,
+    this.useDeviceGps = false,
     this.latitude,
     this.longitude,
     this.locationTimestampMs = 0,
@@ -229,6 +277,7 @@ class EdgezBeaconConfig {
   final int intervalSeconds;
   final String marker;
   final bool shareLocation;
+  final bool useDeviceGps;
   final double? latitude;
   final double? longitude;
   final int locationTimestampMs;
@@ -239,6 +288,7 @@ class EdgezBeaconConfig {
         'intervalSeconds': intervalSeconds,
         'marker': marker,
         'shareLocation': shareLocation,
+        'useDeviceGps': useDeviceGps,
         'latitude': latitude,
         'longitude': longitude,
         'locationTimestampMs': locationTimestampMs,
@@ -286,6 +336,7 @@ class EdgezDeviceSettings {
     this.beaconUnicast = 0,
     this.deviceType = 'relay',
     this.sleepModeEnabled = false,
+    this.deviceGpsEnabled = false,
     this.meshFrequencyKhz = 0,
     this.meshBandwidthMhz = 0,
     this.userIdHigh = 0,
@@ -313,6 +364,7 @@ class EdgezDeviceSettings {
   final int beaconUnicast;
   final String deviceType;
   final bool sleepModeEnabled;
+  final bool deviceGpsEnabled;
   final int meshFrequencyKhz;
   final int meshBandwidthMhz;
   final int userIdHigh;
@@ -340,6 +392,7 @@ class EdgezDeviceSettings {
         'beaconUnicast': beaconUnicast,
         'deviceType': deviceType,
         'sleepModeEnabled': sleepModeEnabled,
+        'deviceGpsEnabled': deviceGpsEnabled,
         'meshFrequencyKhz': meshFrequencyKhz,
         'meshBandwidthMhz': meshBandwidthMhz,
         'userIdHigh': userIdHigh,
@@ -347,6 +400,37 @@ class EdgezDeviceSettings {
         'userPublicKey': userPublicKey,
         'userPrivateKey': userPrivateKey,
       };
+
+  EdgezDeviceSettings copyWith({bool? deviceGpsEnabled}) {
+    return EdgezDeviceSettings(
+      deviceModeEnabled: deviceModeEnabled,
+      meshId: meshId,
+      shareLocation: shareLocation,
+      userName: userName,
+      marker: marker,
+      beaconIntervalSeconds: beaconIntervalSeconds,
+      maxHop: maxHop,
+      latitude: latitude,
+      longitude: longitude,
+      geoFenceName: geoFenceName,
+      geoIndex: geoIndex,
+      uartI2cSensorType: uartI2cSensorType,
+      rs485SensorType: rs485SensorType,
+      passphrase: passphrase,
+      upstreamWifiSsid: upstreamWifiSsid,
+      upstreamWifiPassphrase: upstreamWifiPassphrase,
+      beaconUnicast: beaconUnicast,
+      deviceType: deviceType,
+      sleepModeEnabled: sleepModeEnabled,
+      deviceGpsEnabled: deviceGpsEnabled ?? this.deviceGpsEnabled,
+      meshFrequencyKhz: meshFrequencyKhz,
+      meshBandwidthMhz: meshBandwidthMhz,
+      userIdHigh: userIdHigh,
+      userIdLow: userIdLow,
+      userPublicKey: userPublicKey,
+      userPrivateKey: userPrivateKey,
+    );
+  }
 }
 
 enum EdgezSensorConnector { uartI2c, rs485 }
@@ -680,6 +764,12 @@ class EdgezMeshEvent {
     this.message,
     this.sentBytes = 0,
     this.totalBytes = 0,
+    this.usbSentPings = 0,
+    this.usbReceivedPings = 0,
+    this.usbReceivedPongs = 0,
+    this.usbTimeouts = 0,
+    this.usbRttMs = 0,
+    this.receivedAtUs = 0,
     this.log = '',
   });
 
@@ -692,6 +782,12 @@ class EdgezMeshEvent {
   final EdgezConversationMessage? message;
   final int sentBytes;
   final int totalBytes;
+  final int usbSentPings;
+  final int usbReceivedPings;
+  final int usbReceivedPongs;
+  final int usbTimeouts;
+  final int usbRttMs;
+  final int receivedAtUs;
   final String log;
 
   double get progress => totalBytes <= 0 ? 0 : sentBytes / totalBytes;
@@ -721,6 +817,12 @@ class EdgezMeshEvent {
           : null,
       sentBytes: map['sentBytes'] as int? ?? 0,
       totalBytes: map['totalBytes'] as int? ?? 0,
+      usbSentPings: map['sentPings'] as int? ?? 0,
+      usbReceivedPings: map['receivedPings'] as int? ?? 0,
+      usbReceivedPongs: map['receivedPongs'] as int? ?? 0,
+      usbTimeouts: map['timeouts'] as int? ?? 0,
+      usbRttMs: map['rttMs'] as int? ?? 0,
+      receivedAtUs: (map['receivedAtUs'] as num?)?.toInt() ?? 0,
       log: map['log'] as String? ?? '',
     );
   }

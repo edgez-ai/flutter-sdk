@@ -175,7 +175,7 @@ void main() {
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('BLE connection'), findsOneWidget);
+    expect(find.text('Device connection'), findsOneWidget);
     expect(find.text('Device mode'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('Mesh Network'),
@@ -207,33 +207,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Transport'), findsOneWidget);
-    expect(find.text('SDK events'), findsOneWidget);
+    expect(find.text('Speed and loss · last 30 minutes'), findsOneWidget);
     await tester.tap(find.byTooltip('Back to settings'));
     await tester.pumpAndSettle();
-    expect(find.text('BLE connection'), findsOneWidget);
+    expect(find.text('Device connection'), findsOneWidget);
   });
 
-  testWidgets('BLE connection uses the Android-style device picker',
-      (tester) async {
+  testWidgets('connection selector offers BLE and USB devices', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
 
     expect(find.text('Selected device'), findsOneWidget);
-    expect(find.text('No BLE device selected'), findsOneWidget);
+    expect(find.text('No device selected'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
     await tester.tap(find.widgetWithText(OutlinedButton, 'Select'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Select BLE device'), findsOneWidget);
+    expect(find.text('Select BLE or USB device'), findsOneWidget);
     expect(find.text('Scanning for EdgeZ devices'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
-    expect(find.text('BLE connection'), findsOneWidget);
+    expect(find.text('Device connection'), findsOneWidget);
   });
 
   testWidgets('conversation shows GPS without overflowing a narrow screen',
       (tester) async {
+    int? selectedSpeedHop;
     await tester.binding.setSurfaceSize(const Size(360, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -261,20 +261,47 @@ void main() {
                 ),
               ),
             ],
+            linkStats: const EdgezLinkStats(
+              bitsPerSecond: 842300,
+              packetLossPercent: 1.25,
+              receivedPackets: 5394,
+              expectedPackets: 5462,
+              updatedAtMs: 1700000001000,
+            ),
             callState: const EdgezVoiceCallState(),
             onBack: () {},
-            onSendMessage: (_) {},
+            onSendMessage: (_) async {},
             onStartVoiceMessage: () async => true,
             onStopVoiceMessage: (_) async {},
             onReplayVoiceMessage: (_) {},
+            onStartSpeedTest: (hop, _) async => selectedSpeedHop = hop,
             onStartCall: () async {},
           ),
         ),
       ),
     );
+    expect(find.text('Hop'), findsOneWidget);
+    expect(find.text('0 (Auto)'), findsOneWidget);
+    final hopSelector = find.byType(DropdownButtonFormField<int>);
+    await tester.ensureVisible(hopSelector);
+    await tester.tap(hopSelector);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2').last);
+    await tester.pumpAndSettle();
+    final speedButton = find.text('Speed test (2 MiB)');
+    await tester.ensureVisible(speedButton);
+    await tester.tap(speedButton);
+    await tester.pumpAndSettle();
+    expect(selectedSpeedHop, 2);
 
     expect(find.text('Latest sensor location'), findsOneWidget);
     expect(find.text('59.329323, 18.068581'), findsOneWidget);
+    expect(
+      find.text(
+        'Speed: 842.3 kbps · Packet loss: 1.25%',
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 

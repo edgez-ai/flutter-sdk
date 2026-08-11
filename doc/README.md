@@ -11,6 +11,7 @@ integration.
 | [Feature guide](features.md) | Understand the SDK capabilities, platform support, and example coverage. |
 | [Integration guide](integration-guide.md) | Add the SDK to a Flutter app and implement the BLE-to-mesh lifecycle. |
 | [API map](api-reference.md) | Find the main public classes and choose between the session and low-level APIs. |
+| [Host transport contract](transport-contract.md) | Keep BLE and USB framing, channels, limits, and acceptance semantics aligned with firmware. |
 | [Background notifications and calls](background-notifications.md) | Keep BLE active in the background and display message/call notifications on the lock screen. |
 | [Roadmap](roadmap.md) | Review planned offline maps and libp2p cross-boundary mixed-mesh work. |
 

@@ -37,6 +37,10 @@ enum AppDestination {
 }
 
 const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
+const _speedHistoryWindow = Duration(minutes: 30);
+const _downloadsChannel = MethodChannel(
+  'ai.edgez.flutter_sdk_example/downloads',
+);
 
 class EdgezExampleApp extends StatefulWidget {
   const EdgezExampleApp({super.key});
@@ -54,18 +58,22 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   late final EdgezIdentityStore identityStore;
   late final EdgezBleConfigurationStore bleConfigurationStore;
   late final EdgezDriverStore driverStore;
+  late final EdgezDeviceLogStore deviceLogStore;
   late final AppLinks appLinks;
   StreamSubscription<Uri>? driverLinkSubscription;
   AppDestination destination = AppDestination.dashboard;
   int? selectedNodeNum;
   bool showTopology = false;
   bool showDebug = false;
+  EdgezDeviceLogLevel deviceLogLevel = EdgezDeviceLogLevel.warning;
   EdgezUserIdentity? userIdentity;
   bool databaseReady = false;
   bool persistenceEnabled = false;
   bool hydrationComplete = false;
   Map<String, ExampleDashboardDisplay> dashboardDisplays =
       const <String, ExampleDashboardDisplay>{};
+  List<ExampleSpeedMetric> speedMetrics = const <ExampleSpeedMetric>[];
+  int lastPersistedSpeedMetricMs = 0;
   Timer? persistDebounce;
   bool persistInFlight = false;
   bool persistAgain = false;
@@ -77,7 +85,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   List<ExampleDriver> drivers = ExampleDriverCatalog.bundled;
   MarketplaceDriverInstallRequest? pendingDriverInstall;
   bool bleAutoConnect = false;
+  EdgezPreferredTransport preferredTransport = EdgezPreferredTransport.ble;
   EdgezBleDevice? selectedBleDevice;
+  List<EdgezUsbDevice> usbDevices = const <EdgezUsbDevice>[];
+  EdgezUsbDevice? selectedUsbDevice;
   EdgezOtaRelease? otaRelease;
   bool otaCheckInProgress = false;
   bool otaInstallInProgress = false;
@@ -100,6 +111,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   String deviceMaxHop = '4';
   String deviceBeaconIntervalSeconds = '10';
   bool deviceShareLocation = false;
+  bool deviceGpsEnabled = false;
+  EdgezDeviceSettings? observedDeviceSettings;
+  EdgezLocation? observedSelfLocation;
   String deviceLatitude = '';
   String deviceLongitude = '';
   String deviceGeoFenceName = '';
@@ -120,9 +134,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    deviceLogStore = EdgezDeviceLogStore();
     session = EdgezMeshSession(
       onIncomingMessage: _showIncomingMessage,
       onIncomingCall: _showIncomingCall,
+      deviceLogStore: deviceLogStore,
     );
     database = ExampleDatabase();
     identityStore = EdgezIdentityStore();
@@ -131,6 +147,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     appLinks = AppLinks();
     session.addListener(_persistSessionSnapshot);
     session.addListener(_handleCallNotificationState);
+    session.addListener(_handleDeviceGpsState);
+    unawaited(session.restoreDeviceLogs());
     unawaited(_loadIdentityAndBleConfiguration());
     unawaited(_hydrateFromDatabase());
     unawaited(_loadInstalledDrivers());
@@ -375,15 +393,39 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   Future<void> _loadIdentityAndBleConfiguration() async {
     final identity = await identityStore.getOrCreate();
     final bleConfiguration = await bleConfigurationStore.load();
+    var attachedUsbDevices = const <EdgezUsbDevice>[];
+    if (bleConfiguration.preferredTransport == EdgezPreferredTransport.usb) {
+      try {
+        attachedUsbDevices = await session.sdk.listUsbDevices();
+      } on MissingPluginException {
+        // USB support requires a full Android rebuild after native changes.
+      }
+    }
+    final restoredUsbDevice =
+        attachedUsbDevices.cast<EdgezUsbDevice?>().firstWhere(
+              (device) =>
+                  device?.vendorId == bleConfiguration.usbVendorId &&
+                  device?.productId == bleConfiguration.usbProductId,
+              orElse: () => null,
+            );
     if (!mounted) return;
     setState(() {
       userIdentity = identity;
       userName = identity.name;
-      selectedBleDevice = bleConfiguration.selectedDevice;
+      preferredTransport = bleConfiguration.preferredTransport;
+      selectedBleDevice = preferredTransport == EdgezPreferredTransport.ble
+          ? bleConfiguration.selectedDevice
+          : null;
+      usbDevices = attachedUsbDevices;
+      selectedUsbDevice = restoredUsbDevice;
       bleAutoConnect = bleConfiguration.autoConnect;
       shareLocation = bleConfiguration.shareLocation;
+      deviceLogLevel = bleConfiguration.logLevel;
     });
-    if (bleConfiguration.autoConnect && bleConfiguration.hasSelectedDevice) {
+    await session.configureLogLevel(bleConfiguration.logLevel);
+    if (bleConfiguration.preferredTransport == EdgezPreferredTransport.ble &&
+        bleConfiguration.autoConnect &&
+        bleConfiguration.hasSelectedDevice) {
       await _connectBleDevice(bleConfiguration.deviceId);
     }
   }
@@ -396,6 +438,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     persistenceEnabled = false;
     session.removeListener(_persistSessionSnapshot);
     session.removeListener(_handleCallNotificationState);
+    session.removeListener(_handleDeviceGpsState);
     session.dispose();
     unawaited(database.close());
     super.dispose();
@@ -407,6 +450,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       final nodes = await database.loadNodes();
       final savedDashboardDisplays = await database.loadDashboardDisplays();
       final conversations = await database.loadConversations();
+      final loadedSpeedMetrics = await database.loadSpeedMetrics(
+        sinceMs:
+            DateTime.now().subtract(_speedHistoryWindow).millisecondsSinceEpoch,
+      );
       final samples = <int, List<EdgezSensorSample>>{};
       for (final nodeNum in nodes.keys) {
         samples[nodeNum] = await database.loadSensorSamples(nodeNum);
@@ -423,6 +470,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         persistenceEnabled = true;
         hydrationComplete = true;
         dashboardDisplays = savedDashboardDisplays;
+        speedMetrics = loadedSpeedMetrics;
+        lastPersistedSpeedMetricMs = loadedSpeedMetrics.isEmpty
+            ? 0
+            : loadedSpeedMetrics.last.timestampMs;
       });
     } catch (_) {
       if (!mounted) return;
@@ -436,8 +487,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
 
   void _persistSessionSnapshot() {
     if (!hydrationComplete || !persistenceEnabled) return;
-    final signature = _persistenceSignature(session.state);
-    if (signature == lastPersistSignature) return;
+    final state = session.state;
+    final signature = _persistenceSignature(state);
+    final metricNeedsPersistence =
+        (state.sharedLinkStats?.updatedAtMs ?? 0) > lastPersistedSpeedMetricMs;
+    if (signature == lastPersistSignature && !metricNeedsPersistence) return;
     persistDebounce?.cancel();
     persistDebounce = Timer(
       const Duration(milliseconds: 400),
@@ -458,6 +512,29 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         persistAgain = false;
         final state = session.state;
         final signature = _persistenceSignature(state);
+        final metric = state.sharedLinkStats;
+        if (metric != null && metric.updatedAtMs > lastPersistedSpeedMetricMs) {
+          await database.insertSpeedMetric(metric);
+          lastPersistedSpeedMetricMs = metric.updatedAtMs;
+          final cutoff = DateTime.now()
+              .subtract(_speedHistoryWindow)
+              .millisecondsSinceEpoch;
+          final updatedMetrics = <ExampleSpeedMetric>[
+            ...speedMetrics.where((item) => item.timestampMs >= cutoff),
+            ExampleSpeedMetric(
+              timestampMs: metric.updatedAtMs,
+              bitsPerSecond: metric.bitsPerSecond,
+              packetLossPercent: metric.packetLossPercent,
+              receivedPackets: metric.receivedPackets,
+              expectedPackets: metric.expectedPackets,
+            ),
+          ];
+          if (mounted) {
+            setState(() => speedMetrics = updatedMetrics);
+          } else {
+            speedMetrics = updatedMetrics;
+          }
+        }
         if (signature != lastPersistSignature) {
           await database.persistStateSnapshot(state);
           lastPersistSignature = signature;
@@ -572,6 +649,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   Future<void> _connectBle() async {
+    if (session.state.connection == EdgezConnectionType.usb) {
+      await session.disconnect();
+    }
+    preferredTransport = EdgezPreferredTransport.ble;
+    selectedUsbDevice = null;
+    await bleConfigurationStore
+        .setPreferredTransport(EdgezPreferredTransport.ble);
+    if (mounted) setState(() {});
     await session.startBleScan();
   }
 
@@ -583,12 +668,70 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     // Match the Android flow: make the current mesh configuration available
     // before BLE service discovery emits its ready event.
     await _saveAppSettings();
+    preferredTransport = EdgezPreferredTransport.ble;
+    selectedUsbDevice = null;
+    final device = session.state.bleDevices[deviceId] ?? selectedBleDevice;
+    if (device != null && device.id == deviceId) {
+      selectedBleDevice = device;
+      await bleConfigurationStore.saveSelectedDevice(device);
+    } else {
+      await bleConfigurationStore
+          .setPreferredTransport(EdgezPreferredTransport.ble);
+    }
+    if (mounted) setState(() {});
     try {
       await session.sdk.requestNotificationPermission();
     } on MissingPluginException {
       // Notification support requires a full rebuild after native changes.
     }
     await session.connectBle(deviceId);
+  }
+
+  Future<void> _refreshUsbDevices() async {
+    try {
+      final devices = await session.sdk.listUsbDevices();
+      final current = selectedUsbDevice;
+      final restored = current == null
+          ? null
+          : devices.cast<EdgezUsbDevice?>().firstWhere(
+                (device) =>
+                    device?.vendorId == current.vendorId &&
+                    device?.productId == current.productId,
+                orElse: () => null,
+              );
+      if (mounted) {
+        setState(() {
+          usbDevices = devices;
+          if (preferredTransport == EdgezPreferredTransport.usb) {
+            selectedUsbDevice = restored;
+          }
+        });
+      }
+    } on MissingPluginException {
+      // USB support requires a full Android rebuild after native changes.
+    }
+  }
+
+  Future<void> _connectUsbDevice(EdgezUsbDevice device) async {
+    await _saveAppSettings();
+    await bleConfigurationStore.saveSelectedUsbDevice(device);
+    await bleConfigurationStore.setAutoConnect(false);
+    if (mounted) {
+      setState(() {
+        preferredTransport = EdgezPreferredTransport.usb;
+        bleAutoConnect = false;
+        selectedBleDevice = null;
+        selectedUsbDevice = device;
+      });
+    }
+    try {
+      await session.connectUsb(device);
+    } catch (error) {
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('USB connection failed: $error')),
+      );
+    }
   }
 
   Future<void> _disconnect() async {
@@ -599,10 +742,76 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     });
   }
 
+  Future<void> _setDeviceLogLevel(EdgezDeviceLogLevel level) async {
+    try {
+      await session.configureLogLevel(level);
+      if (session.state.connection != EdgezConnectionType.none) {
+        await session.setDeviceLogLevel(level);
+      }
+      await bleConfigurationStore.setLogLevel(level);
+      if (mounted) setState(() => deviceLogLevel = level);
+    } catch (error) {
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to set device log level: $error')),
+      );
+    }
+  }
+
+  Future<void> _exportDeviceLogs() async {
+    File? stagedFile;
+    try {
+      stagedFile = await deviceLogStore.export();
+      final fileName = stagedFile.uri.pathSegments.last;
+      final downloadedName = await _downloadsChannel.invokeMethod<String>(
+        'saveToDownloads',
+        <String, String>{
+          'sourcePath': stagedFile.path,
+          'fileName': fileName,
+        },
+      );
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Downloaded to Downloads/${downloadedName ?? fileName}',
+          ),
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Public Downloads write failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to download logs: $error')),
+      );
+    } finally {
+      if (stagedFile != null && await stagedFile.exists()) {
+        await stagedFile.delete();
+      }
+    }
+  }
+
+  Future<void> _pruneDeviceLogs() async {
+    try {
+      await session.pruneDeviceLogs();
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('Logs pruned')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to prune logs: $error')),
+      );
+    }
+  }
+
   Future<void> _saveAppSettings() async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
     final identity = await identityStore.updateName(userName);
-    final location = shareLocation ? await _getBestKnownLocation() : null;
+    final location = shareLocation && !deviceGpsEnabled
+        ? await _getBestKnownLocation()
+        : null;
     if (mounted) {
       setState(() {
         userIdentity = identity;
@@ -621,6 +830,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
           intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 10,
           marker: userMarker.name,
           shareLocation: shareLocation,
+          useDeviceGps: deviceGpsEnabled,
           latitude: location?.latitude,
           longitude: location?.longitude,
           locationTimestampMs: location?.timestampMs ?? 0,
@@ -635,6 +845,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         ),
       ),
     );
+    final currentSettings = session.state.deviceSettings;
+    if (currentSettings != null &&
+        currentSettings.deviceGpsEnabled != deviceGpsEnabled) {
+      await session.setDeviceGpsEnabled(deviceGpsEnabled);
+    }
   }
 
   Future<void> _regenerateUserKeyPair() async {
@@ -644,10 +859,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   Future<void> _saveDeviceSettings() async {
-    if (deviceShareLocation) await _refreshDeviceLocation();
+    if (deviceShareLocation && !deviceGpsEnabled) {
+      await _refreshDeviceLocation();
+    }
     final latitude = double.tryParse(deviceLatitude);
     final longitude = double.tryParse(deviceLongitude);
-    if (deviceShareLocation && (latitude == null || longitude == null)) {
+    if (deviceShareLocation &&
+        !deviceGpsEnabled &&
+        (latitude == null || longitude == null)) {
       throw StateError('No phone location is available for the device');
     }
     final scripts = <EdgezSensorScriptConfig>[];
@@ -665,8 +884,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         marker: deviceMarker.name,
         beaconIntervalSeconds: int.tryParse(deviceBeaconIntervalSeconds) ?? 10,
         maxHop: int.tryParse(deviceMaxHop) ?? 0,
-        latitude: deviceShareLocation ? latitude : null,
-        longitude: deviceShareLocation ? longitude : null,
+        latitude: deviceShareLocation && !deviceGpsEnabled ? latitude : null,
+        longitude: deviceShareLocation && !deviceGpsEnabled ? longitude : null,
         geoFenceName: deviceGeoFenceName.trim(),
         geoIndex: deviceGeoIndex,
         uartI2cSensorType: uartI2cSensorType,
@@ -681,6 +900,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
             : 0,
         deviceType: deviceType,
         sleepModeEnabled: deviceSleepModeEnabled,
+        deviceGpsEnabled: deviceGpsEnabled,
         meshFrequencyKhz: meshFrequencyKhz,
         meshBandwidthMhz: meshBandwidthMhz,
       ),
@@ -728,12 +948,45 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   void _setShareLocation(bool value) {
     setState(() => shareLocation = value);
     unawaited(bleConfigurationStore.setShareLocation(value));
-    if (value) unawaited(_getBestKnownLocation());
+    if (value && !deviceGpsEnabled) unawaited(_getBestKnownLocation());
   }
 
   void _setDeviceShareLocation(bool value) {
     setState(() => deviceShareLocation = value);
-    if (value) unawaited(_refreshDeviceLocation());
+    if (value && !deviceGpsEnabled) unawaited(_refreshDeviceLocation());
+  }
+
+  void _setDeviceGpsEnabled(bool value) {
+    setState(() => deviceGpsEnabled = value);
+    if (!value) {
+      if (deviceModeEnabled && deviceShareLocation) {
+        unawaited(_refreshDeviceLocation());
+      } else if (!deviceModeEnabled && shareLocation) {
+        unawaited(_getBestKnownLocation());
+      }
+    }
+  }
+
+  void _handleDeviceGpsState() {
+    final settings = session.state.deviceSettings;
+    final selfLocation = session.state.selfLocation;
+    if (identical(settings, observedDeviceSettings) &&
+        identical(selfLocation, observedSelfLocation)) {
+      return;
+    }
+    observedDeviceSettings = settings;
+    observedSelfLocation = selfLocation;
+    if (!mounted) return;
+    setState(() {
+      if (settings != null) {
+        deviceGpsEnabled = settings.deviceGpsEnabled;
+      }
+      if (selfLocation != null) {
+        locationMessage = 'Device GPS: '
+            '${selfLocation.latitude.toStringAsFixed(6)}, '
+            '${selfLocation.longitude.toStringAsFixed(6)}';
+      }
+    });
   }
 
   Future<void> _checkForOtaUpdate() async {
@@ -871,10 +1124,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     lastPersistSignature = _persistenceSignature(session.state);
   }
 
-  void _sendMessage(String text) {
+  Future<void> _sendMessage(String text) async {
     final nodeNum = selectedNodeNum;
     if (nodeNum == null) return;
-    session.sendTextMessage(
+    await session.sendTextMessage(
       toNode: nodeNum,
       text: text,
       maxHop: int.tryParse(maxHop) ?? 0,
@@ -883,6 +1136,19 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
 
   Future<bool> _startVoiceMessage() {
     return session.startVoiceMessage();
+  }
+
+  Future<void> _startSpeedTest(
+    int hop,
+    void Function(int sentBytes, int totalBytes) onProgress,
+  ) async {
+    final nodeNum = selectedNodeNum;
+    if (nodeNum == null) return;
+    await session.sendSpeedTest(
+      toNode: nodeNum,
+      hop: hop,
+      onProgress: onProgress,
+    );
   }
 
   Future<void> _stopVoiceMessage(bool send) async {
@@ -929,11 +1195,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       sensorSamples:
                           meshState.sensorSamples[selected.nodeNum] ??
                               const <EdgezSensorSample>[],
+                      linkStats: meshState.linkStats[selected.nodeNum],
                       onBack: () => setState(() => selectedNodeNum = null),
                       onSendMessage: _sendMessage,
                       onStartVoiceMessage: _startVoiceMessage,
                       onStopVoiceMessage: _stopVoiceMessage,
                       onReplayVoiceMessage: session.playVoiceMessage,
+                      onStartSpeedTest: _startSpeedTest,
                       callState: meshState.voiceCall,
                       onStartCall: () =>
                           session.startVoiceCall(selected.nodeNum),
@@ -974,11 +1242,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                           sensorSamples:
                               meshState.sensorSamples[selected.nodeNum] ??
                                   const <EdgezSensorSample>[],
+                          linkStats: meshState.linkStats[selected.nodeNum],
                           onBack: () => setState(() => selectedNodeNum = null),
                           onSendMessage: _sendMessage,
                           onStartVoiceMessage: _startVoiceMessage,
                           onStopVoiceMessage: _stopVoiceMessage,
                           onReplayVoiceMessage: session.playVoiceMessage,
+                          onStartSpeedTest: _startSpeedTest,
                           callState: meshState.voiceCall,
                           onStartCall: () =>
                               session.startVoiceCall(selected.nodeNum),
@@ -1009,6 +1279,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   shareLocation: shareLocation,
                   deviceModeEnabled: deviceModeEnabled,
                   databaseReady: databaseReady,
+                  speedMetrics: speedMetrics,
+                  debugLogs: meshState.debugLogs,
+                  onExportLogs: () => unawaited(_exportDeviceLogs()),
+                  onPruneLogs: () => unawaited(_pruneDeviceLogs()),
                   onClose: () => setState(() => showDebug = false),
                 )
               : SettingsScreen(
@@ -1019,8 +1293,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   autoReplayReceivedVoice: autoReplayReceivedVoice,
                   deviceModeEnabled: deviceModeEnabled,
                   bleDevices: meshState.sortedBleDevices,
+                  usbDevices: usbDevices,
                   drivers: drivers,
                   selectedBleDevice: selectedBleDevice,
+                  selectedUsbDevice: selectedUsbDevice,
+                  usbLinkStats: meshState.usbLinkStats,
                   meshStatus: meshState.status,
                   bleAutoConnect: bleAutoConnect,
                   statusLine: meshState.statusLine,
@@ -1055,6 +1332,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceMaxHop: deviceMaxHop,
                   deviceBeaconIntervalSeconds: deviceBeaconIntervalSeconds,
                   deviceShareLocation: deviceShareLocation,
+                  deviceGpsEnabled: deviceGpsEnabled,
+                  deviceGpsLocation: meshState.selfLocation,
                   deviceLatitude: deviceLatitude,
                   deviceLongitude: deviceLongitude,
                   deviceGeoFenceName: deviceGeoFenceName,
@@ -1068,13 +1347,21 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceUpstreamWifiPassphrase: deviceUpstreamWifiPassphrase,
                   deviceBeaconMulticast: deviceBeaconMulticast,
                   deviceSleepModeEnabled: deviceSleepModeEnabled,
+                  logLevel: deviceLogLevel,
                   onConnectBle: _connectBle,
                   onStopBleScan: _stopBleScan,
                   onConnectBleDevice: _connectBleDevice,
                   onSelectBleDevice: (device) {
-                    setState(() => selectedBleDevice = device);
+                    setState(() {
+                      preferredTransport = EdgezPreferredTransport.ble;
+                      selectedBleDevice = device;
+                      selectedUsbDevice = null;
+                    });
                     unawaited(bleConfigurationStore.saveSelectedDevice(device));
                   },
+                  onRefreshUsbDevices: _refreshUsbDevices,
+                  onConnectUsbDevice: (device) =>
+                      unawaited(_connectUsbDevice(device)),
                   onBleAutoConnectChanged: (value) {
                     setState(() => bleAutoConnect = value);
                     unawaited(bleConfigurationStore.setAutoConnect(value));
@@ -1133,6 +1420,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   onDeviceBeaconIntervalChanged: (value) =>
                       setState(() => deviceBeaconIntervalSeconds = value),
                   onDeviceShareLocationChanged: _setDeviceShareLocation,
+                  onDeviceGpsEnabledChanged: _setDeviceGpsEnabled,
                   onRefreshDeviceLocation: _refreshDeviceLocation,
                   onDeviceLatitudeChanged: (value) =>
                       setState(() => deviceLatitude = value),
@@ -1160,6 +1448,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       setState(() => deviceBeaconMulticast = value),
                   onDeviceSleepModeChanged: (value) =>
                       setState(() => deviceSleepModeEnabled = value),
+                  onLogLevelChanged: (level) =>
+                      unawaited(_setDeviceLogLevel(level)),
                 ),
         };
 

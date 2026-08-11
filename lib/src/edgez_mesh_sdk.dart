@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:fixnum/fixnum.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'models.dart';
@@ -15,6 +15,110 @@ abstract interface class EdgezPlatformTransport {
   Stream<Object?> get events;
 
   Future<T?> invokeMethod<T>(String method, [Object? arguments]);
+}
+
+enum EdgezSpeedTestFrameType { start, data, end }
+
+class EdgezSpeedTestFrame {
+  const EdgezSpeedTestFrame._({
+    required this.type,
+    required this.transferId,
+    required this.totalBytes,
+    required this.totalChunks,
+    required this.chunkIndex,
+    required this.data,
+  });
+
+  factory EdgezSpeedTestFrame.start({
+    required int transferId,
+    required int totalBytes,
+    required int totalChunks,
+  }) =>
+      EdgezSpeedTestFrame._(
+        type: EdgezSpeedTestFrameType.start,
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+        chunkIndex: 0,
+        data: Uint8List(0),
+      );
+
+  factory EdgezSpeedTestFrame.data({
+    required int transferId,
+    required int totalBytes,
+    required int totalChunks,
+    required int chunkIndex,
+    required Uint8List data,
+  }) =>
+      EdgezSpeedTestFrame._(
+        type: EdgezSpeedTestFrameType.data,
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+        chunkIndex: chunkIndex,
+        data: data,
+      );
+
+  factory EdgezSpeedTestFrame.end({
+    required int transferId,
+    required int totalBytes,
+    required int totalChunks,
+  }) =>
+      EdgezSpeedTestFrame._(
+        type: EdgezSpeedTestFrameType.end,
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+        chunkIndex: totalChunks,
+        data: Uint8List(0),
+      );
+
+  static const _headerBytes = 26;
+  static const _magic = <int>[0x45, 0x5a, 0x53, 0x54];
+  final EdgezSpeedTestFrameType type;
+  final int transferId;
+  final int totalBytes;
+  final int totalChunks;
+  final int chunkIndex;
+  final Uint8List data;
+
+  Uint8List encode() {
+    final output = Uint8List(_headerBytes + data.length);
+    output.setRange(0, _magic.length, _magic);
+    output[4] = 3;
+    output[5] = type.index + 1;
+    final bytes = ByteData.sublistView(output);
+    bytes.setUint64(6, transferId, Endian.big);
+    bytes.setUint32(14, totalBytes, Endian.big);
+    bytes.setUint32(18, totalChunks, Endian.big);
+    bytes.setUint32(22, chunkIndex, Endian.big);
+    output.setRange(_headerBytes, output.length, data);
+    return output;
+  }
+
+  static EdgezSpeedTestFrame? tryDecode(List<int> payload) {
+    if (payload.length < _headerBytes) return null;
+    for (var i = 0; i < _magic.length; i++) {
+      if (payload[i] != _magic[i]) return null;
+    }
+    if (payload[4] != 3 || payload[5] < 1 || payload[5] > 3) {
+      return null;
+    }
+    final raw = Uint8List.fromList(payload);
+    final bytes = ByteData.sublistView(raw);
+    final totalBytes = bytes.getUint32(14, Endian.big);
+    final totalChunks = bytes.getUint32(18, Endian.big);
+    final chunkIndex = bytes.getUint32(22, Endian.big);
+    if (totalBytes == 0 || totalChunks == 0) return null;
+    return EdgezSpeedTestFrame._(
+      type: EdgezSpeedTestFrameType.values[payload[5] - 1],
+      transferId: bytes.getUint64(6, Endian.big),
+      totalBytes: totalBytes,
+      totalChunks: totalChunks,
+      chunkIndex: chunkIndex,
+      data: Uint8List.fromList(payload.sublist(_headerBytes)),
+    );
+  }
 }
 
 class EdgezChannelTransport implements EdgezPlatformTransport {
@@ -55,6 +159,21 @@ class EdgezMeshSdk {
   final EdgezPlatformTransport _transport;
   final EdgezSdkReleaseCredential _releaseCredential;
   static const _voiceChunkAudioBytes = 290;
+  static const _conversationDrainTimeoutMs = 3000;
+  static const _voiceCallDrainTimeoutMs = 1500;
+  static const speedTestBytes = 2 * 1024 * 1024;
+  // 448 data bytes + the 26-byte speed header exactly fills the firmware's
+  // 512-byte HaLow vendor payload after its 38-byte route prefix. This avoids
+  // leaving radio airtime unused without triggering link-layer fragmentation.
+  static const _speedTestChunkBytes = 448;
+  // BLE's compatibility path wraps the speed frame in NetworkPacket protobuf.
+  // Leave room for that variable-length envelope so the fully encoded packet
+  // remains below the shared 512-byte BLE/USB transport limit.
+  // Nanopb reserves at most 420 bytes for MessageBody.payload; the encoded
+  // speed-frame header must fit inside that field as well.
+  static const _speedTestDrainBatchChunks = 6;
+  static const _speedTestDrainTimeoutMs = 10000;
+  static const _speedTestProgressInterval = Duration(seconds: 10);
   final Map<String, Future<SecretKey>> _conversationKeyCache =
       <String, Future<SecretKey>>{};
 
@@ -79,8 +198,44 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('connectBle', {'deviceId': deviceId});
   }
 
+  Future<List<EdgezUsbDevice>> listUsbDevices() async {
+    final result =
+        await _transport.invokeMethod<List<Object?>>('listUsbDevices');
+    return (result ?? const <Object?>[])
+        .whereType<Map>()
+        .map((item) => EdgezUsbDevice.fromMap(item.cast<Object?, Object?>()))
+        .toList(growable: false);
+  }
+
+  Future<void> connectUsb(int deviceId) {
+    return _transport.invokeMethod<void>('connectUsb', {'deviceId': deviceId});
+  }
+
   Future<void> disconnect() {
     return _transport.invokeMethod<void>('disconnect');
+  }
+
+  Future<void> setDeviceLogLevel(
+    EdgezDeviceLogLevel level, {
+    String tag = '',
+  }) {
+    return _transport.invokeMethod<void>('setDeviceLogLevel', {
+      'level': level.wireValue,
+      'tag': tag,
+    });
+  }
+
+  Future<void> configureDeviceLogLevel(EdgezDeviceLogLevel level) {
+    return _transport.invokeMethod<void>('configureDeviceLogLevel', {
+      'level': level.wireValue,
+    });
+  }
+
+  Future<int> reportUsbPacketLoss(double lossPercent) async {
+    return await _transport.invokeMethod<int>('reportUsbPacketLoss', {
+          'lossPercent': lossPercent,
+        }) ??
+        3;
   }
 
   Future<EdgezLocation?> getBestKnownLocation() async {
@@ -240,6 +395,9 @@ class EdgezMeshSdk {
       'sequence': sequence,
       'nonce': Uint8List.fromList(encrypted.nonce),
       'ciphertext': Uint8List.fromList(encrypted.ciphertext),
+      // USB uses firmware acknowledgements for back-pressure. BLE uses its
+      // characteristic write completion, so this is safe for both transports.
+      'waitForDrainMs': _voiceCallDrainTimeoutMs,
     });
   }
 
@@ -304,6 +462,9 @@ class EdgezMeshSdk {
     );
     return _transport.invokeMethod<void>('initializeMesh', {
       ...config.toMap(),
+      'sdkCompatibility': _releaseCredential.compatibility,
+      'sdkReleaseId': _releaseCredential.releaseId,
+      'sdkReleaseSignatureBytes': releaseSignature.length,
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
   }
@@ -320,6 +481,9 @@ class EdgezMeshSdk {
     );
     return _transport.invokeMethod<void>('sendPacket', {
       'label': 'SDK license authorization',
+      'sdkCompatibility': _releaseCredential.compatibility,
+      'sdkReleaseId': _releaseCredential.releaseId,
+      'sdkReleaseSignatureBytes': _releaseCredential.signature.length,
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
   }
@@ -480,6 +644,7 @@ class EdgezMeshSdk {
     required int fromNode,
     required String text,
     int maxHop = 0,
+    void Function(int packetBytes, int sequence)? onPacketSent,
   }) async {
     final messageId = _newMessageId();
     final encrypted = await _encryptConversationPayload(
@@ -501,11 +666,101 @@ class EdgezMeshSdk {
         payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
       ),
     );
+    final packetBytes = Uint8List.fromList(packet.writeToBuffer());
     await _transport.invokeMethod<void>('sendPacket', {
       'label': 'Conversation message',
-      'packet': Uint8List.fromList(packet.writeToBuffer()),
+      'packet': packetBytes,
+      // Do not report a message as sent while it is only waiting in Android's
+      // BLE queue. This is also a useful back-pressure point after a speed or
+      // voice transfer.
+      'waitForDrainMs': _conversationDrainTimeoutMs,
     });
+    onPacketSent?.call(packetBytes.length, 1);
     return _formatUuid(messageId.$1, messageId.$2);
+  }
+
+  Future<String> sendSpeedTest({
+    required int toNode,
+    required int fromNode,
+    int totalBytes = speedTestBytes,
+    int hop = 0,
+    void Function(int sentBytes, int totalBytes)? onProgress,
+    void Function(int packetBytes, int sequence)? onPacketSent,
+  }) async {
+    if (totalBytes <= 0) {
+      throw ArgumentError.value(totalBytes, 'totalBytes', 'Must be positive');
+    }
+    if (hop < 0 || hop > 3) {
+      throw ArgumentError.value(hop, 'hop', 'Must be between 0 and 3');
+    }
+    final transferId =
+        DateTime.now().microsecondsSinceEpoch & 0x7fffffffffffffff;
+    const chunkBytes = _speedTestChunkBytes;
+    final totalChunks = (totalBytes / chunkBytes).ceil();
+
+    Future<void> sendFrame(
+      EdgezSpeedTestFrame frame,
+      int sequence, {
+      bool waitForDrain = false,
+    }) async {
+      final encoded = frame.encode();
+      await _transport.invokeMethod<void>('sendSpeedTestFrame', {
+        'to': toNode,
+        'maxHop': hop,
+        'sequence': sequence,
+        'payload': encoded,
+        if (waitForDrain) 'waitForDrainMs': _speedTestDrainTimeoutMs,
+      });
+      onPacketSent?.call(encoded.length, sequence);
+    }
+
+    await sendFrame(
+      EdgezSpeedTestFrame.start(
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+      ),
+      1,
+    );
+    var sentBytes = 0;
+    var lastProgressAt = DateTime.now();
+    for (var index = 0; index < totalChunks; index++) {
+      final length = min(chunkBytes, totalBytes - sentBytes);
+      final data = Uint8List(length);
+      for (var offset = 0; offset < length; offset++) {
+        data[offset] = (index + offset) & 0xff;
+      }
+      await sendFrame(
+        EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: totalBytes,
+          totalChunks: totalChunks,
+          chunkIndex: index,
+          data: data,
+        ),
+        index + 2,
+        // Bound the native BLE queue. A successful method-channel call only
+        // means that Android queued the frame, not that the GATT write drained.
+        waitForDrain: (index + 1) % _speedTestDrainBatchChunks == 0,
+      );
+      sentBytes += length;
+      final now = DateTime.now();
+      if (sentBytes == totalBytes ||
+          now.difference(lastProgressAt) >= _speedTestProgressInterval) {
+        onProgress?.call(sentBytes, totalBytes);
+        lastProgressAt = now;
+      }
+    }
+    await sendFrame(
+      EdgezSpeedTestFrame.end(
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+      ),
+      totalChunks + 2,
+      waitForDrain: true,
+    );
+    return transferId.toRadixString(16).padLeft(16, '0');
   }
 
   Future<String> decryptTextMessage({
@@ -538,6 +793,7 @@ class EdgezMeshSdk {
     required int durationMs,
     required int codec,
     int maxHop = 0,
+    void Function(int packetBytes, int sequence)? onPacketSent,
   }) async {
     if (bytes.isEmpty) {
       throw StateError('Voice payload is empty');
@@ -575,10 +831,16 @@ class EdgezMeshSdk {
           payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
         ),
       );
+      final packetBytes = Uint8List.fromList(packet.writeToBuffer());
       await _transport.invokeMethod<void>('sendPacket', {
         'label': 'Voice chunk ${index + 1}/$totalChunks',
-        'packet': Uint8List.fromList(packet.writeToBuffer()),
+        'packet': packetBytes,
+        // Pace chunks at the transport boundary. In particular, a 921600-baud
+        // USB UART can otherwise fill the firmware queue much faster than the
+        // mesh radio can transmit it.
+        'waitForDrainMs': _conversationDrainTimeoutMs,
       });
+      onPacketSent?.call(packetBytes.length, index + 1);
     }
     return _formatUuid(messageId.$1, messageId.$2);
   }
@@ -959,6 +1221,7 @@ class EdgezMeshSdk {
       beaconUnicast: Int64(settings.beaconUnicast & 0xffffffffffff),
       deviceType: _deviceType(settings.deviceType),
       sleepModeEnabled: settings.sleepModeEnabled,
+      deviceGpsEnabled: settings.deviceGpsEnabled,
       meshFrequencyKhz: max(0, settings.meshFrequencyKhz),
       meshBandwidthMhz: settings.meshBandwidthMhz.clamp(0, 8),
     );

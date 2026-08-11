@@ -11,11 +11,13 @@ class ConversationScreen extends StatefulWidget {
     required this.user,
     required this.messages,
     required this.sensorSamples,
+    required this.linkStats,
     required this.onBack,
     required this.onSendMessage,
     required this.onStartVoiceMessage,
     required this.onStopVoiceMessage,
     required this.onReplayVoiceMessage,
+    required this.onStartSpeedTest,
     required this.callState,
     required this.onStartCall,
     super.key,
@@ -25,11 +27,16 @@ class ConversationScreen extends StatefulWidget {
   final EdgezMeshNode user;
   final List<EdgezConversationMessage> messages;
   final List<EdgezSensorSample> sensorSamples;
+  final EdgezLinkStats? linkStats;
   final VoidCallback onBack;
-  final ValueChanged<String> onSendMessage;
+  final Future<void> Function(String) onSendMessage;
   final Future<bool> Function() onStartVoiceMessage;
   final Future<void> Function(bool send) onStopVoiceMessage;
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
+  final Future<void> Function(
+    int hop,
+    void Function(int sentBytes, int totalBytes) onProgress,
+  ) onStartSpeedTest;
   final EdgezVoiceCallState callState;
   final Future<void> Function() onStartCall;
 
@@ -43,6 +50,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
   bool recording = false;
   bool voicePressed = false;
   bool voiceStarting = false;
+  bool speedTesting = false;
+  int speedTestSentBytes = 0;
+  int speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
+  int speedTestHop = 0;
 
   @override
   void dispose() {
@@ -85,12 +96,43 @@ class _ConversationScreenState extends State<ConversationScreen> {
     if (shouldSend) setState(() => status = 'Voice sent');
   }
 
+  Future<void> _startSpeedTest() async {
+    if (speedTesting) return;
+    setState(() {
+      speedTesting = true;
+      speedTestSentBytes = 0;
+      speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
+      status = 'Speed test started';
+    });
+    try {
+      await widget.onStartSpeedTest(speedTestHop, (sentBytes, totalBytes) {
+        if (!mounted) return;
+        setState(() {
+          speedTestSentBytes = sentBytes;
+          speedTestTotalBytes = totalBytes;
+        });
+      });
+      if (mounted) setState(() => status = 'Speed test sent');
+    } catch (error) {
+      if (mounted) setState(() => status = 'Speed test failed: $error');
+    } finally {
+      if (mounted) setState(() => speedTesting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final canSend = widget.activeConnection != EdgezConnectionType.none &&
         widget.user.opensConversation &&
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
+    final canSpeedTest = canSendVoice && widget.user.opensConversation;
+    final speedTestProgress = speedTestTotalBytes <= 0
+        ? 0.0
+        : (speedTestSentBytes / speedTestTotalBytes).clamp(0.0, 1.0);
+    final speedTestPercent = (speedTestProgress * 100).round();
+    final speedTestSentKiB = speedTestSentBytes ~/ 1024;
+    final speedTestTotalMiB = speedTestTotalBytes / (1024 * 1024);
     final displayName = widget.user.resolvedDisplayName.trim();
     final avatarText = displayName.isEmpty ? '?' : displayName[0].toUpperCase();
     EdgezSensorSample? latestLocation;
@@ -160,6 +202,31 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   icon: const Icon(Icons.call_outlined),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.speed,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        widget.linkStats == null
+                            ? 'Speed: — · Packet loss: —'
+                            : 'Speed: ${_formatBitRate(widget.linkStats!.bitsPerSecond)} · '
+                                'Packet loss: ${widget.linkStats!.packetLossPercent.toStringAsFixed(2)}%',
+                        key: const ValueKey<String>('conversation-link-stats'),
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 12),
             Card(
@@ -265,14 +332,87 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 const SizedBox(width: 8),
                 FilledButton(
                   onPressed: canSend
-                      ? () {
+                      ? () async {
                           final text = controller.text.trim();
-                          widget.onSendMessage(text);
-                          controller.clear();
-                          setState(() => status = 'Sent');
+                          setState(() => status = 'Sending');
+                          try {
+                            await widget.onSendMessage(text);
+                            if (!mounted) return;
+                            controller.clear();
+                            setState(() => status = 'Sent to device');
+                          } catch (error) {
+                            if (!mounted) return;
+                            setState(() => status = 'Send failed: $error');
+                          }
                         }
                       : null,
                   child: const Text('Send'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 104,
+                  child: DropdownButtonFormField<int>(
+                    initialValue: speedTestHop,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Hop',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const <DropdownMenuItem<int>>[
+                      DropdownMenuItem(
+                        value: 0,
+                        child:
+                            Text('0 (Auto)', overflow: TextOverflow.ellipsis),
+                      ),
+                      DropdownMenuItem(value: 1, child: Text('1')),
+                      DropdownMenuItem(value: 2, child: Text('2')),
+                      DropdownMenuItem(value: 3, child: Text('3')),
+                    ],
+                    onChanged: speedTesting
+                        ? null
+                        : (value) => setState(() => speedTestHop = value ?? 0),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: canSpeedTest && !speedTesting
+                        ? () => unawaited(_startSpeedTest())
+                        : null,
+                    child: Row(
+                      children: <Widget>[
+                        if (speedTesting)
+                          SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              value: speedTestProgress,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        else
+                          const Icon(Icons.speed),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            speedTesting
+                                ? 'Speed test $speedTestPercent% · '
+                                    '$speedTestSentKiB KiB / '
+                                    '${speedTestTotalMiB.toStringAsFixed(1)} MiB'
+                                : 'Speed test (2 MiB)',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -328,6 +468,16 @@ String _formatLocationTime(int timestampMs) {
   String twoDigits(int number) => number.toString().padLeft(2, '0');
   return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)} '
       '${twoDigits(value.hour)}:${twoDigits(value.minute)}:${twoDigits(value.second)}';
+}
+
+String _formatBitRate(double bitsPerSecond) {
+  if (bitsPerSecond >= 1000000) {
+    return '${(bitsPerSecond / 1000000).toStringAsFixed(2)} Mbps';
+  }
+  if (bitsPerSecond >= 1000) {
+    return '${(bitsPerSecond / 1000).toStringAsFixed(1)} kbps';
+  }
+  return '${bitsPerSecond.toStringAsFixed(0)} bps';
 }
 
 class ConversationBubble extends StatelessWidget {

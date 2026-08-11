@@ -61,8 +61,11 @@ class SettingsScreen extends StatefulWidget {
     required this.autoReplayReceivedVoice,
     required this.deviceModeEnabled,
     required this.bleDevices,
+    required this.usbDevices,
     required this.drivers,
     required this.selectedBleDevice,
+    required this.selectedUsbDevice,
+    required this.usbLinkStats,
     required this.meshStatus,
     required this.bleAutoConnect,
     required this.statusLine,
@@ -89,6 +92,8 @@ class SettingsScreen extends StatefulWidget {
     required this.deviceMaxHop,
     required this.deviceBeaconIntervalSeconds,
     required this.deviceShareLocation,
+    required this.deviceGpsEnabled,
+    required this.deviceGpsLocation,
     required this.deviceLatitude,
     required this.deviceLongitude,
     required this.deviceGeoFenceName,
@@ -102,10 +107,13 @@ class SettingsScreen extends StatefulWidget {
     required this.deviceUpstreamWifiPassphrase,
     required this.deviceBeaconMulticast,
     required this.deviceSleepModeEnabled,
+    required this.logLevel,
     required this.onConnectBle,
     required this.onStopBleScan,
     required this.onConnectBleDevice,
     required this.onSelectBleDevice,
+    required this.onRefreshUsbDevices,
+    required this.onConnectUsbDevice,
     required this.onBleAutoConnectChanged,
     required this.onDisconnect,
     required this.onOpenDebug,
@@ -132,6 +140,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onDeviceMaxHopChanged,
     required this.onDeviceBeaconIntervalChanged,
     required this.onDeviceShareLocationChanged,
+    required this.onDeviceGpsEnabledChanged,
     required this.onRefreshDeviceLocation,
     required this.onDeviceLatitudeChanged,
     required this.onDeviceLongitudeChanged,
@@ -146,6 +155,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onDeviceUpstreamWifiPassphraseChanged,
     required this.onDeviceBeaconMulticastChanged,
     required this.onDeviceSleepModeChanged,
+    required this.onLogLevelChanged,
     super.key,
   });
 
@@ -156,8 +166,11 @@ class SettingsScreen extends StatefulWidget {
   final bool autoReplayReceivedVoice;
   final bool deviceModeEnabled;
   final List<EdgezBleDevice> bleDevices;
+  final List<EdgezUsbDevice> usbDevices;
   final List<ExampleDriver> drivers;
   final EdgezBleDevice? selectedBleDevice;
+  final EdgezUsbDevice? selectedUsbDevice;
+  final EdgezUsbLinkStats usbLinkStats;
   final EdgezMeshStatus? meshStatus;
   final bool bleAutoConnect;
   final String statusLine;
@@ -184,6 +197,8 @@ class SettingsScreen extends StatefulWidget {
   final String deviceMaxHop;
   final String deviceBeaconIntervalSeconds;
   final bool deviceShareLocation;
+  final bool deviceGpsEnabled;
+  final EdgezLocation? deviceGpsLocation;
   final String deviceLatitude;
   final String deviceLongitude;
   final String deviceGeoFenceName;
@@ -197,10 +212,13 @@ class SettingsScreen extends StatefulWidget {
   final String deviceUpstreamWifiPassphrase;
   final String deviceBeaconMulticast;
   final bool deviceSleepModeEnabled;
+  final EdgezDeviceLogLevel logLevel;
   final VoidCallback onConnectBle;
   final VoidCallback onStopBleScan;
   final ValueChanged<String> onConnectBleDevice;
   final ValueChanged<EdgezBleDevice> onSelectBleDevice;
+  final Future<void> Function() onRefreshUsbDevices;
+  final ValueChanged<EdgezUsbDevice> onConnectUsbDevice;
   final ValueChanged<bool> onBleAutoConnectChanged;
   final VoidCallback onDisconnect;
   final VoidCallback onOpenDebug;
@@ -227,6 +245,7 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<String> onDeviceMaxHopChanged;
   final ValueChanged<String> onDeviceBeaconIntervalChanged;
   final ValueChanged<bool> onDeviceShareLocationChanged;
+  final ValueChanged<bool> onDeviceGpsEnabledChanged;
   final FutureOr<void> Function() onRefreshDeviceLocation;
   final ValueChanged<String> onDeviceLatitudeChanged;
   final ValueChanged<String> onDeviceLongitudeChanged;
@@ -241,6 +260,7 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<String> onDeviceUpstreamWifiPassphraseChanged;
   final ValueChanged<String> onDeviceBeaconMulticastChanged;
   final ValueChanged<bool> onDeviceSleepModeChanged;
+  final ValueChanged<EdgezDeviceLogLevel> onLogLevelChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -311,7 +331,7 @@ class SettingsScreen extends StatefulWidget {
           ],
           cardGap,
           InfoCard(
-            title: 'BLE connection',
+            title: 'Device connection',
             action: OutlinedButton(
               onPressed: onSelectBle,
               child: const Text('Select'),
@@ -328,65 +348,46 @@ class SettingsScreen extends StatefulWidget {
                           'Selected device',
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
-                        Text(selectedBle?.label ?? 'No BLE device selected'),
-                        if (selectedBle != null)
+                        Text(activeConnection == EdgezConnectionType.usb
+                            ? selectedUsbDevice?.label ?? 'ESP32-S3 USB'
+                            : selectedBle?.label ?? 'No device selected'),
+                        if (activeConnection != EdgezConnectionType.usb &&
+                            selectedBle != null)
                           Text(
                             selectedBle.id,
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         Text(
-                          activeConnection == EdgezConnectionType.ble
-                              ? bleReady
-                                  ? 'BLE connected; control channel ready'
-                                  : 'BLE connected; setting up control channel'
-                              : bleConnecting
-                                  ? 'BLE pairing or connecting'
-                                  : 'BLE disconnected',
+                          switch (activeConnection) {
+                            EdgezConnectionType.usb =>
+                              'USB connected; high-speed channel ready',
+                            EdgezConnectionType.ble => bleReady
+                                ? 'BLE connected; control channel ready'
+                                : 'BLE connected; setting up control channel',
+                            EdgezConnectionType.none => bleConnecting
+                                ? 'BLE pairing or connecting'
+                                : 'Disconnected',
+                          },
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
-                        if (activeConnection == EdgezConnectionType.ble &&
+                        if (activeConnection != EdgezConnectionType.none &&
                             meshStatus?.firmwareVersion.isNotEmpty == true)
                           Text(
                             'Firmware: ${meshStatus!.firmwareVersion}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
-                        Row(
-                          children: <Widget>[
-                            Icon(
-                              meshStatus?.licensed == true
-                                  ? Icons.verified
-                                  : meshStatus == null
-                                      ? Icons.help_outline
-                                      : Icons.gpp_bad_outlined,
-                              size: 16,
-                              color: meshStatus?.licensed == true
-                                  ? Theme.of(context).colorScheme.primary
-                                  : meshStatus == null
-                                      ? Theme.of(context).colorScheme.outline
-                                      : Theme.of(context).colorScheme.error,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                'License: ${meshStatus?.licenseStatus.label ?? switch ((
-                                      activeConnection,
-                                      bleConnecting,
-                                      bleReady
-                                    )) {
-                                      (_, true, _) =>
-                                        'Waiting for BLE connection',
-                                      (EdgezConnectionType.none, false, _) =>
-                                        'Connect a BLE device',
-                                      (EdgezConnectionType.ble, false, false) =>
-                                        'Waiting for BLE control channel',
-                                      (EdgezConnectionType.ble, false, true) =>
-                                        'Waiting for device status',
-                                    }}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                          ],
-                        ),
+                        if (activeConnection == EdgezConnectionType.usb)
+                          Text(
+                            usbLinkStats.bidirectional
+                                ? 'USB ping/pong OK · RTT ${usbLinkStats.rttMs} ms · '
+                                    'phone→device ${usbLinkStats.receivedPongs}/${usbLinkStats.sentPings} · '
+                                    'device→phone ${usbLinkStats.receivedPings}'
+                                : 'Testing USB in both directions… sent ${usbLinkStats.sentPings}, '
+                                    'pongs ${usbLinkStats.receivedPongs}, '
+                                    'device pings ${usbLinkStats.receivedPings}, '
+                                    'timeouts ${usbLinkStats.timeouts}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                       ],
                     ),
                   ),
@@ -394,7 +395,7 @@ class SettingsScreen extends StatefulWidget {
                   FilledButton(
                     onPressed: bleConnecting
                         ? null
-                        : activeConnection == EdgezConnectionType.ble
+                        : activeConnection != EdgezConnectionType.none
                             ? onDisconnect
                             : selectedBle == null
                                 ? null
@@ -402,7 +403,7 @@ class SettingsScreen extends StatefulWidget {
                     child: Text(
                       bleConnecting
                           ? 'Connecting...'
-                          : activeConnection == EdgezConnectionType.ble
+                          : activeConnection != EdgezConnectionType.none
                               ? 'Disconnect'
                               : 'Connect',
                     ),
@@ -531,6 +532,23 @@ class SettingsScreen extends StatefulWidget {
                       ? onDeviceShareLocationChanged
                       : onShareLocationChanged,
                 ),
+                if (deviceModeEnabled ? deviceShareLocation : shareLocation)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Use device GPS (L76K)'),
+                    subtitle: const Text(
+                      'Use periodic low-power device fixes instead of phone/static location',
+                    ),
+                    value: deviceGpsEnabled,
+                    onChanged: onDeviceGpsEnabledChanged,
+                  ),
+                if (deviceGpsEnabled && deviceGpsLocation != null)
+                  Text(
+                    'Device fix: '
+                    '${deviceGpsLocation!.latitude.toStringAsFixed(6)}, '
+                    '${deviceGpsLocation!.longitude.toStringAsFixed(6)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 if (locationMessage.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 4),
                   Text(
@@ -538,7 +556,9 @@ class SettingsScreen extends StatefulWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
-                if (deviceModeEnabled && deviceShareLocation) ...<Widget>[
+                if (deviceModeEnabled &&
+                    deviceShareLocation &&
+                    !deviceGpsEnabled) ...<Widget>[
                   Row(
                     children: <Widget>[
                       Expanded(
@@ -795,6 +815,30 @@ class SettingsScreen extends StatefulWidget {
               selectedTab == _SettingsTab.others) ...<Widget>[
             cardGap,
             InfoCard(
+              title: 'Logging',
+              children: <Widget>[
+                DropdownButtonFormField<EdgezDeviceLogLevel>(
+                  initialValue: logLevel,
+                  decoration: const InputDecoration(
+                    labelText: 'Log level',
+                    helperText: 'Applies to device output and app log storage',
+                  ),
+                  items: EdgezDeviceLogLevel.values
+                      .map(
+                        (level) => DropdownMenuItem<EdgezDeviceLogLevel>(
+                          value: level,
+                          child: Text(level.label),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (level) {
+                    if (level != null) onLogLevelChanged(level);
+                  },
+                ),
+              ],
+            ),
+            cardGap,
+            InfoCard(
               title: 'Chat',
               children: <Widget>[
                 SwitchListTile(
@@ -814,11 +858,13 @@ class SettingsScreen extends StatefulWidget {
     );
   }
 
-  Widget _buildBleSelection(
+  Widget _buildDeviceSelection(
     BuildContext context, {
     required EdgezBleDevice? selectedBleDevice,
     required VoidCallback onBack,
-    required ValueChanged<EdgezBleDevice> onSelect,
+    required ValueChanged<EdgezBleDevice> onSelectBle,
+    required ValueChanged<EdgezUsbDevice> onSelectUsb,
+    required Future<void> Function() onRefreshUsb,
   }) {
     return SafeArea(
       child: ListView(
@@ -833,14 +879,47 @@ class SettingsScreen extends StatefulWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'Select BLE device',
+                'Select BLE or USB device',
                 style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => unawaited(onRefreshUsb()),
+                tooltip: 'Refresh USB devices',
+                icon: const Icon(Icons.refresh),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(statusLine, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 12),
+          Text('USB', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          if (usbDevices.isEmpty)
+            const Text('No USB devices attached. Connect with a USB OTG cable.')
+          else ...<Widget>[
+            for (final device in usbDevices) ...<Widget>[
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.usb),
+                  title: Text(device.label),
+                  subtitle: Text(
+                    device.transport == 'tinyusb-cdc-uart'
+                        ? 'TinyUSB CDC · mobile ping/pong on data port 0'
+                        : 'High-speed wired transport',
+                  ),
+                  trailing: selectedUsbDevice?.id == device.id
+                      ? const Icon(Icons.check_circle)
+                      : null,
+                  onTap: () => onSelectUsb(device),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
+          const SizedBox(height: 8),
+          Text('Bluetooth', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
           if (bleDevices.isEmpty)
             const InfoCard(
               title: 'Scanning for EdgeZ devices',
@@ -860,7 +939,7 @@ class SettingsScreen extends StatefulWidget {
                   trailing: selectedBleDevice?.id == device.id
                       ? const Icon(Icons.check_circle)
                       : null,
-                  onTap: () => onSelect(device),
+                  onTap: () => onSelectBle(device),
                 ),
               ),
               const SizedBox(height: 8),
@@ -875,7 +954,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   _SettingsTab _selectedTab = _SettingsTab.user;
-  bool _showBleSelection = false;
+  bool _showDeviceSelection = false;
 
   @override
   void initState() {
@@ -894,21 +973,27 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_showBleSelection) {
-      return widget._buildBleSelection(
+    if (_showDeviceSelection) {
+      return widget._buildDeviceSelection(
         context,
         selectedBleDevice: widget.selectedBleDevice,
         onBack: () {
           widget.onStopBleScan();
-          setState(() => _showBleSelection = false);
+          setState(() => _showDeviceSelection = false);
         },
-        onSelect: (device) {
+        onSelectBle: (device) {
           widget.onStopBleScan();
           widget.onSelectBleDevice(device);
           setState(() {
-            _showBleSelection = false;
+            _showDeviceSelection = false;
           });
         },
+        onSelectUsb: (device) {
+          widget.onStopBleScan();
+          widget.onConnectUsbDevice(device);
+          setState(() => _showDeviceSelection = false);
+        },
+        onRefreshUsb: widget.onRefreshUsbDevices,
       );
     }
     return widget._buildContent(
@@ -920,7 +1005,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       },
       onSelectBle: () {
         widget.onConnectBle();
-        setState(() => _showBleSelection = true);
+        widget.onRefreshUsbDevices();
+        setState(() => _showDeviceSelection = true);
       },
     );
   }

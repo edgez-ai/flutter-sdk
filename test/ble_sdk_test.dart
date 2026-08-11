@@ -31,9 +31,23 @@ void main() {
     expect(restored.autoConnect, isTrue);
     expect(restored.shareLocation, isFalse);
     expect(restored.selectedDevice?.label, device.label);
+    expect(restored.preferredTransport, EdgezPreferredTransport.ble);
 
     await store.setShareLocation(true);
     expect((await store.load()).shareLocation, isTrue);
+
+    const usbDevice = EdgezUsbDevice(
+      id: 7,
+      name: 'CP2102',
+      vendorId: 0x10c4,
+      productId: 0xea60,
+    );
+    await store.saveSelectedUsbDevice(usbDevice);
+    final usbRestored = await store.load();
+    expect(usbRestored.preferredTransport, EdgezPreferredTransport.usb);
+    expect(usbRestored.usbVendorId, usbDevice.vendorId);
+    expect(usbRestored.usbProductId, usbDevice.productId);
+    expect(usbRestored.usbDeviceName, usbDevice.name);
   });
 
   group('OTA release metadata', () {
@@ -100,6 +114,32 @@ void main() {
         ble.calls[1].argumentMap['deviceId'],
         'AA:BB:CC:DD:EE:FF',
       );
+    });
+
+    test('lists and connects an Android USB device', () async {
+      ble.results['listUsbDevices'] = <Object?>[
+        <Object?, Object?>{
+          'id': 7,
+          'name': 'ESP32-S3 USB JTAG/serial debug unit',
+          'vendorId': 0x303a,
+          'productId': 0x1001,
+        },
+      ];
+
+      final devices = await sdk.listUsbDevices();
+      await sdk.connectUsb(devices.single.id);
+
+      expect(devices.single.vendorId, 0x303a);
+      expect(devices.single.label, contains('303a:1001'));
+      expect(ble.callsFor('connectUsb').single.argumentMap['deviceId'], 7);
+    });
+
+    test('sets device log level', () async {
+      await sdk.setDeviceLogLevel(EdgezDeviceLogLevel.debug);
+
+      final call = ble.callsFor('setDeviceLogLevel').single;
+      expect(call.argumentMap['level'], 4);
+      expect(call.argumentMap['tag'], '');
     });
 
     test('returns the best known phone location from the platform', () async {
@@ -327,6 +367,60 @@ void main() {
       session.dispose();
     });
 
+    test('session initializes mesh over USB when USB becomes ready', () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final identity = await _newIdentity('USB user', 30, 40);
+      await session.initializeMesh(
+        EdgezMeshConfig(
+          identity: identity,
+          countryCode: 'US',
+          meshId: 'usb-mesh',
+          passphrase: 'usb-secret',
+          meshBandwidthMhz: 1,
+          meshFrequencyKhz: 902500,
+        ),
+      );
+      const device = EdgezUsbDevice(
+        id: 7,
+        name: 'ESP32-S3 USB',
+        vendorId: 0x303a,
+        productId: 0x1001,
+      );
+
+      await session.connectUsb(device);
+      ble.emitConnection(EdgezConnectionType.usb);
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+
+      expect(session.state.connection, EdgezConnectionType.usb);
+      expect(session.state.bleReady, isTrue);
+      final initPacket = ble.callsFor('initializeMesh').single.packet;
+      expect(initPacket.init.meshId, 'usb-mesh');
+      expect(initPacket.init.meshFrequencyKhz, 902500);
+
+      ble.emitUsbLinkStats(
+        sentPings: 3,
+        receivedPings: 2,
+        receivedPongs: 3,
+        rttMs: 12,
+      );
+      await ble.flushEvents();
+      expect(session.state.usbLinkStats.bidirectional, isTrue);
+      expect(session.state.usbLinkStats.rttMs, 12);
+
+      // Reopening CP2102 can reset the ESP32 and clear its active mesh state.
+      // The identical real init packet must therefore be resent directly.
+      await session.connectUsb(device);
+      ble.emitConnection(EdgezConnectionType.usb);
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+      expect(ble.callsFor('initializeMesh'), hasLength(2));
+
+      session.dispose();
+    });
+
     test('session sends periodic GPS with the dedicated protocol', () async {
       ble.results['getBestKnownLocation'] = <Object?, Object?>{
         'latitude': 59.3293,
@@ -338,17 +432,6 @@ void main() {
 
       ble.emitConnection(EdgezConnectionType.ble);
       ble.emitReady();
-      await ble.flushEvents();
-      ble.emitPacket(
-        NetworkPacket(
-          status: HaLowInterfaceStatus(
-            supported: true,
-            stackInitialized: true,
-            meshMode: true,
-            firmwareVersion: '0.5.5',
-          ),
-        ),
-      );
       await ble.flushEvents();
 
       await session.initializeMesh(
@@ -362,6 +445,28 @@ void main() {
       );
       await ble.flushEvents();
 
+      expect(
+        ble.callsFor('sendPacket').where(
+              (call) => call.argumentMap['label'] == 'GPS location update',
+            ),
+        isEmpty,
+      );
+
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(
+            supported: true,
+            stackInitialized: true,
+            meshMode: true,
+            linkUp: true,
+            routeReady: true,
+            firmwareVersion: '0.5.5',
+          ),
+        ),
+      );
+      await ble.flushEvents();
+      await ble.flushEvents();
+
       final locationCalls = ble.callsFor('sendPacket').where(
             (call) => call.argumentMap['label'] == 'GPS location update',
           );
@@ -370,6 +475,28 @@ void main() {
       expect(
         locationCalls.single.packet.locationUpdate.latitude,
         closeTo(59.3293, 0.0001),
+      );
+
+      // Repeated status reports must not restart location tracking and cause
+      // another immediate GPS transmission.
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(
+            supported: true,
+            stackInitialized: true,
+            meshMode: true,
+            linkUp: true,
+            routeReady: true,
+            firmwareVersion: '0.5.5',
+          ),
+        ),
+      );
+      await ble.flushEvents();
+      expect(
+        ble.callsFor('sendPacket').where(
+              (call) => call.argumentMap['label'] == 'GPS location update',
+            ),
+        hasLength(1),
       );
       session.dispose();
     });
@@ -384,6 +511,46 @@ void main() {
       expect(session.state.connection, EdgezConnectionType.none);
       expect(session.state.bleConnecting, isFalse);
       expect(session.state.statusLine, contains('BLE connect failed'));
+      session.dispose();
+    });
+
+    test('session keeps cached nodes and conversations across disconnect',
+        () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      const nodeNum = 0x112233445566;
+      const node = EdgezMeshNode(
+        nodeNum: nodeNum,
+        userUuid: 'remote-user',
+        displayName: 'Remote user',
+        route: 'BLE',
+        lastSeenMs: 100,
+        marker: 'green',
+        deviceType: 'User',
+      );
+      const message = EdgezConversationMessage(
+        nodeNum: nodeNum,
+        text: 'Retained message',
+        mine: false,
+        timestampMs: 100,
+        messageUuid: 'retained-message',
+        status: '',
+      );
+      session.restoreCachedMeshData(
+        nodes: const <int, EdgezMeshNode>{nodeNum: node},
+        conversations: const <int, List<EdgezConversationMessage>>{
+          nodeNum: <EdgezConversationMessage>[message],
+        },
+      );
+
+      await session.disconnect();
+
+      expect(session.state.connection, EdgezConnectionType.none);
+      expect(session.state.status, isNull);
+      expect(session.state.nodes[nodeNum], node);
+      expect(session.state.conversations[nodeNum], <EdgezConversationMessage>[
+        message,
+      ]);
+      expect(session.state.statusLine, 'Disconnected');
       session.dispose();
     });
 
@@ -582,6 +749,52 @@ void main() {
       session.dispose();
     });
 
+    test('session uses a self beacon as the device GPS location', () async {
+      const localNode = 0x112233445566;
+      final session = EdgezMeshSession(sdk: sdk);
+
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(macAddress: Int64(localNode)),
+        ),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          deviceSettings: DeviceSettings(
+            action: DeviceSettingsAction.DEVICE_SETTINGS_REPORT,
+            deviceGpsEnabled: true,
+          ),
+        ),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(localNode),
+          operation: Operation.RESPONSE,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(10),
+            userIdLow: Int64(20),
+            userName: 'Local GPS',
+            latitude: 59.3293,
+            longitude: 18.0686,
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      expect(session.state.deviceSettings?.deviceGpsEnabled, isTrue);
+      expect(session.state.selfLocation, isNotNull);
+      expect(session.state.selfLocation!.latitude, closeTo(59.3293, 0.001));
+      expect(session.state.selfLocation!.longitude, closeTo(18.0686, 0.001));
+      expect(session.state.nodes, isNot(contains(localNode)));
+
+      await session.setDeviceGpsEnabled(false);
+      final settingsPacket = ble.callsFor('sendPacket').last.packet;
+      expect(settingsPacket.deviceSettings.deviceGpsEnabled, isFalse);
+
+      session.dispose();
+    });
+
     test('session accepts Android-style complete EZ beacon frames', () async {
       final session = EdgezMeshSession(sdk: sdk);
       final packet = NetworkPacket(
@@ -693,6 +906,10 @@ void main() {
       await session.startVoiceCall(0x223344556677);
       expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.outgoing);
       expect(ble.callsFor('sendVoiceCallFrame'), hasLength(1));
+      expect(
+        ble.callsFor('sendVoiceCallFrame').first.argumentMap['waitForDrainMs'],
+        1500,
+      );
 
       await session.endVoiceCall();
       expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.idle);
@@ -849,6 +1066,7 @@ void main() {
       expect(packet.to.toInt(), 0x200);
       expect(packet.msg.mime, Mime.MIME_TEXT);
       expect(packet.msg.payload, isNotEmpty);
+      expect(ble.lastPacketCall.argumentMap['waitForDrainMs'], 3000);
       final frame = ble.transmittedFrames.single;
       expect(frame.sublist(0, 2), <int>[0x45, 0x5a]);
       expect(frame[2] | (frame[3] << 8), packet.writeToBuffer().length);
@@ -910,6 +1128,373 @@ void main() {
       expect(incomingSender?.displayName, sender.name);
       receiverSession.dispose();
       await receiverBle.close();
+    });
+
+    test('recorded voice chunks request transport drain back-pressure',
+        () async {
+      final sender = await _newIdentity('Voice sender', 300, 301);
+      final receiver = await _newIdentity('Voice receiver', 400, 401);
+      final receiverNode = EdgezMeshNode(
+        nodeNum: 0x400,
+        userUuid: '',
+        displayName: receiver.name,
+        route: 'USB',
+        lastSeenMs: 1,
+        marker: 'blue',
+        publicKey: receiver.publicKey,
+        deviceType: 'User',
+      );
+
+      await sdk.sendVoiceMessage(
+        config: EdgezMeshConfig(identity: sender),
+        toNode: receiverNode,
+        fromNode: 0x300,
+        bytes: List<int>.generate(600, (index) => index & 0xff),
+        durationMs: 1000,
+        codec: 1,
+      );
+
+      final calls = ble.callsFor('sendPacket').toList(growable: false);
+      expect(calls, hasLength(3));
+      expect(
+        calls.every((call) => call.argumentMap['waitForDrainMs'] == 3000),
+        isTrue,
+      );
+      expect(calls.every((call) => call.packet.msg.mime == Mime.MIME_VOICE),
+          isTrue);
+
+      final receiverTransport = MockBleTransport();
+      final receiverSdk = EdgezMeshSdk(transport: receiverTransport);
+      final decodedAudio = <int>[];
+      for (var index = 0; index < calls.length; index++) {
+        final chunk = await receiverSdk.decryptVoiceChunk(
+          config: EdgezMeshConfig(identity: receiver),
+          sender: EdgezMeshNode(
+            nodeNum: 0x300,
+            userUuid: '',
+            displayName: sender.name,
+            route: 'USB',
+            lastSeenMs: 1,
+            marker: 'blue',
+            publicKey: sender.publicKey,
+            deviceType: 'User',
+          ),
+          fromNode: 0x300,
+          toNode: 0x400,
+          payload: calls[index].packet.msg.payload,
+        );
+        expect(chunk.index, index);
+        expect(chunk.totalChunks, calls.length);
+        decodedAudio.addAll(chunk.audio);
+      }
+      expect(decodedAudio, List<int>.generate(600, (index) => index & 0xff));
+      await receiverTransport.close();
+    });
+
+    test('speed test sends exactly 2 MiB as binary streaming frames', () async {
+      final progressUpdates = <(int, int)>[];
+      await sdk.sendSpeedTest(
+        toNode: 0x200,
+        fromNode: 0x100,
+        hop: 3,
+        onProgress: (sent, total) => progressUpdates.add((sent, total)),
+      );
+
+      final calls = ble.callsFor('sendSpeedTestFrame').toList(growable: false);
+      final frames = calls
+          .map((call) => EdgezSpeedTestFrame.tryDecode(
+                call.argumentMap['payload']! as List<int>,
+              ))
+          .whereType<EdgezSpeedTestFrame>()
+          .toList();
+      expect(frames.first.type, EdgezSpeedTestFrameType.start);
+      expect(frames.last.type, EdgezSpeedTestFrameType.end);
+      expect(
+        frames
+            .where((frame) => frame.type == EdgezSpeedTestFrameType.data)
+            .fold<int>(0, (total, frame) => total + frame.data.length),
+        EdgezMeshSdk.speedTestBytes,
+      );
+      expect(calls.every((call) => call.argumentMap['to'] == 0x200), isTrue);
+      expect(calls.every((call) => call.argumentMap['maxHop'] == 3), isTrue);
+      // Native adds a 3-byte protocol marker and an 11-byte route prefix.
+      // The complete BLE/USB payload must fit the shared 512-byte limit.
+      expect(
+        calls.every(
+          (call) =>
+              3 + 11 + (call.argumentMap['payload']! as List<int>).length <=
+              512,
+        ),
+        isTrue,
+      );
+      final drainCalls = calls
+          .where((call) => call.argumentMap.containsKey('waitForDrainMs'))
+          .toList(growable: false);
+      expect(drainCalls, isNotEmpty);
+      expect(drainCalls.first.argumentMap['sequence'], 7);
+      expect(drainCalls.last.argumentMap['sequence'], frames.length);
+      expect(drainCalls.last.argumentMap['waitForDrainMs'], 10000);
+      // A transfer completing inside ten seconds publishes only its final
+      // progress value instead of rebuilding UI state for every data frame.
+      expect(progressUpdates, <(int, int)>[
+        (EdgezMeshSdk.speedTestBytes, EdgezMeshSdk.speedTestBytes),
+      ]);
+    });
+
+    test('speed test uses route TTL without duplicating the hop rule in frame',
+        () async {
+      final sentPackets = <(int, int)>[];
+      await sdk.sendSpeedTest(
+        toNode: 0x200,
+        fromNode: 0x100,
+        totalBytes: 384,
+        hop: 2,
+        onPacketSent: (bytes, sequence) => sentPackets.add((bytes, sequence)),
+      );
+
+      final calls = ble.callsFor('sendSpeedTestFrame').toList(growable: false);
+      expect(calls, hasLength(3));
+      final frames = calls
+          .map((call) => EdgezSpeedTestFrame.tryDecode(
+                call.argumentMap['payload']! as List<int>,
+              ))
+          .whereType<EdgezSpeedTestFrame>()
+          .toList(growable: false);
+      expect(frames.map((frame) => frame.type), <EdgezSpeedTestFrameType>[
+        EdgezSpeedTestFrameType.start,
+        EdgezSpeedTestFrameType.data,
+        EdgezSpeedTestFrameType.end,
+      ]);
+      expect(calls.every((call) => call.argumentMap['maxHop'] == 2), isTrue);
+      final dataPayload = calls[1].argumentMap['payload']! as List<int>;
+      expect(dataPayload[4], 3);
+      expect(dataPayload, hasLength(26 + 384));
+      final obsoleteV2 = List<int>.from(dataPayload)..[4] = 2;
+      expect(EdgezSpeedTestFrame.tryDecode(obsoleteV2), isNull);
+      expect(sentPackets, <(int, int)>[(26, 1), (410, 2), (26, 3)]);
+      expect(calls.last.argumentMap['waitForDrainMs'], 10000);
+    });
+
+    test('speed test rejects hop rules outside 0 through 3', () async {
+      await expectLater(
+        sdk.sendSpeedTest(toNode: 0x200, fromNode: 0x100, hop: 4),
+        throwsArgumentError,
+      );
+    });
+
+    test('receiver waits for END before publishing a complete speed test',
+        () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      const fromNode = 0x100;
+      const transferId = 41;
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.start(
+          transferId: transferId,
+          totalBytes: 3,
+          totalChunks: 1,
+        ),
+      );
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: 3,
+          totalChunks: 1,
+          chunkIndex: 0,
+          data: Uint8List.fromList(<int>[1, 2, 3]),
+        ),
+      );
+      await ble.flushEvents();
+      expect(session.state.linkStats[fromNode], isNull);
+
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.end(
+          transferId: transferId,
+          totalBytes: 3,
+          totalChunks: 1,
+        ),
+      );
+      await ble.flushEvents();
+      expect(session.state.linkStats[fromNode]?.packetLossPercent, 0);
+      session.dispose();
+    });
+
+    test('speed result is visible on receiver and sent to the sender',
+        () async {
+      final sender = await _newIdentity('Speed sender', 500, 501);
+      final receiver = await _newIdentity('Speed receiver', 600, 601);
+      final session = EdgezMeshSession(
+        sdk: sdk,
+        speedTestInactivityTimeout: const Duration(seconds: 1),
+      );
+      const fromNode = 0x100;
+      const localNode = 0x200;
+      const transferId = 42;
+
+      await session.initializeMesh(EdgezMeshConfig(identity: receiver));
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(macAddress: Int64(localNode)),
+        ),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(fromNode),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(sender.userIdHigh),
+            userIdLow: Int64(sender.userIdLow),
+            userName: sender.name,
+            userPublicKey: sender.publicKey,
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      void emit(EdgezSpeedTestFrame frame, int timestampSeconds) {
+        ble.emitSpeedTestFrame(
+          fromNode: fromNode,
+          frame: frame,
+          receivedAtUs: timestampSeconds * 1000000,
+        );
+      }
+
+      emit(
+        EdgezSpeedTestFrame.start(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+        ),
+        1,
+      );
+      emit(
+        EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+          chunkIndex: 0,
+          data: Uint8List.fromList(<int>[1, 2, 3]),
+        ),
+        2,
+      );
+      await ble.flushEvents();
+      // A congested link may pause for longer than the old two-second timeout.
+      // The receiver must retain earlier chunks until END arrives.
+      await Future<void>.delayed(const Duration(milliseconds: 2100));
+      emit(
+        EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+          chunkIndex: 2,
+          data: Uint8List.fromList(<int>[7, 8, 9]),
+        ),
+        4,
+      );
+      await ble.flushEvents();
+
+      // Rolling presentation updates are throttled to ten seconds so they do
+      // not contend with BLE packet processing. Final results remain prompt.
+      expect(session.state.linkStats[fromNode], isNull);
+      expect(session.state.conversations[fromNode], isNull);
+
+      emit(
+        EdgezSpeedTestFrame.end(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+        ),
+        5,
+      );
+      await ble.flushEvents();
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+      final completed = session.state.linkStats[fromNode];
+      expect(session.state.sharedLinkStats, isNotNull);
+      expect(
+        session.state.sharedLinkStats!.updatedAtMs,
+        greaterThan(1000000000000),
+      );
+      expect(completed?.bitsPerSecond, greaterThan(0));
+      expect(completed?.packetLossPercent, closeTo(33.33, 0.01));
+      expect(completed?.receivedPackets, 2);
+      expect(completed?.expectedPackets, 3);
+
+      for (var attempt = 0;
+          attempt < 10 &&
+              !ble.callsFor('sendPacket').any(
+                    (call) =>
+                        call.packet.hasMsg() &&
+                        call.packet.msg.mime == Mime.MIME_TEXT,
+                  );
+          attempt++) {
+        await ble.flushEvents();
+      }
+      final resultPacket = ble.callsFor('sendPacket').lastWhere(
+            (call) =>
+                call.packet.hasMsg() && call.packet.msg.mime == Mime.MIME_TEXT,
+          );
+      final resultText = await sdk.decryptTextMessage(
+        config: EdgezMeshConfig(identity: sender),
+        sender: EdgezMeshNode(
+          nodeNum: localNode,
+          userUuid: '',
+          displayName: receiver.name,
+          route: 'BLE',
+          lastSeenMs: 1,
+          marker: 'blue',
+          publicKey: receiver.publicKey,
+          deviceType: 'User',
+        ),
+        fromNode: localNode,
+        toNode: fromNode,
+        payload: resultPacket.packet.msg.payload,
+      );
+      expect(resultText, contains('Speed test result'));
+      expect(resultText, contains('Average speed:'));
+      expect(resultText, contains('Packet loss: 33.33%'));
+      final receiverMessages = session.state.conversations[fromNode]!;
+      expect(receiverMessages, hasLength(1));
+      expect(receiverMessages.single.mine, isTrue);
+      expect(receiverMessages.single.text, resultText);
+      expect(receiverMessages.single.status, startsWith('Sent via'));
+
+      final senderBle = MockBleTransport();
+      final senderSession = EdgezMeshSession(
+        sdk: EdgezMeshSdk(transport: senderBle),
+      );
+      await senderSession.initializeMesh(EdgezMeshConfig(identity: sender));
+      senderBle.emitPacket(
+        NetworkPacket(
+          from: Int64(localNode),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(receiver.userIdHigh),
+            userIdLow: Int64(receiver.userIdLow),
+            userName: receiver.name,
+            userPublicKey: receiver.publicKey,
+          ),
+        ),
+      );
+      await senderBle.flushEvents();
+      senderBle.emitRawPacketBytes(resultPacket.packet.writeToBuffer());
+      for (var attempt = 0;
+          attempt < 10 &&
+              (senderSession.state.conversations[localNode]?.isEmpty ?? true);
+          attempt++) {
+        await senderBle.flushEvents();
+      }
+      final senderMessages = senderSession.state.conversations[localNode]!;
+      expect(senderMessages, hasLength(1));
+      expect(senderMessages.single.mine, isFalse);
+      expect(senderMessages.single.text, resultText);
+      senderSession.dispose();
+      await senderBle.close();
+      session.dispose();
     });
 
     test('surfaces failures returned by the mocked BLE layer', () async {

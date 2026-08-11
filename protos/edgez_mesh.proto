@@ -254,6 +254,7 @@ message DeviceSettings {
   bool sleep_mode_enabled = 25;
   uint32 mesh_frequency_khz = 26;
   uint32 mesh_bandwidth_mhz = 27;
+  bool device_gps_enabled = 28;
 }
 
 message ScriptConfig {

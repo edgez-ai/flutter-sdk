@@ -84,12 +84,14 @@ class ExampleDatabase {
           CREATE INDEX idx_sensor_node_time
           ON sensor_data(node_num, timestamp_ms)
         ''');
+        await _createSpeedMetricsSchema(db);
       },
       onOpen: _ensureSchema,
     );
   }
 
   Future<void> _ensureSchema(Database db) async {
+    await _createSpeedMetricsSchema(db);
     final columns = await db.rawQuery('PRAGMA table_info(nodes)');
     final columnNames = columns.map((row) => row['name'] as String).toSet();
     if (!columnNames.contains('public_key')) {
@@ -112,6 +114,55 @@ class ExampleDatabase {
       await db.execute(
           'ALTER TABLE conversation_messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');
     }
+  }
+
+  static Future<void> _createSpeedMetricsSchema(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS speed_test_metrics (
+        timestamp_ms INTEGER PRIMARY KEY,
+        bits_per_second REAL NOT NULL,
+        packet_loss_percent REAL NOT NULL,
+        received_packets INTEGER NOT NULL,
+        expected_packets INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  Future<List<ExampleSpeedMetric>> loadSpeedMetrics(
+      {required int sinceMs}) async {
+    final db = _requireDatabase();
+    final rows = await db.query(
+      'speed_test_metrics',
+      where: 'timestamp_ms >= ?',
+      whereArgs: <Object?>[sinceMs],
+      orderBy: 'timestamp_ms ASC',
+    );
+    return rows
+        .map(
+          (row) => ExampleSpeedMetric(
+            timestampMs: row['timestamp_ms'] as int,
+            bitsPerSecond: (row['bits_per_second'] as num).toDouble(),
+            packetLossPercent: (row['packet_loss_percent'] as num).toDouble(),
+            receivedPackets: row['received_packets'] as int,
+            expectedPackets: row['expected_packets'] as int,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> insertSpeedMetric(EdgezLinkStats stats) async {
+    final db = _requireDatabase();
+    await db.insert(
+      'speed_test_metrics',
+      <String, Object?>{
+        'timestamp_ms': stats.updatedAtMs,
+        'bits_per_second': stats.bitsPerSecond,
+        'packet_loss_percent': stats.packetLossPercent,
+        'received_packets': stats.receivedPackets,
+        'expected_packets': stats.expectedPackets,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
   }
 
   Future<void> close() async {
@@ -445,4 +496,20 @@ class ExampleDatabase {
   static String _deviceKey(String userUuid, int nodeNum) {
     return userUuid.isNotEmpty ? userUuid : nodeNum.toString();
   }
+}
+
+class ExampleSpeedMetric {
+  const ExampleSpeedMetric({
+    required this.timestampMs,
+    required this.bitsPerSecond,
+    required this.packetLossPercent,
+    required this.receivedPackets,
+    required this.expectedPackets,
+  });
+
+  final int timestampMs;
+  final double bitsPerSecond;
+  final double packetLossPercent;
+  final int receivedPackets;
+  final int expectedPackets;
 }

@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:collection';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
 import 'edgez_mesh_sdk.dart';
+import 'edgez_device_log_store.dart';
 import 'models.dart';
 import 'proto/edgez_mesh.pb.dart' as proto;
 
@@ -17,6 +20,40 @@ typedef EdgezIncomingCallCallback = void Function(
   EdgezMeshNode caller,
 );
 
+class EdgezLinkStats {
+  const EdgezLinkStats({
+    required this.bitsPerSecond,
+    required this.packetLossPercent,
+    required this.receivedPackets,
+    required this.expectedPackets,
+    required this.updatedAtMs,
+  });
+
+  final double bitsPerSecond;
+  final double packetLossPercent;
+  final int receivedPackets;
+  final int expectedPackets;
+  final int updatedAtMs;
+}
+
+class EdgezUsbLinkStats {
+  const EdgezUsbLinkStats({
+    this.sentPings = 0,
+    this.receivedPings = 0,
+    this.receivedPongs = 0,
+    this.timeouts = 0,
+    this.rttMs = 0,
+  });
+
+  final int sentPings;
+  final int receivedPings;
+  final int receivedPongs;
+  final int timeouts;
+  final int rttMs;
+
+  bool get bidirectional => receivedPings > 0 && receivedPongs > 0;
+}
+
 class EdgezMeshState {
   EdgezMeshState({
     required this.connection,
@@ -26,6 +63,7 @@ class EdgezMeshState {
     required Map<int, List<EdgezSensorSample>> sensorSamples,
     required List<EdgezTopologyLink> topologyLinks,
     required Map<int, List<EdgezConversationMessage>> conversations,
+    required Map<int, EdgezLinkStats> linkStats,
     required this.otaInProgress,
     required this.otaReady,
     required this.otaSentBytes,
@@ -33,13 +71,18 @@ class EdgezMeshState {
     required this.voiceCall,
     required this.statusLine,
     required this.bleReady,
+    this.debugLogs = const <String>[],
+    this.usbLinkStats = const EdgezUsbLinkStats(),
+    this.sharedLinkStats,
     this.bleConnecting = false,
     this.deviceSettings,
+    this.selfLocation,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         sensorSamples = _freezeSensorSamples(sensorSamples),
         topologyLinks = List<EdgezTopologyLink>.unmodifiable(topologyLinks),
-        conversations = _freezeConversations(conversations);
+        conversations = _freezeConversations(conversations),
+        linkStats = Map<int, EdgezLinkStats>.unmodifiable(linkStats);
 
   factory EdgezMeshState.initial() {
     return EdgezMeshState(
@@ -50,6 +93,7 @@ class EdgezMeshState {
       sensorSamples: const <int, List<EdgezSensorSample>>{},
       topologyLinks: const <EdgezTopologyLink>[],
       conversations: const <int, List<EdgezConversationMessage>>{},
+      linkStats: const <int, EdgezLinkStats>{},
       otaInProgress: false,
       otaReady: false,
       otaSentBytes: 0,
@@ -57,6 +101,7 @@ class EdgezMeshState {
       voiceCall: const EdgezVoiceCallState(),
       statusLine: 'Connect with BLE, then save mesh settings.',
       bleReady: false,
+      usbLinkStats: const EdgezUsbLinkStats(),
       bleConnecting: false,
     );
   }
@@ -68,6 +113,7 @@ class EdgezMeshState {
   final Map<int, List<EdgezSensorSample>> sensorSamples;
   final List<EdgezTopologyLink> topologyLinks;
   final Map<int, List<EdgezConversationMessage>> conversations;
+  final Map<int, EdgezLinkStats> linkStats;
   final bool otaInProgress;
   final bool otaReady;
   final int otaSentBytes;
@@ -75,8 +121,14 @@ class EdgezMeshState {
   final EdgezVoiceCallState voiceCall;
   final String statusLine;
   final bool bleReady;
+
+  /// Most recent transport and firmware-console lines, bounded by the session.
+  final List<String> debugLogs;
+  final EdgezUsbLinkStats usbLinkStats;
+  final EdgezLinkStats? sharedLinkStats;
   final bool bleConnecting;
   final EdgezDeviceSettings? deviceSettings;
+  final EdgezLocation? selfLocation;
 
   double get otaProgress =>
       otaTotalBytes <= 0 ? 0 : otaSentBytes / otaTotalBytes;
@@ -104,6 +156,7 @@ class EdgezMeshState {
     Map<int, List<EdgezSensorSample>>? sensorSamples,
     List<EdgezTopologyLink>? topologyLinks,
     Map<int, List<EdgezConversationMessage>>? conversations,
+    Map<int, EdgezLinkStats>? linkStats,
     bool? otaInProgress,
     bool? otaReady,
     int? otaSentBytes,
@@ -111,9 +164,14 @@ class EdgezMeshState {
     EdgezVoiceCallState? voiceCall,
     String? statusLine,
     bool? bleReady,
+    List<String>? debugLogs,
+    EdgezUsbLinkStats? usbLinkStats,
+    EdgezLinkStats? sharedLinkStats,
     bool? bleConnecting,
     EdgezDeviceSettings? deviceSettings,
     bool clearDeviceSettings = false,
+    EdgezLocation? selfLocation,
+    bool clearSelfLocation = false,
   }) {
     return EdgezMeshState(
       connection: connection ?? this.connection,
@@ -123,6 +181,7 @@ class EdgezMeshState {
       sensorSamples: sensorSamples ?? this.sensorSamples,
       topologyLinks: topologyLinks ?? this.topologyLinks,
       conversations: conversations ?? this.conversations,
+      linkStats: linkStats ?? this.linkStats,
       otaInProgress: otaInProgress ?? this.otaInProgress,
       otaReady: otaReady ?? this.otaReady,
       otaSentBytes: otaSentBytes ?? this.otaSentBytes,
@@ -130,9 +189,14 @@ class EdgezMeshState {
       voiceCall: voiceCall ?? this.voiceCall,
       statusLine: statusLine ?? this.statusLine,
       bleReady: bleReady ?? this.bleReady,
+      debugLogs: List<String>.unmodifiable(debugLogs ?? this.debugLogs),
+      usbLinkStats: usbLinkStats ?? this.usbLinkStats,
+      sharedLinkStats: sharedLinkStats ?? this.sharedLinkStats,
       bleConnecting: bleConnecting ?? this.bleConnecting,
       deviceSettings:
           clearDeviceSettings ? null : deviceSettings ?? this.deviceSettings,
+      selfLocation:
+          clearSelfLocation ? null : selfLocation ?? this.selfLocation,
     );
   }
 
@@ -168,6 +232,8 @@ class EdgezMeshSession extends ChangeNotifier {
     EdgezMeshSdk? sdk,
     this.onIncomingMessage,
     this.onIncomingCall,
+    this.deviceLogStore,
+    this.speedTestInactivityTimeout = const Duration(seconds: 30),
   }) : sdk = sdk ?? EdgezMeshSdk() {
     _subscription = this.sdk.events.listen(_handleEvent);
   }
@@ -175,15 +241,20 @@ class EdgezMeshSession extends ChangeNotifier {
   final EdgezMeshSdk sdk;
   final EdgezIncomingMessageCallback? onIncomingMessage;
   final EdgezIncomingCallCallback? onIncomingCall;
+  final EdgezDeviceLogStore? deviceLogStore;
+  final Duration speedTestInactivityTimeout;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
+  EdgezDeviceLogLevel _appLogLevel = EdgezDeviceLogLevel.warning;
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
   Timer? _deviceStatusTimeout;
   Timer? _locationUpdateTimer;
+  Duration? _locationUpdateInterval;
   Timer? _voiceCallTimeout;
   var _provisioning = false;
   var _initInFlight = false;
+  var _initRetryRequested = false;
   var _locationUpdateInFlight = false;
   String? _lastInitKey;
   var _voiceCallSequence = 1;
@@ -192,6 +263,10 @@ class EdgezMeshSession extends ChangeNotifier {
   List<int>? _pendingVoiceAudio;
   final Map<String, _PendingVoiceMessage> _pendingVoiceMessages =
       <String, _PendingVoiceMessage>{};
+  final Map<String, _PendingSpeedTest> _pendingSpeedTests =
+      <String, _PendingSpeedTest>{};
+  final _TransportTrafficMeter _trafficMeter = _TransportTrafficMeter();
+  int? _transportMonotonicToEpochOffsetUs;
   static const Set<String> _knownMarkerIds = <String>{
     'default',
     'red',
@@ -213,6 +288,26 @@ class EdgezMeshSession extends ChangeNotifier {
   };
 
   EdgezMeshState get state => _state;
+
+  /// Restores the retained firmware log window from the optional log store.
+  Future<void> restoreDeviceLogs() async {
+    final store = deviceLogStore;
+    if (store == null) return;
+    try {
+      final logs = await store.load();
+      _setState(_state.copyWith(debugLogs: logs));
+    } catch (_) {
+      // Log persistence must never prevent a session from starting.
+    }
+  }
+
+  /// Clears both the retained UI window and all rotated log files.
+  Future<void> pruneDeviceLogs() async {
+    // Clear the visible cache before yielding. Any new event received after
+    // this point is appended behind the serialized file clear and is retained.
+    _setState(_state.copyWith(debugLogs: const <String>[]));
+    await deviceLogStore?.clear();
+  }
 
   void beginProvisioning() {
     _provisioning = true;
@@ -458,6 +553,19 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> connectBle(String deviceId) async {
     _deviceStatusTimeout?.cancel();
+    // A reconnect may follow a device reset, so the real mesh init packet must
+    // be sent again even when the saved configuration has not changed.
+    _lastInitKey = null;
+    _recordAppDiagnostic(
+      EdgezDeviceLogLevel.debug,
+      'BLE reconnect requested device=$deviceId previous=${_state.connection.name}',
+    );
+    // A session owns exactly one physical transport. Close USB (or a previous
+    // BLE link) before Android starts a new BLE connection.
+    if (_state.connection != EdgezConnectionType.none) {
+      await sdk.disconnect();
+      _bleReady = false;
+    }
     _setState(
       _state.copyWith(
         bleConnecting: true,
@@ -486,21 +594,101 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<void> connectUsb(EdgezUsbDevice device) async {
+    _deviceStatusTimeout?.cancel();
+    // Opening a CP2102 commonly resets the ESP32. Never reuse initialization
+    // deduplication state from BLE or an earlier USB connection.
+    _lastInitKey = null;
+    _recordAppDiagnostic(
+      EdgezDeviceLogLevel.debug,
+      'USB reconnect requested device=${device.id} previous=${_state.connection.name}',
+    );
+    // Do not leave a GATT connection alive while opening the USB serial port.
+    if (_state.connection != EdgezConnectionType.none) {
+      await sdk.disconnect();
+    }
+    await sdk.stopBleScan();
+    _bleReady = false;
+    _setState(
+      _state.copyWith(
+        clearStatus: true,
+        clearDeviceSettings: true,
+        bleReady: false,
+        statusLine: 'Connecting USB to ${device.label}',
+      ),
+    );
+    try {
+      await sdk.connectUsb(device.id);
+      _setState(
+        _state.copyWith(
+          statusLine: 'USB connection requested; waiting for device',
+        ),
+      );
+    } catch (error) {
+      _setState(_state.copyWith(statusLine: 'USB connect failed: $error'));
+      rethrow;
+    }
+  }
+
   Future<void> disconnect() async {
     await sdk.disconnect();
+    await deviceLogStore?.flush();
     _deviceStatusTimeout?.cancel();
     _stopLocationTracking();
     _bleReady = false;
     _lastInitKey = null;
+    // Nodes, conversations, samples, and measured peer links are cached app
+    // data, not properties of the physical transport. Keep them available so
+    // a disconnect/reconnect does not empty the example UI while rediscovery
+    // is still in progress.
+    final retainedState = _state;
     _setState(
-      EdgezMeshState.initial().copyWith(statusLine: 'Disconnected'),
+      EdgezMeshState.initial().copyWith(
+        bleDevices: retainedState.bleDevices,
+        nodes: retainedState.nodes,
+        sensorSamples: retainedState.sensorSamples,
+        topologyLinks: retainedState.topologyLinks,
+        conversations: retainedState.conversations,
+        linkStats: retainedState.linkStats,
+        sharedLinkStats: retainedState.sharedLinkStats,
+        statusLine: 'Disconnected',
+        debugLogs: retainedState.debugLogs,
+      ),
     );
+  }
+
+  Future<void> setDeviceLogLevel(EdgezDeviceLogLevel level) {
+    _appLogLevel = level;
+    return sdk.setDeviceLogLevel(level);
+  }
+
+  Future<void> configureLogLevel(EdgezDeviceLogLevel level) {
+    _appLogLevel = level;
+    return sdk.configureDeviceLogLevel(level);
+  }
+
+  Future<void> _applyConfiguredDeviceLogLevel() async {
+    try {
+      await sdk.setDeviceLogLevel(_appLogLevel);
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.debug,
+        'Applied device log level=${_appLogLevel.name} after transport ready',
+      );
+    } catch (error) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.warning,
+        'Unable to apply device log level after transport ready: $error',
+      );
+    }
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) async {
     _lastMeshConfig = config;
     if (!config.beacon.shareLocation) _stopLocationTracking();
     await _sendInitIfReady(force: true);
+    if (config.beacon.shareLocation) {
+      _updateLocationTrackingForStatus(_state.status);
+    }
   }
 
   /// Requests a current phone fix and broadcasts it through the connected
@@ -510,13 +698,12 @@ class EdgezMeshSession extends ChangeNotifier {
     if (config == null ||
         !config.beacon.shareLocation ||
         !_bleReady ||
-        _state.connection != EdgezConnectionType.ble ||
+        _state.connection == EdgezConnectionType.none ||
         _locationUpdateInFlight) {
       return false;
     }
     final status = _state.status;
-    if (status != null &&
-        (!status.supported || !status.stackInitialized || !status.meshMode)) {
+    if (status == null || !status.meshMode || !status.isUsable) {
       return false;
     }
 
@@ -542,13 +729,13 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> authorizeSession() async {
-    if (!_bleReady || _state.connection != EdgezConnectionType.ble) {
-      throw StateError('BLE control service is not ready');
+    if (!_bleReady || _state.connection == EdgezConnectionType.none) {
+      throw StateError('Device control transport is not ready');
     }
     _setState(
       _state.copyWith(
         clearStatus: true,
-        statusLine: 'Checking device license',
+        statusLine: 'Starting device session',
       ),
     );
     await sdk.authorizeSession();
@@ -584,6 +771,30 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<void> setDeviceGpsEnabled(bool enabled) async {
+    final settings = _state.deviceSettings;
+    if (settings == null) {
+      throw StateError('Read device settings before changing device GPS');
+    }
+    EdgezUserIdentity? identity;
+    if (settings.userIdHigh != 0 ||
+        settings.userIdLow != 0 ||
+        settings.userPublicKey.isNotEmpty ||
+        settings.userPrivateKey.isNotEmpty) {
+      identity = EdgezUserIdentity(
+        userIdHigh: settings.userIdHigh,
+        userIdLow: settings.userIdLow,
+        name: settings.userName,
+        publicKey: settings.userPublicKey,
+        privateKey: settings.userPrivateKey,
+      );
+    }
+    await sendDeviceSettings(
+      settings.copyWith(deviceGpsEnabled: enabled),
+      identity: identity,
+    );
+  }
+
   Future<void> sendTextMessage({
     required int toNode,
     required String text,
@@ -615,6 +826,10 @@ class EdgezMeshSession extends ChangeNotifier {
     final config = _lastMeshConfig;
     final fromNode = _state.status?.macAddress ?? 0;
     if (config == null || fromNode == 0) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.warning,
+        'Conversation send blocked to=$toNode: mesh config=${config != null} local=0x${fromNode.toRadixString(16)}',
+      );
       _replaceMessage(
         pendingUuid,
         status: 'Failed: save settings and wait for mesh status',
@@ -623,12 +838,22 @@ class EdgezMeshSession extends ChangeNotifier {
       return;
     }
     try {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.debug,
+        'Conversation send start to=0x${toNode.toRadixString(16)} bytes=${text.length} hop=$maxHop transport=${_state.connection.name}',
+      );
       final messageUuid = await sdk.sendTextMessage(
         config: config,
         toNode: node!,
         fromNode: fromNode,
         text: text,
         maxHop: maxHop,
+        onPacketSent: (packetBytes, sequence) => _recordTransportTraffic(
+          byteCount: packetBytes,
+          streamKey: 'conversation-tx:$pendingUuid',
+          sequence: sequence,
+          receivedAtUs: 0,
+        ),
       );
       _replaceMessage(
         pendingUuid,
@@ -637,11 +862,16 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Message sent',
       );
     } catch (error) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.error,
+        'Conversation send failed to=0x${toNode.toRadixString(16)} error=$error',
+      );
       _replaceMessage(
         pendingUuid,
         status: 'Failed: $error',
         statusLine: 'Message send failed: $error',
       );
+      rethrow;
     }
   }
 
@@ -696,6 +926,12 @@ class EdgezMeshSession extends ChangeNotifier {
         durationMs: durationMs,
         codec: codec,
         maxHop: maxHop,
+        onPacketSent: (packetBytes, sequence) => _recordTransportTraffic(
+          byteCount: packetBytes,
+          streamKey: 'voice-message-tx:$pendingUuid',
+          sequence: sequence,
+          receivedAtUs: 0,
+        ),
       );
       _replaceMessage(
         pendingUuid,
@@ -709,6 +945,50 @@ class EdgezMeshSession extends ChangeNotifier {
         status: 'Failed: $error',
         statusLine: 'Voice send failed: $error',
       );
+    }
+  }
+
+  Future<void> sendSpeedTest({
+    required int toNode,
+    int totalBytes = EdgezMeshSdk.speedTestBytes,
+    int hop = 0,
+    void Function(int sentBytes, int totalBytes)? onProgress,
+  }) async {
+    final node = _state.nodes[toNode];
+    final fromNode = _state.status?.macAddress ?? 0;
+    if (!(node?.opensConversation ?? false) || fromNode == 0) {
+      throw StateError('Save settings and wait for a reachable user node');
+    }
+    if (hop < 0 || hop > 3) {
+      throw ArgumentError.value(hop, 'hop', 'Must be between 0 and 3');
+    }
+    _setState(_state.copyWith(statusLine: 'Sending link measurement'));
+    try {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.debug,
+        'Speed test start to=0x${toNode.toRadixString(16)} bytes=$totalBytes hop=$hop transport=${_state.connection.name}',
+      );
+      await sdk.sendSpeedTest(
+        toNode: toNode,
+        fromNode: fromNode,
+        totalBytes: totalBytes,
+        hop: hop,
+        onProgress: onProgress,
+        onPacketSent: (packetBytes, sequence) => _recordTransportTraffic(
+          byteCount: packetBytes,
+          streamKey: 'speed-tx:$fromNode:$toNode',
+          sequence: sequence,
+          receivedAtUs: 0,
+        ),
+      );
+      _setState(_state.copyWith(statusLine: 'Link measurement sent'));
+    } catch (error) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.error,
+        'Speed test send failed to=0x${toNode.toRadixString(16)} error=$error',
+      );
+      _setState(_state.copyWith(statusLine: 'Link measurement failed: $error'));
+      rethrow;
     }
   }
 
@@ -825,10 +1105,19 @@ class EdgezMeshSession extends ChangeNotifier {
             voiceCall: event.connection == EdgezConnectionType.none
                 ? const EdgezVoiceCallState()
                 : _state.voiceCall,
-            statusLine: event.connection == EdgezConnectionType.ble
-                ? 'BLE link connected; setting up control channel'
-                : 'BLE disconnected',
+            statusLine: switch (event.connection) {
+              EdgezConnectionType.ble =>
+                'BLE link connected; setting up control channel',
+              EdgezConnectionType.usb => 'USB high-speed link connected',
+              EdgezConnectionType.none => 'Device disconnected',
+            },
           ),
+        );
+        _recordAppDiagnostic(
+          event.connection == EdgezConnectionType.none
+              ? EdgezDeviceLogLevel.warning
+              : EdgezDeviceLogLevel.debug,
+          'Transport state=${event.connection.name} ready=$_bleReady initReset=${_lastInitKey == null}',
         );
       case EdgezMeshEventType.bleDevice:
         final device = event.bleDevice;
@@ -842,15 +1131,30 @@ class EdgezMeshSession extends ChangeNotifier {
           ),
         );
       case EdgezMeshEventType.packet:
-        _handlePacket(event.packet);
+        _handlePacket(event.packet, receivedAtUs: event.receivedAtUs);
       case EdgezMeshEventType.ready:
         _bleReady = true;
         _setState(_state.copyWith(
-          statusLine: 'BLE control channel ready; requesting device status',
+          statusLine: _state.connection == EdgezConnectionType.usb
+              ? 'USB protocol ready; initializing mesh'
+              : 'BLE control channel ready; requesting device status',
           bleReady: true,
         ));
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.debug,
+          'Transport ready=${_state.connection.name}; reinitializing mesh=${!_provisioning}',
+        );
         unawaited(_refreshOtaReadiness());
-        if (!_provisioning) unawaited(_sendInitIfReady());
+        // USB receives this level in the nonce handshake; BLE has no handshake
+        // payload, so send LG2 when either control stream becomes writable.
+        unawaited(_applyConfiguredDeviceLogLevel());
+        if (!_provisioning) {
+          unawaited(
+            _sendInitIfReady(
+              force: _state.connection == EdgezConnectionType.usb,
+            ),
+          );
+        }
       case EdgezMeshEventType.status:
         _deviceStatusTimeout?.cancel();
         final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
@@ -863,6 +1167,7 @@ class EdgezMeshSession extends ChangeNotifier {
             statusLine: 'Device status received',
           ),
         );
+        _updateLocationTrackingForStatus(event.status);
       case EdgezMeshEventType.node:
         final node = event.node;
         if (node == null) return;
@@ -880,6 +1185,14 @@ class EdgezMeshSession extends ChangeNotifier {
       case EdgezMeshEventType.message:
         final message = event.message;
         if (message == null) return;
+        _recordTransportTraffic(
+          byteCount: message.voiceBytes.isNotEmpty
+              ? message.voiceBytes.length
+              : utf8.encode(message.text).length,
+          streamKey: null,
+          sequence: null,
+          receivedAtUs: message.timestampMs * 1000,
+        );
         final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
         nodes.putIfAbsent(
           message.nodeNum,
@@ -908,6 +1221,29 @@ class EdgezMeshSession extends ChangeNotifier {
         _voiceFramePipeline = _voiceFramePipeline.then(
           (_) => _handleVoiceCallFrame(event.packet),
         );
+      case EdgezMeshEventType.speedTestFrame:
+        if (event.packet.length <= 6) return;
+        var fromNode = 0;
+        for (var index = 0; index < 6; index++) {
+          fromNode = (fromNode << 8) | event.packet[index];
+        }
+        _handleSpeedTestFrame(
+          fromNode,
+          event.packet.sublist(6),
+          receivedAtUs: event.receivedAtUs,
+        );
+      case EdgezMeshEventType.usbLinkStats:
+        _setState(
+          _state.copyWith(
+            usbLinkStats: EdgezUsbLinkStats(
+              sentPings: event.usbSentPings,
+              receivedPings: event.usbReceivedPings,
+              receivedPongs: event.usbReceivedPongs,
+              timeouts: event.usbTimeouts,
+              rttMs: event.usbRttMs,
+            ),
+          ),
+        );
       case EdgezMeshEventType.voiceAudio:
         if (_state.voiceCall.isActive && event.packet.isNotEmpty) {
           _queueVoiceAudio(event.packet);
@@ -925,7 +1261,62 @@ class EdgezMeshSession extends ChangeNotifier {
           ),
         );
       case EdgezMeshEventType.log:
-        _setState(_state.copyWith(statusLine: event.log));
+        // Preserve a combined timeline: firmware records arrive as FW-tagged
+        // events and transport/SDK diagnostics are explicitly APP-tagged.
+        final timestamp = DateTime.now().toIso8601String().substring(11, 23);
+        final source =
+            event.log.startsWith('FW:') || event.log.startsWith('APP:')
+                ? event.log
+                : 'APP: ${event.log}';
+        if (!source.startsWith('FW:') &&
+            _appLogLevel.wireValue < _appEventLevel(event.log).wireValue) {
+          _setState(_state.copyWith(statusLine: event.log));
+          return;
+        }
+        final logs = List<String>.of(_state.debugLogs)
+          ..add('$timestamp $source');
+        if (logs.length > 500) {
+          logs.removeRange(0, logs.length - 500);
+        }
+        _setState(_state.copyWith(statusLine: event.log, debugLogs: logs));
+        final store = deviceLogStore;
+        if (store != null) {
+          unawaited(
+            store
+                .append(logs.last, configuredLevel: _appLogLevel)
+                .catchError((_) {}),
+          );
+        }
+    }
+  }
+
+  EdgezDeviceLogLevel _appEventLevel(String message) {
+    final normalized = message.toLowerCase();
+    if (normalized.contains('error') || normalized.contains('failed')) {
+      return EdgezDeviceLogLevel.error;
+    }
+    if (normalized.contains('warning') || normalized.contains('timeout')) {
+      return EdgezDeviceLogLevel.warning;
+    }
+    return EdgezDeviceLogLevel.debug;
+  }
+
+  void _recordAppDiagnostic(EdgezDeviceLogLevel level, String message) {
+    if (_appLogLevel.wireValue < level.wireValue) return;
+    final timestamp = DateTime.now().toIso8601String().substring(11, 23);
+    final logs = List<String>.of(_state.debugLogs)
+      ..add('$timestamp APP: $message');
+    if (logs.length > 500) {
+      logs.removeRange(0, logs.length - 500);
+    }
+    _setState(_state.copyWith(debugLogs: logs));
+    final store = deviceLogStore;
+    if (store != null) {
+      unawaited(
+        store
+            .append(logs.last, configuredLevel: _appLogLevel)
+            .catchError((_) {}),
+      );
     }
   }
 
@@ -942,37 +1333,48 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  void _handlePacket(List<int> packetBytes) {
+  void _handlePacket(List<int> packetBytes, {required int receivedAtUs}) {
     if (packetBytes.isEmpty) return;
     final packet = _parseNetworkPacket(packetBytes);
     if (packet == null) return;
+    _recordTransportTraffic(
+      byteCount: packetBytes.length,
+      streamKey: packet.hasMsg()
+          ? 'protobuf:${packet.from}:${packet.msg.messageIdHigh}:'
+              '${packet.msg.messageIdLow}'
+          : null,
+      sequence: packet.hasMsg() ? packet.msg.sequence : null,
+      receivedAtUs: receivedAtUs,
+    );
 
     if (packet.hasStatus()) {
       _deviceStatusTimeout?.cancel();
       final localNode = packet.status.macAddress.toInt();
       final nodes = Map<int, EdgezMeshNode>.of(_state.nodes)..remove(localNode);
+      final status = EdgezMeshStatus(
+        supported: packet.status.supported,
+        stackInitialized: packet.status.stackInitialized,
+        meshMode: packet.status.meshMode,
+        linkUp: packet.status.linkUp,
+        routeReady: packet.status.routeReady,
+        readyForReport: packet.status.readyForReport,
+        meshId: packet.status.meshId,
+        ipAddress: packet.status.ipAddr,
+        gateway: packet.status.gateway,
+        macAddress: localNode,
+        licenseStatus: EdgezLicenseStatus.fromWire(
+          packet.status.licenseStatus.value,
+        ),
+        firmwareVersion: packet.status.firmwareVersion,
+      );
       _setState(
         _state.copyWith(
           statusLine: 'Device status received',
-          status: EdgezMeshStatus(
-            supported: packet.status.supported,
-            stackInitialized: packet.status.stackInitialized,
-            meshMode: packet.status.meshMode,
-            linkUp: packet.status.linkUp,
-            routeReady: packet.status.routeReady,
-            readyForReport: packet.status.readyForReport,
-            meshId: packet.status.meshId,
-            ipAddress: packet.status.ipAddr,
-            gateway: packet.status.gateway,
-            macAddress: localNode,
-            licenseStatus: EdgezLicenseStatus.fromWire(
-              packet.status.licenseStatus.value,
-            ),
-            firmwareVersion: packet.status.firmwareVersion,
-          ),
+          status: status,
           nodes: nodes,
         ),
       );
+      _updateLocationTrackingForStatus(status);
     }
 
     if (packet.hasDeviceSettings()) {
@@ -999,6 +1401,7 @@ class EdgezMeshSession extends ChangeNotifier {
           beaconUnicast: settings.beaconUnicast.toInt(),
           deviceType: _deviceTypeLabel(settings.deviceType).toLowerCase(),
           sleepModeEnabled: settings.sleepModeEnabled,
+          deviceGpsEnabled: settings.deviceGpsEnabled,
           meshFrequencyKhz: settings.meshFrequencyKhz,
           meshBandwidthMhz: settings.meshBandwidthMhz,
           userIdHigh: settings.userIdHigh.toInt(),
@@ -1007,6 +1410,11 @@ class EdgezMeshSession extends ChangeNotifier {
           userPrivateKey: settings.userPrivateKey,
         ),
       ));
+      if (settings.deviceGpsEnabled) {
+        _stopLocationTracking();
+      } else {
+        _updateLocationTrackingForStatus(_state.status);
+      }
     }
 
     if (packet.hasReport()) {
@@ -1117,6 +1525,29 @@ class EdgezMeshSession extends ChangeNotifier {
                 localIdentity.userIdLow == beacon.userIdLow.toInt()));
     if ((localNode != null && localNode != 0 && localNode == nodeNum) ||
         isLocalIdentity) {
+      final sensorData = _sensorData(beacon.sensorData);
+      final latitude = sensorData?.latitude ??
+          (beacon.hasLatitude() ? beacon.latitude : null);
+      final longitude = sensorData?.longitude ??
+          (beacon.hasLongitude() ? beacon.longitude : null);
+      if (latitude != null &&
+          longitude != null &&
+          latitude.isFinite &&
+          longitude.isFinite &&
+          latitude >= -90 &&
+          latitude <= 90 &&
+          longitude >= -180 &&
+          longitude <= 180 &&
+          (latitude != 0 || longitude != 0)) {
+        _setState(_state.copyWith(
+          selfLocation: EdgezLocation(
+            latitude: latitude,
+            longitude: longitude,
+            timestampMs: now,
+          ),
+          statusLine: 'Device GPS location received',
+        ));
+      }
       return;
     }
 
@@ -1234,6 +1665,15 @@ class EdgezMeshSession extends ChangeNotifier {
     }
     if (!packet.hasMsg()) return;
     final message = packet.msg;
+    if (message.mime == proto.Mime.MIME_BINARY) {
+      _handleSpeedTestFrame(
+        packet.from.toInt(),
+        message.payload,
+        receivedAtUs: 0,
+        countTransportTraffic: false,
+      );
+      return;
+    }
     if (message.mime != proto.Mime.MIME_TEXT &&
         message.mime != proto.Mime.MIME_VOICE) {
       return;
@@ -1336,6 +1776,235 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  void _handleSpeedTestFrame(
+    int fromNode,
+    List<int> payload, {
+    required int receivedAtUs,
+    bool countTransportTraffic = true,
+  }) {
+    if (fromNode == 0) return;
+    final frame = EdgezSpeedTestFrame.tryDecode(payload);
+    if (frame == null) return;
+    if (countTransportTraffic) {
+      _recordTransportTraffic(
+        byteCount: payload.length + 6,
+        streamKey: frame.type == EdgezSpeedTestFrameType.data
+            ? 'speed:$fromNode:${frame.transferId}'
+            : null,
+        sequence: frame.type == EdgezSpeedTestFrameType.data
+            ? frame.chunkIndex
+            : null,
+        receivedAtUs: receivedAtUs,
+      );
+    }
+    final key = '$fromNode:${frame.transferId}';
+    late final _PendingSpeedTest pending;
+    if (frame.type == EdgezSpeedTestFrameType.start) {
+      _pendingSpeedTests.remove(key)?.timer?.cancel();
+      pending = _PendingSpeedTest(
+        totalBytes: frame.totalBytes,
+        totalChunks: frame.totalChunks,
+      );
+      _pendingSpeedTests[key] = pending;
+    } else {
+      final existing = _pendingSpeedTests[key];
+      if (existing == null) {
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.warning,
+          'Speed RX orphan type=${frame.type.name} from=0x${fromNode.toRadixString(16)} transfer=${frame.transferId}',
+        );
+        return;
+      }
+      pending = existing;
+    }
+    if (pending.totalBytes != frame.totalBytes ||
+        pending.totalChunks != frame.totalChunks) {
+      return;
+    }
+    if (frame.type == EdgezSpeedTestFrameType.data) {
+      pending.put(
+        frame.chunkIndex,
+        frame.data.length,
+        receivedAtUs > 0 ? receivedAtUs : DateTime.now().microsecondsSinceEpoch,
+      );
+      if (pending.shouldPublish) {
+        _publishLinkStats(fromNode, pending, finalResult: false);
+      }
+    }
+    if (frame.type == EdgezSpeedTestFrameType.end) {
+      pending.endReceived = true;
+    }
+    pending.timer?.cancel();
+    if (pending.endReceived && pending.complete) {
+      _finishSpeedTest(key, fromNode);
+      return;
+    }
+    if (pending.endReceived) {
+      // END may overtake DATA on a forced multi-hop route. Keep the transfer
+      // alive while delayed chunks arrive, then publish the incomplete result.
+      pending.timer = Timer(
+        speedTestInactivityTimeout,
+        () => _finishSpeedTest(key, fromNode),
+      );
+    } else {
+      // START can precede DATA by minutes while the radio queue drains. A
+      // pre-END timeout is cleanup only and must never create a false 0/100
+      // result or allow a later orphan END to create a second result.
+      pending.timer = Timer(const Duration(minutes: 10), () {
+        final stale = _pendingSpeedTests.remove(key);
+        stale?.timer?.cancel();
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.warning,
+          'Speed RX discarded stale pre-END transfer=${frame.transferId} from=0x${fromNode.toRadixString(16)}',
+        );
+      });
+    }
+  }
+
+  void _finishSpeedTest(String key, int fromNode) {
+    final pending = _pendingSpeedTests.remove(key);
+    if (pending == null) return;
+    pending.timer?.cancel();
+    _publishLinkStats(fromNode, pending, finalResult: true);
+  }
+
+  void _recordTransportTraffic({
+    required int byteCount,
+    required String? streamKey,
+    required int? sequence,
+    required int receivedAtUs,
+  }) {
+    final nowUs = DateTime.now().microsecondsSinceEpoch;
+    // Native BLE/USB callbacks use an elapsed-realtime clock so packet timing
+    // is captured before Flutter event batching. Translate that clock into the
+    // Unix domain required by shared state and SQLite without losing deltas.
+    final observationUs = receivedAtUs <= 0
+        ? nowUs
+        : receivedAtUs < 1000000000000000
+            ? receivedAtUs +
+                (_transportMonotonicToEpochOffsetUs ??= nowUs - receivedAtUs)
+            : receivedAtUs;
+    final snapshot = _trafficMeter.record(
+      byteCount: byteCount,
+      streamKey: streamKey,
+      sequence: sequence,
+      receivedAtUs: observationUs,
+    );
+    if (snapshot != null) {
+      _setState(_state.copyWith(sharedLinkStats: snapshot));
+    }
+  }
+
+  void _publishLinkStats(
+    int fromNode,
+    _PendingSpeedTest pending, {
+    required bool finalResult,
+  }) {
+    final elapsedUs = max(1, pending.elapsedMicroseconds);
+    final rawBitsPerSecond = pending.receivedBytes * 8 * 1000000 / elapsedUs;
+    final expectedPackets = finalResult
+        ? pending.totalChunks
+        : max(1, pending.highestChunkIndex + 1);
+    final lost = max(0, expectedPackets - pending.receivedChunks);
+    final rawLossPercent = lost * 100 / expectedPackets;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    pending.lastPublishedMs = now;
+    final linkStats = Map<int, EdgezLinkStats>.of(_state.linkStats);
+    final testStats = EdgezLinkStats(
+      bitsPerSecond: rawBitsPerSecond,
+      packetLossPercent: rawLossPercent,
+      receivedPackets: pending.receivedChunks,
+      expectedPackets: expectedPackets,
+      updatedAtMs: now,
+    );
+    linkStats[fromNode] = testStats;
+    _setState(
+      _state.copyWith(
+        linkStats: linkStats,
+        sharedLinkStats: _state.sharedLinkStats,
+      ),
+    );
+    if (finalResult) {
+      if (_state.connection == EdgezConnectionType.usb) {
+        unawaited(sdk.reportUsbPacketLoss(rawLossPercent));
+      }
+      unawaited(_sendSpeedTestResult(fromNode, testStats));
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.debug,
+        'Speed result from=0x${fromNode.toRadixString(16)} bps=${rawBitsPerSecond.toStringAsFixed(0)} loss=${rawLossPercent.toStringAsFixed(2)}% received=${pending.receivedChunks}/$expectedPackets bytes=${pending.receivedBytes}',
+      );
+    }
+  }
+
+  Future<void> _sendSpeedTestResult(
+    int senderNodeNum,
+    EdgezLinkStats stats,
+  ) async {
+    final config = _lastMeshConfig;
+    final sender = _state.nodes[senderNodeNum];
+    final localNode = _state.status?.macAddress ?? 0;
+    if (config == null || sender == null || localNode == 0) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.warning,
+        'Speed result reply skipped: conversation identity unavailable',
+      );
+      return;
+    }
+    final text = 'Speed test result\n'
+        'Average speed: ${_formatSpeedTestBitRate(stats.bitsPerSecond)}\n'
+        'Packet loss: ${stats.packetLossPercent.toStringAsFixed(2)}%';
+    final pendingUuid = 'speed-result-${stats.updatedAtMs}-$senderNodeNum';
+    _appendMessage(
+      EdgezConversationMessage(
+        nodeNum: senderNodeNum,
+        text: text,
+        mine: true,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        messageUuid: pendingUuid,
+        status: 'Queued',
+      ),
+      statusLine: 'Speed test result queued',
+    );
+    try {
+      final messageUuid = await sdk.sendTextMessage(
+        config: config,
+        toNode: sender,
+        fromNode: localNode,
+        text: text,
+        maxHop: config.maxHop,
+        onPacketSent: (packetBytes, sequence) => _recordTransportTraffic(
+          byteCount: packetBytes,
+          streamKey: 'speed-result-tx:$senderNodeNum:${stats.updatedAtMs}',
+          sequence: sequence,
+          receivedAtUs: 0,
+        ),
+      );
+      _replaceMessage(
+        pendingUuid,
+        messageUuid: messageUuid,
+        status: 'Sent via ${_state.connection.name.toUpperCase()}',
+        statusLine: 'Speed test result sent',
+      );
+    } catch (error) {
+      _replaceMessage(
+        pendingUuid,
+        status: 'Failed: $error',
+        statusLine: 'Speed test result failed: $error',
+      );
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.error,
+        'Speed result reply failed: $error',
+      );
+    }
+  }
+
+  String _formatSpeedTestBitRate(double bitsPerSecond) {
+    if (bitsPerSecond >= 1000000) {
+      return '${(bitsPerSecond / 1000000).toStringAsFixed(2)} Mbps';
+    }
+    return '${(bitsPerSecond / 1000).toStringAsFixed(1)} kbps';
+  }
+
   _CompletedVoiceMessage? _storeVoiceChunk(int nodeNum, EdgezVoiceChunk chunk) {
     final key = '$nodeNum:${chunk.groupId}';
     final pending = _pendingVoiceMessages.putIfAbsent(
@@ -1414,16 +2083,22 @@ class EdgezMeshSession extends ChangeNotifier {
     if (!_bleReady) {
       _setState(
         _state.copyWith(
-          statusLine: _state.connection == EdgezConnectionType.ble
-              ? 'Settings saved; waiting for BLE control service'
-              : 'Settings saved; connect BLE to initialize device',
+          statusLine: _state.connection != EdgezConnectionType.none
+              ? 'Settings saved; waiting for device control service'
+              : 'Settings saved; connect BLE or USB to initialize device',
         ),
       );
       return;
     }
     final initKey = _initKey(config);
     if (!force && _lastInitKey == initKey) return;
-    if (_initInFlight) return;
+    if (_initInFlight) {
+      // A reconnect can become ready while initialization from the previous
+      // transport is still unwinding. Remember that ready event so the new
+      // connection is initialized after the older request completes.
+      _initRetryRequested = true;
+      return;
+    }
 
     _initInFlight = true;
     try {
@@ -1437,28 +2112,63 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Waiting for device status response',
       ));
       _startDeviceStatusTimeout();
-      _startLocationTracking();
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Device init failed: $error'));
     } finally {
       _initInFlight = false;
+      if (_initRetryRequested) {
+        _initRetryRequested = false;
+        if (_bleReady && _state.connection != EdgezConnectionType.none) {
+          unawaited(_sendInitIfReady(force: true));
+        }
+      }
     }
   }
 
   void _startLocationTracking() {
-    _stopLocationTracking();
     final config = _lastMeshConfig;
-    if (config == null || !config.beacon.shareLocation || !_bleReady) return;
+    final status = _state.status;
+    if (config == null ||
+        !config.beacon.shareLocation ||
+        config.beacon.useDeviceGps ||
+        _state.deviceSettings?.deviceGpsEnabled == true ||
+        !_bleReady ||
+        status == null ||
+        !status.meshMode ||
+        !status.isUsable) {
+      return;
+    }
+    // Refresh GPS at half the beacon interval. Do not restart this timer for
+    // every repeated status packet: restarting also triggers an immediate GPS
+    // update and was the source of overly frequent transmissions.
+    final refreshInterval = Duration(
+      seconds: max(5, (config.beacon.normalizedIntervalSeconds / 2).ceil()),
+    );
+    if (_locationUpdateTimer?.isActive == true &&
+        _locationUpdateInterval == refreshInterval) {
+      return;
+    }
+    _stopLocationTracking();
+    _locationUpdateInterval = refreshInterval;
     unawaited(refreshSharedLocation());
     _locationUpdateTimer = Timer.periodic(
-      Duration(seconds: config.beacon.normalizedIntervalSeconds),
+      refreshInterval,
       (_) => unawaited(refreshSharedLocation()),
     );
+  }
+
+  void _updateLocationTrackingForStatus(EdgezMeshStatus? status) {
+    if (status != null && status.meshMode && status.isUsable) {
+      _startLocationTracking();
+    } else {
+      _stopLocationTracking();
+    }
   }
 
   void _stopLocationTracking() {
     _locationUpdateTimer?.cancel();
     _locationUpdateTimer = null;
+    _locationUpdateInterval = null;
   }
 
   bool _isValidSharedLocation(EdgezLocation location) {
@@ -1491,13 +2201,13 @@ class EdgezMeshSession extends ChangeNotifier {
     _deviceStatusTimeout?.cancel();
     if (_state.status != null) return;
     _deviceStatusTimeout = Timer(const Duration(seconds: 8), () {
-      if (_state.connection == EdgezConnectionType.ble &&
+      if (_state.connection != EdgezConnectionType.none &&
           _bleReady &&
           _state.status == null) {
         _setState(
           _state.copyWith(
             statusLine: 'No device status received after 8 seconds. '
-                'The phone connected, but BLE notifications or the device response may have failed.',
+                'The transport connected, but the device did not respond.',
           ),
         );
       }
@@ -1554,6 +2264,12 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       final packet = _decodeVoiceCallPacket(envelope.plaintext);
       if (packet == null || packet.sequence != envelope.sequence) return;
+      _recordTransportTraffic(
+        byteCount: payload.length,
+        streamKey: 'voice:$fromNode:${packet.callId}',
+        sequence: packet.sequence,
+        receivedAtUs: 0,
+      );
       final call = _state.voiceCall;
       switch (packet.type) {
         case _callInvite:
@@ -1795,9 +2511,102 @@ class EdgezMeshSession extends ChangeNotifier {
     _stopLocationTracking();
     _voiceCallTimeout?.cancel();
     _pendingVoiceMessages.clear();
+    for (final pending in _pendingSpeedTests.values) {
+      pending.timer?.cancel();
+    }
+    _pendingSpeedTests.clear();
+    _trafficMeter.clear();
     _subscription.cancel();
     super.dispose();
   }
+}
+
+class _TransportTrafficMeter {
+  static const int _windowUs = 10 * 1000000;
+  static const int _publishIntervalUs = 1000000;
+  final ListQueue<_TrafficObservation> _observations =
+      ListQueue<_TrafficObservation>();
+  final LinkedHashMap<String, int> _lastSequence = LinkedHashMap<String, int>();
+  int _lastPublishedUs = 0;
+
+  EdgezLinkStats? record({
+    required int byteCount,
+    required String? streamKey,
+    required int? sequence,
+    required int receivedAtUs,
+  }) {
+    if (byteCount <= 0) return null;
+    var lostBefore = 0;
+    if (streamKey != null && sequence != null && sequence >= 0) {
+      final previous = _lastSequence.remove(streamKey);
+      if (previous != null && sequence > previous + 1) {
+        lostBefore = sequence - previous - 1;
+      }
+      _lastSequence[streamKey] = max(previous ?? sequence, sequence);
+      while (_lastSequence.length > 256) {
+        _lastSequence.remove(_lastSequence.keys.first);
+      }
+    }
+    _observations.addLast(
+      _TrafficObservation(
+        receivedAtUs,
+        byteCount,
+        lostBefore,
+        streamKey != null && sequence != null && sequence >= 0,
+      ),
+    );
+    final cutoff = receivedAtUs - _windowUs;
+    while (
+        _observations.isNotEmpty && _observations.first.receivedAtUs < cutoff) {
+      _observations.removeFirst();
+    }
+    if (_lastPublishedUs != 0 &&
+        receivedAtUs - _lastPublishedUs < _publishIntervalUs) {
+      return null;
+    }
+    _lastPublishedUs = receivedAtUs;
+    final bytes = _observations.fold<int>(
+      0,
+      (sum, item) => sum + item.byteCount,
+    );
+    final lost = _observations.fold<int>(
+      0,
+      (sum, item) => sum + item.lostBefore,
+    );
+    final received = _observations.where((item) => item.sequenced).length;
+    final expected = received + lost;
+    final spanUs = max(
+      1000000,
+      _observations.last.receivedAtUs - _observations.first.receivedAtUs,
+    );
+    return EdgezLinkStats(
+      bitsPerSecond: bytes * 8 * 1000000 / spanUs,
+      packetLossPercent: expected == 0 ? 0 : lost * 100 / expected,
+      receivedPackets: received,
+      expectedPackets: expected,
+      updatedAtMs: receivedAtUs ~/ 1000,
+    );
+  }
+
+  void clear() {
+    _observations.clear();
+    _lastSequence.clear();
+    _lastPublishedUs = 0;
+  }
+}
+
+class _TrafficObservation {
+  const _TrafficObservation(
+    this.receivedAtUs,
+    this.byteCount,
+    this.lostBefore,
+    this.sequenced,
+  );
+
+  final int receivedAtUs;
+  final int byteCount;
+  final int lostBefore;
+  final bool sequenced;
 }
 
 class _DecodedBeaconUserName {
@@ -1834,6 +2643,49 @@ class _PendingVoiceMessage {
       codec: codec,
       durationMs: durationMs,
     );
+  }
+}
+
+class _PendingSpeedTest {
+  _PendingSpeedTest({
+    required this.totalBytes,
+    required this.totalChunks,
+  });
+
+  final int totalBytes;
+  final int totalChunks;
+  final Set<int> chunks = <int>{};
+  int receivedBytes = 0;
+  int? firstDataUs;
+  int? lastDataUs;
+  int lastPublishedMs = 0;
+  int highestChunkIndex = -1;
+  bool endReceived = false;
+  Timer? timer;
+
+  int get receivedChunks => chunks.length;
+  bool get complete => receivedChunks >= totalChunks;
+  // Link statistics are presentation data; updating them more frequently
+  // competes with BLE event processing during the measurement itself.
+  bool get shouldPublish =>
+      lastDataUs != null && lastDataUs! ~/ 1000 - lastPublishedMs >= 10000;
+  int get elapsedMicroseconds {
+    final first = firstDataUs;
+    final last = lastDataUs;
+    if (first == null || last == null) return 1;
+    return max(1, last - first);
+  }
+
+  void put(int index, int byteCount, int receivedAtUs) {
+    if (index < 0 || index >= totalChunks || byteCount < 0) return;
+    if (!chunks.add(index)) return;
+    if (firstDataUs == null) {
+      firstDataUs = receivedAtUs;
+      lastPublishedMs = receivedAtUs ~/ 1000;
+    }
+    lastDataUs = max(lastDataUs ?? receivedAtUs, receivedAtUs);
+    highestChunkIndex = max(highestChunkIndex, index);
+    receivedBytes += byteCount;
   }
 }
 
