@@ -1,5 +1,5 @@
 name: edgez_flutter_sdk_example
-description: EdgeZ Flutter SDK example app without map support.
+description: EdgeZ Flutter SDK example app with offline Organic Maps support.
 publish_to: none
 
 environment:

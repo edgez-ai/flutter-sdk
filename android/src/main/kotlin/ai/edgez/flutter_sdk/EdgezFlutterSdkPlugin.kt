@@ -316,6 +316,14 @@ class EdgezFlutterSdkPlugin :
         context = binding.applicationContext
         methods = MethodChannel(binding.binaryMessenger, "edgez_flutter_sdk/methods")
         events = EventChannel(binding.binaryMessenger, "edgez_flutter_sdk/events")
+        binding.platformViewRegistry.registerViewFactory(
+            EdgezOrganicMapViewFactory.VIEW_TYPE,
+            EdgezOrganicMapViewFactory(
+                messenger = binding.binaryMessenger,
+                applicationContext = context,
+                activityProvider = { activity },
+            ),
+        )
         methods.setMethodCallHandler(this)
         events.setStreamHandler(this)
         liveVoiceAudio = EdgezLiveVoiceAudio(

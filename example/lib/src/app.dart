@@ -16,6 +16,7 @@ import 'drivers_tab.dart';
 import 'example_database.dart';
 import 'models.dart';
 import 'marketplace_driver_install.dart';
+import 'map_tab.dart';
 import 'nodes_tab.dart';
 import 'provisioning_screen.dart';
 import 'settings_tab.dart';
@@ -25,6 +26,7 @@ import 'voice_call_screen.dart';
 enum AppDestination {
   dashboard('Dashboard', Icons.dashboard_outlined, Icons.dashboard),
   nodes('Nodes', Icons.hub_outlined, Icons.hub),
+  map('Map', Icons.map_outlined, Icons.map),
   drivers('Drivers', Icons.usb_outlined, Icons.usb),
   settings('Settings', Icons.bluetooth_connected_outlined,
       Icons.bluetooth_connected);
@@ -1308,6 +1310,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                               unawaited(_setDashboardDisplay(display)),
                           onBack: () => setState(() => selectedNodeNum = null),
                         ),
+          AppDestination.map => MapScreen(nodes: meshState.sortedNodes),
           AppDestination.drivers => DriversScreen(
               drivers: drivers,
               driverStore: driverStore,
