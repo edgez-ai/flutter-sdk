@@ -1535,6 +1535,7 @@ class DeviceSettings extends $pb.GeneratedMessage {
     $core.bool? sleepModeEnabled,
     $core.int? meshFrequencyKhz,
     $core.int? meshBandwidthMhz,
+    $core.bool? deviceGpsEnabled,
   }) {
     final result = create();
     if (action != null) result.action = action;
@@ -1565,6 +1566,7 @@ class DeviceSettings extends $pb.GeneratedMessage {
     if (sleepModeEnabled != null) result.sleepModeEnabled = sleepModeEnabled;
     if (meshFrequencyKhz != null) result.meshFrequencyKhz = meshFrequencyKhz;
     if (meshBandwidthMhz != null) result.meshBandwidthMhz = meshBandwidthMhz;
+    if (deviceGpsEnabled != null) result.deviceGpsEnabled = deviceGpsEnabled;
     return result;
   }
 
@@ -1622,6 +1624,7 @@ class DeviceSettings extends $pb.GeneratedMessage {
         fieldType: $pb.PbFieldType.OU3)
     ..aI(27, _omitFieldNames ? '' : 'meshBandwidthMhz',
         fieldType: $pb.PbFieldType.OU3)
+    ..aOB(28, _omitFieldNames ? '' : 'deviceGpsEnabled')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1880,6 +1883,15 @@ class DeviceSettings extends $pb.GeneratedMessage {
   $core.bool hasMeshBandwidthMhz() => $_has(25);
   @$pb.TagNumber(27)
   void clearMeshBandwidthMhz() => $_clearField(27);
+
+  @$pb.TagNumber(28)
+  $core.bool get deviceGpsEnabled => $_getBF(26);
+  @$pb.TagNumber(28)
+  set deviceGpsEnabled($core.bool value) => $_setBool(26, value);
+  @$pb.TagNumber(28)
+  $core.bool hasDeviceGpsEnabled() => $_has(26);
+  @$pb.TagNumber(28)
+  void clearDeviceGpsEnabled() => $_clearField(28);
 }
 
 class ScriptConfig extends $pb.GeneratedMessage {

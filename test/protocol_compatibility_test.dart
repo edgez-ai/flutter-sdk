@@ -139,7 +139,8 @@ void main() {
     expect(arguments['sdkReleaseSignatureBytes'], 0);
   });
 
-  test('release credential signs compatibility and release identity', () {
+  test('release metadata keeps compatibility and release identity', () {
+    expect(EdgezSdkReleaseCredential.current.signature, isEmpty);
     expect(
       _testReleaseCredential.signingPayload,
       'EDGEZ-FLUTTER-SDK-RELEASE-V1:'
@@ -156,6 +157,7 @@ void main() {
       beaconUnicast: 0x123456789abc,
       deviceType: 'sensor',
       sleepModeEnabled: true,
+      deviceGpsEnabled: true,
       meshFrequencyKhz: 915000,
       meshBandwidthMhz: 4,
     );
@@ -170,6 +172,7 @@ void main() {
     expect(packet.deviceSettings.beaconUnicast.toInt(), 0x123456789abc);
     expect(packet.deviceSettings.deviceType, DeviceType.DEVICE_TYPE_SENSOR);
     expect(packet.deviceSettings.sleepModeEnabled, isTrue);
+    expect(packet.deviceSettings.deviceGpsEnabled, isTrue);
     expect(packet.deviceSettings.meshFrequencyKhz, 915000);
     expect(packet.deviceSettings.meshBandwidthMhz, 4);
     expect(

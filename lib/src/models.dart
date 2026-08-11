@@ -268,6 +268,7 @@ class EdgezBeaconConfig {
     this.intervalSeconds = 30,
     this.marker = 'blue',
     this.shareLocation = false,
+    this.useDeviceGps = false,
     this.latitude,
     this.longitude,
     this.locationTimestampMs = 0,
@@ -276,6 +277,7 @@ class EdgezBeaconConfig {
   final int intervalSeconds;
   final String marker;
   final bool shareLocation;
+  final bool useDeviceGps;
   final double? latitude;
   final double? longitude;
   final int locationTimestampMs;
@@ -286,6 +288,7 @@ class EdgezBeaconConfig {
         'intervalSeconds': intervalSeconds,
         'marker': marker,
         'shareLocation': shareLocation,
+        'useDeviceGps': useDeviceGps,
         'latitude': latitude,
         'longitude': longitude,
         'locationTimestampMs': locationTimestampMs,
@@ -333,6 +336,7 @@ class EdgezDeviceSettings {
     this.beaconUnicast = 0,
     this.deviceType = 'relay',
     this.sleepModeEnabled = false,
+    this.deviceGpsEnabled = false,
     this.meshFrequencyKhz = 0,
     this.meshBandwidthMhz = 0,
     this.userIdHigh = 0,
@@ -360,6 +364,7 @@ class EdgezDeviceSettings {
   final int beaconUnicast;
   final String deviceType;
   final bool sleepModeEnabled;
+  final bool deviceGpsEnabled;
   final int meshFrequencyKhz;
   final int meshBandwidthMhz;
   final int userIdHigh;
@@ -387,6 +392,7 @@ class EdgezDeviceSettings {
         'beaconUnicast': beaconUnicast,
         'deviceType': deviceType,
         'sleepModeEnabled': sleepModeEnabled,
+        'deviceGpsEnabled': deviceGpsEnabled,
         'meshFrequencyKhz': meshFrequencyKhz,
         'meshBandwidthMhz': meshBandwidthMhz,
         'userIdHigh': userIdHigh,
@@ -394,6 +400,37 @@ class EdgezDeviceSettings {
         'userPublicKey': userPublicKey,
         'userPrivateKey': userPrivateKey,
       };
+
+  EdgezDeviceSettings copyWith({bool? deviceGpsEnabled}) {
+    return EdgezDeviceSettings(
+      deviceModeEnabled: deviceModeEnabled,
+      meshId: meshId,
+      shareLocation: shareLocation,
+      userName: userName,
+      marker: marker,
+      beaconIntervalSeconds: beaconIntervalSeconds,
+      maxHop: maxHop,
+      latitude: latitude,
+      longitude: longitude,
+      geoFenceName: geoFenceName,
+      geoIndex: geoIndex,
+      uartI2cSensorType: uartI2cSensorType,
+      rs485SensorType: rs485SensorType,
+      passphrase: passphrase,
+      upstreamWifiSsid: upstreamWifiSsid,
+      upstreamWifiPassphrase: upstreamWifiPassphrase,
+      beaconUnicast: beaconUnicast,
+      deviceType: deviceType,
+      sleepModeEnabled: sleepModeEnabled,
+      deviceGpsEnabled: deviceGpsEnabled ?? this.deviceGpsEnabled,
+      meshFrequencyKhz: meshFrequencyKhz,
+      meshBandwidthMhz: meshBandwidthMhz,
+      userIdHigh: userIdHigh,
+      userIdLow: userIdLow,
+      userPublicKey: userPublicKey,
+      userPrivateKey: userPrivateKey,
+    );
+  }
 }
 
 enum EdgezSensorConnector { uartI2c, rs485 }

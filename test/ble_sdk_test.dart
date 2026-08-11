@@ -749,6 +749,52 @@ void main() {
       session.dispose();
     });
 
+    test('session uses a self beacon as the device GPS location', () async {
+      const localNode = 0x112233445566;
+      final session = EdgezMeshSession(sdk: sdk);
+
+      ble.emitPacket(
+        NetworkPacket(
+          status: HaLowInterfaceStatus(macAddress: Int64(localNode)),
+        ),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          deviceSettings: DeviceSettings(
+            action: DeviceSettingsAction.DEVICE_SETTINGS_REPORT,
+            deviceGpsEnabled: true,
+          ),
+        ),
+      );
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(localNode),
+          operation: Operation.RESPONSE,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(10),
+            userIdLow: Int64(20),
+            userName: 'Local GPS',
+            latitude: 59.3293,
+            longitude: 18.0686,
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      expect(session.state.deviceSettings?.deviceGpsEnabled, isTrue);
+      expect(session.state.selfLocation, isNotNull);
+      expect(session.state.selfLocation!.latitude, closeTo(59.3293, 0.001));
+      expect(session.state.selfLocation!.longitude, closeTo(18.0686, 0.001));
+      expect(session.state.nodes, isNot(contains(localNode)));
+
+      await session.setDeviceGpsEnabled(false);
+      final settingsPacket = ble.callsFor('sendPacket').last.packet;
+      expect(settingsPacket.deviceSettings.deviceGpsEnabled, isFalse);
+
+      session.dispose();
+    });
+
     test('session accepts Android-style complete EZ beacon frames', () async {
       final session = EdgezMeshSession(sdk: sdk);
       final packet = NetworkPacket(
