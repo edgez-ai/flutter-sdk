@@ -24,6 +24,7 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   EdgezOrganicMapController? _mapController;
+  String? _availableRegion;
   EdgezMapDownloadUpdate? _downloadUpdate;
   EdgezMapCamera? _latestCamera;
   final Set<String> _downloadRequestedRegions = <String>{};
@@ -86,9 +87,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           );
         } else {
           _downloadUpdate = null;
+          _availableRegion = regionId;
         }
       });
-      if (regionId != null) await _downloadRegion(regionId);
     } on MissingPluginException {
       if (!mounted) return;
       setState(() {
@@ -113,6 +114,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   Future<void> _downloadRegion(String regionId) async {
     if (!_downloadRequestedRegions.add(regionId)) return;
     setState(() {
+      _availableRegion = null;
       _downloadUpdate = EdgezMapDownloadUpdate(
         regionId: regionId,
         status: 'Preparing map download: $regionId',
@@ -130,6 +132,15 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           failed: true,
         );
       });
+    }
+  }
+
+  Future<void> _dismissRegion(String regionId) async {
+    setState(() => _availableRegion = null);
+    try {
+      await _mapController?.dismissDownloadRegion(regionId);
+    } on PlatformException {
+      // Dismissing the prompt should remain a local UI operation on failure.
     }
   }
 
@@ -161,6 +172,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 centerLongitude: widget.camera?.longitude,
                 zoom: widget.camera?.zoom ?? 9,
                 enableMapDownloads: true,
+                useHybridComposition: true,
                 onCameraChanged: (camera) => _latestCamera = camera,
                 onMapCreated: (controller) {
                   _mapController = controller;
@@ -170,11 +182,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   );
                 },
                 onMapRegionAvailable: (regionId) {
-                  unawaited(_downloadRegion(regionId));
+                  if (!mounted) return;
+                  setState(() {
+                    _downloadUpdate = null;
+                    _availableRegion = regionId;
+                  });
                 },
                 onMapDownloadUpdate: (update) {
                   if (!mounted) return;
                   setState(() {
+                    _availableRegion = null;
                     _downloadUpdate = update;
                   });
                 },
@@ -214,6 +231,43 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                             const SizedBox(height: 8),
                             LinearProgressIndicator(value: progress),
                           ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              if (_availableRegion case final regionId?)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 36,
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            'Download map: $regionId?',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 4),
+                          const Text('It will be cached for offline use.'),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: <Widget>[
+                              FilledButton(
+                                onPressed: () => _downloadRegion(regionId),
+                                child: const Text('Download'),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                onPressed: () => _dismissRegion(regionId),
+                                child: const Text('Not now'),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
