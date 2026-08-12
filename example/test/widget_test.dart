@@ -143,6 +143,7 @@ void main() {
               ),
           },
           onOpenProvisioning: () {},
+          onOpenMap: () {},
           onOpenNode: (_) {},
         ),
       ),

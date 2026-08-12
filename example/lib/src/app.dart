@@ -38,6 +38,13 @@ enum AppDestination {
   final IconData selectedIcon;
 }
 
+const _navigationDestinations = <AppDestination>[
+  AppDestination.dashboard,
+  AppDestination.nodes,
+  AppDestination.drivers,
+  AppDestination.settings,
+];
+
 const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
 const _speedHistoryWindow = Duration(minutes: 30);
 const _downloadsChannel = MethodChannel(
@@ -1232,6 +1239,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   sensorSamples: meshState.sensorSamples,
                   dashboardDisplays: dashboardDisplays,
                   onOpenProvisioning: _openProvisioning,
+                  onOpenMap: () => setState(() {
+                    destination = AppDestination.map;
+                    selectedNodeNum = null;
+                  }),
                   onOpenNode: _openNode,
                 )
               : selected.opensConversation
@@ -1310,7 +1321,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                               unawaited(_setDashboardDisplay(display)),
                           onBack: () => setState(() => selectedNodeNum = null),
                         ),
-          AppDestination.map => MapScreen(nodes: meshState.sortedNodes),
+          AppDestination.map => MapScreen(
+              nodes: meshState.sortedNodes,
+              onBack: () => setState(() {
+                destination = AppDestination.dashboard;
+              }),
+            ),
           AppDestination.drivers => DriversScreen(
               drivers: drivers,
               driverStore: driverStore,
@@ -1532,28 +1548,30 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       onCancel: _closeProvisioning,
                       onComplete: _closeProvisioning,
                     )
-                  : Scaffold(
-                      body: body,
-                      bottomNavigationBar: NavigationBar(
-                        selectedIndex:
-                            AppDestination.values.indexOf(destination),
-                        onDestinationSelected: (index) => setState(() {
-                          destination = AppDestination.values[index];
-                          showDebug = false;
-                          if (destination != AppDestination.nodes) {
-                            selectedNodeNum = null;
-                            showTopology = false;
-                          }
-                        }),
-                        destinations: AppDestination.values.map((item) {
-                          return NavigationDestination(
-                            icon: Icon(item.icon),
-                            selectedIcon: Icon(item.selectedIcon),
-                            label: item.label,
-                          );
-                        }).toList(),
-                      ),
-                    ),
+                  : destination == AppDestination.map
+                      ? body
+                      : Scaffold(
+                          body: body,
+                          bottomNavigationBar: NavigationBar(
+                            selectedIndex:
+                                _navigationDestinations.indexOf(destination),
+                            onDestinationSelected: (index) => setState(() {
+                              destination = _navigationDestinations[index];
+                              showDebug = false;
+                              if (destination != AppDestination.nodes) {
+                                selectedNodeNum = null;
+                                showTopology = false;
+                              }
+                            }),
+                            destinations: _navigationDestinations.map((item) {
+                              return NavigationDestination(
+                                icon: Icon(item.icon),
+                                selectedIcon: Icon(item.selectedIcon),
+                                label: item.label,
+                              );
+                            }).toList(),
+                          ),
+                        ),
         );
       },
     );

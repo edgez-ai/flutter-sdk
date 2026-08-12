@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
@@ -27,6 +28,9 @@ import app.organicmaps.sdk.MapController
 import app.organicmaps.sdk.MapRenderingListener
 import app.organicmaps.sdk.MapView
 import app.organicmaps.sdk.OrganicMaps
+import app.organicmaps.sdk.downloader.CountryItem
+import app.organicmaps.sdk.downloader.MapManager
+import app.organicmaps.sdk.util.ConnectionState
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -147,6 +151,11 @@ private class EdgezOrganicMapView(
     private var renderingReady = false
     private var initialCameraApplied = false
     private var locationPermissionGranted = false
+    private val enableMapDownloads = creationParams["enableMapDownloads"] as? Boolean ?: true
+    private val requestedRegions = mutableSetOf<String>()
+    private val dismissedRegions = mutableSetOf<String>()
+    private var pendingRegionId: String? = null
+    private var storageCallbackSlot: Int? = null
     private var nodes = parseNodes(creationParams["nodes"])
     private var centerLatitude = number(creationParams["centerLatitude"])
     private var centerLongitude = number(creationParams["centerLongitude"])
@@ -156,6 +165,13 @@ private class EdgezOrganicMapView(
             if (disposed || !locationPermissionGranted) return
             applyInitialCamera()
             if (!initialCameraApplied) root.postDelayed(this, PHONE_LOCATION_REFRESH_MS)
+        }
+    }
+    private val regionCheck = object : Runnable {
+        override fun run() {
+            if (disposed || !enableMapDownloads) return
+            refreshDownloadPrompt()
+            root.postDelayed(this, REGION_AUTOCACHE_INTERVAL_MS)
         }
     }
 
@@ -180,6 +196,8 @@ private class EdgezOrganicMapView(
         lifecycleOwner?.lifecycle?.addObserver(this)
         engine.initialize(
             onReady = {
+                ConnectionState.INSTANCE.initialize(root.context.applicationContext)
+                runCatching { Framework.nativeRestoreDownloadQueue() }
                 createMap()
                 locationPermissionRequester(::onLocationPermissionResult)
             },
@@ -193,6 +211,9 @@ private class EdgezOrganicMapView(
         disposed = true
         channel.setMethodCallHandler(null)
         root.removeCallbacks(locationPoll)
+        root.removeCallbacks(regionCheck)
+        storageCallbackSlot?.let(MapManager::nativeUnsubscribe)
+        storageCallbackSlot = null
         engine.organicMaps.locationHelper.stop()
         lifecycleOwner?.lifecycle?.removeObserver(this)
         mapController?.let { controller ->
@@ -229,6 +250,20 @@ private class EdgezOrganicMapView(
                 moveCamera()
                 result.success(null)
             }
+            "downloadRegion" -> {
+                val regionId = call.argument<String>("regionId")
+                if (regionId.isNullOrBlank()) {
+                    result.error("invalid_region", "A map region is required", null)
+                } else {
+                    startRegionDownload(regionId)
+                    result.success(null)
+                }
+            }
+            "dismissDownloadRegion" -> {
+                call.argument<String>("regionId")?.let(dismissedRegions::add)
+                pendingRegionId = null
+                result.success(null)
+            }
             else -> result.notImplemented()
         }
     }
@@ -236,6 +271,15 @@ private class EdgezOrganicMapView(
     private fun createMap() {
         if (disposed || mapController != null) return
         val mapView = MapView(root.context)
+        mapView.setOnTouchListener { _, event ->
+            if (enableMapDownloads &&
+                (event.actionMasked == MotionEvent.ACTION_UP ||
+                    event.actionMasked == MotionEvent.ACTION_CANCEL)
+            ) {
+                root.postDelayed({ refreshDownloadPrompt() }, DOWNLOAD_PROMPT_GESTURE_DELAY_MS)
+            }
+            false
+        }
         root.addView(
             mapView,
             0,
@@ -291,6 +335,11 @@ private class EdgezOrganicMapView(
         renderingReady = true
         renderNodes()
         applyInitialCamera()
+        subscribeToMapDownloads()
+        if (enableMapDownloads) {
+            root.removeCallbacks(regionCheck)
+            root.postDelayed(regionCheck, REGION_AUTOCACHE_INITIAL_DELAY_MS)
+        }
     }
 
     private fun renderNodes() {
@@ -368,6 +417,122 @@ private class EdgezOrganicMapView(
         }.maxByOrNull { it.time }
     }
 
+    private fun subscribeToMapDownloads() {
+        if (!enableMapDownloads || storageCallbackSlot != null) return
+        storageCallbackSlot = MapManager.nativeSubscribe(object : MapManager.StorageCallback {
+            override fun onStatusChanged(data: List<MapManager.StorageCallbackData>) {
+                val event = data.lastOrNull() ?: return
+                root.post {
+                    when (event.newStatus) {
+                        CountryItem.STATUS_DONE -> {
+                            pendingRegionId = null
+                            channel.invokeMethod(
+                                "mapDownloadFinished",
+                                mapOf(
+                                    "regionId" to event.countryId,
+                                    "status" to "Offline map cached: ${event.countryId}",
+                                ),
+                            )
+                            mapController?.view?.postInvalidate()
+                        }
+                        CountryItem.STATUS_PROGRESS,
+                        CountryItem.STATUS_ENQUEUED -> channel.invokeMethod(
+                            "mapDownloadProgress",
+                            mapOf(
+                                "regionId" to event.countryId,
+                                "status" to if (event.newStatus == CountryItem.STATUS_ENQUEUED) {
+                                    "Queued map: ${event.countryId}"
+                                } else {
+                                    "Downloading map: ${event.countryId}"
+                                },
+                                "progress" to null,
+                            ),
+                        )
+                        CountryItem.STATUS_FAILED -> {
+                            requestedRegions.remove(event.countryId)
+                            channel.invokeMethod(
+                                "mapDownloadFailed",
+                                mapOf(
+                                    "regionId" to event.countryId,
+                                    "status" to "Map download failed: ${event.countryId}",
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+
+            override fun onProgress(countryId: String, localSize: Long, remoteSize: Long) {
+                val progress = if (remoteSize > 0L) {
+                    (localSize.toDouble() / remoteSize.toDouble()).coerceIn(0.0, 1.0)
+                } else {
+                    null
+                }
+                root.post {
+                    channel.invokeMethod(
+                        "mapDownloadProgress",
+                        mapOf(
+                            "regionId" to countryId,
+                            "status" to if (progress == null) {
+                                "Downloading map: $countryId"
+                            } else {
+                                "Downloading map: $countryId ${(progress * 100).toInt()}%"
+                            },
+                            "progress" to progress,
+                        ),
+                    )
+                }
+            }
+        })
+    }
+
+    private fun refreshDownloadPrompt() {
+        if (!enableMapDownloads || !renderingReady || !ConnectionState.INSTANCE.isConnected) return
+        val regionId = runCatching {
+            if (Framework.nativeGetDrawScale() < MIN_DOWNLOAD_PROMPT_ZOOM ||
+                Framework.nativeIsDownloadedMapAtScreenCenter()
+            ) {
+                return@runCatching null
+            }
+            val center = Framework.nativeGetScreenRectCenter()
+            val latitude = center.getOrNull(0) ?: return@runCatching null
+            val longitude = center.getOrNull(1) ?: return@runCatching null
+            MapManager.nativeFindCountry(latitude, longitude)?.takeIf(String::isNotBlank)
+        }.getOrNull() ?: return
+        if (regionId == pendingRegionId ||
+            regionId in requestedRegions ||
+            regionId in dismissedRegions
+        ) {
+            return
+        }
+        pendingRegionId = regionId
+        channel.invokeMethod("mapRegionAvailable", mapOf("regionId" to regionId))
+    }
+
+    private fun startRegionDownload(regionId: String) {
+        pendingRegionId = null
+        if (!ConnectionState.INSTANCE.isConnected) {
+            channel.invokeMethod(
+                "mapDownloadFailed",
+                mapOf("regionId" to regionId, "status" to "No network connection"),
+            )
+            return
+        }
+        runCatching {
+            if (ConnectionState.INSTANCE.isMobileConnected) MapManager.nativeEnableDownloadOn3g()
+            if (requestedRegions.add(regionId)) MapManager.startDownload(regionId)
+        }.onFailure { error ->
+            requestedRegions.remove(regionId)
+            channel.invokeMethod(
+                "mapDownloadFailed",
+                mapOf(
+                    "regionId" to regionId,
+                    "status" to "Map download failed: ${error.message ?: regionId}",
+                ),
+            )
+        }
+    }
+
     private fun showError(error: Throwable) {
         if (disposed) return
         status.visibility = View.VISIBLE
@@ -422,5 +587,9 @@ private class EdgezOrganicMapView(
     companion object {
         private const val PHONE_LOCATION_REFRESH_MS = 1_000L
         private const val MAP_REFRESH_DELAY_MS = 250L
+        private const val MIN_DOWNLOAD_PROMPT_ZOOM = 9
+        private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
+        private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
+        private const val DOWNLOAD_PROMPT_GESTURE_DELAY_MS = 500L
     }
 }
