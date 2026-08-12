@@ -28,8 +28,9 @@ an `EdgezPlatformTransport` implementation to mock BLE commands and incoming
 events without hardware.
 
 The example app persists nodes, conversations, sensor history, geofences, and
-dashboard preferences in SQLite. Its Map tab displays live nodes that share a
-location, with three Stockholm sample nodes available before mesh data arrives.
+dashboard preferences in SQLite. Its Map tab displays live mesh nodes that
+share a location. Organic Maps uses Android location permission and device
+orientation sensors to render the current position and heading natively.
 
 ## Offline Organic Maps
 

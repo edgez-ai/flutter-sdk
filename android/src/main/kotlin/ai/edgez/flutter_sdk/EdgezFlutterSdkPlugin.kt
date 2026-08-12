@@ -178,6 +178,7 @@ class EdgezFlutterSdkPlugin :
     private var pendingScanResult: MethodChannel.Result? = null
     private var pendingMicrophoneResult: MethodChannel.Result? = null
     private var pendingLocationResult: MethodChannel.Result? = null
+    private val mapLocationPermissionCallbacks = mutableListOf<(Boolean) -> Unit>()
     private var pendingNotificationResult: MethodChannel.Result? = null
     private var voicePlayer: MediaPlayer? = null
     private var voiceRecorder: MediaRecorder? = null
@@ -322,6 +323,7 @@ class EdgezFlutterSdkPlugin :
                 messenger = binding.binaryMessenger,
                 applicationContext = context,
                 activityProvider = { activity },
+                locationPermissionRequester = ::requestMapLocationPermission,
             ),
         )
         methods.setMethodCallHandler(this)
@@ -1568,13 +1570,19 @@ class EdgezFlutterSdkPlugin :
                 return true
             }
             LOCATION_PERMISSION_REQUEST -> {
-                val result = pendingLocationResult ?: return true
+                val result = pendingLocationResult
                 pendingLocationResult = null
-                if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
-                    returnBestKnownLocation(result)
-                } else {
-                    result.error("location_permission_denied", "Location permission denied", null)
+                val granted = grantResults.any { it == PackageManager.PERMISSION_GRANTED }
+                if (result != null) {
+                    if (granted) {
+                        returnBestKnownLocation(result)
+                    } else {
+                        result.error("location_permission_denied", "Location permission denied", null)
+                    }
                 }
+                val callbacks = mapLocationPermissionCallbacks.toList()
+                mapLocationPermissionCallbacks.clear()
+                callbacks.forEach { it(granted) }
                 return true
             }
             NOTIFICATION_PERMISSION_REQUEST -> {
@@ -1614,6 +1622,34 @@ class EdgezFlutterSdkPlugin :
             return
         }
         returnBestKnownLocation(result)
+    }
+
+    private fun requestMapLocationPermission(onResult: (Boolean) -> Unit) {
+        val hasFine = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasFine || hasCoarse) {
+            onResult(true)
+            return
+        }
+        val currentActivity = activity
+        if (currentActivity == null) {
+            onResult(false)
+            return
+        }
+        mapLocationPermissionCallbacks += onResult
+        currentActivity.requestPermissions(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            ),
+            LOCATION_PERMISSION_REQUEST,
+        )
     }
 
     @SuppressLint("MissingPermission")

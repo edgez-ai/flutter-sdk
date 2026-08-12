@@ -46,7 +46,7 @@ class EdgezOrganicMapController {
   Future<void> setCamera({
     required double latitude,
     required double longitude,
-    int zoom = 12,
+    int zoom = 9,
   }) {
     assert(latitude >= -90 && latitude <= 90);
     assert(longitude >= -180 && longitude <= 180);
@@ -62,22 +62,27 @@ class EdgezOrganicMapController {
 /// Native Organic Maps view backed by the EdgeZ offline Android library.
 ///
 /// The map assets are packaged in the Android application, so rendering and
-/// the supplied node markers work without an internet connection.
+/// the supplied node markers work without an internet connection. When no
+/// explicit center is supplied, the initial camera uses the device location,
+/// or the first node if location permission is unavailable.
 class EdgezOrganicMap extends StatefulWidget {
   const EdgezOrganicMap({
     required this.nodes,
-    this.centerLatitude = 59.3293,
-    this.centerLongitude = 18.0686,
-    this.zoom = 12,
+    this.centerLatitude,
+    this.centerLongitude,
+    this.zoom = 9,
     this.onMapCreated,
     super.key,
-  })  : assert(centerLatitude >= -90 && centerLatitude <= 90),
-        assert(centerLongitude >= -180 && centerLongitude <= 180),
+  })  : assert(centerLatitude == null ||
+            (centerLatitude >= -90 && centerLatitude <= 90)),
+        assert(centerLongitude == null ||
+            (centerLongitude >= -180 && centerLongitude <= 180)),
+        assert((centerLatitude == null) == (centerLongitude == null)),
         assert(zoom >= 1 && zoom <= 20);
 
   final List<EdgezMapNode> nodes;
-  final double centerLatitude;
-  final double centerLongitude;
+  final double? centerLatitude;
+  final double? centerLongitude;
   final int zoom;
   final ValueChanged<EdgezOrganicMapController>? onMapCreated;
 
@@ -99,11 +104,15 @@ class _EdgezOrganicMapState extends State<EdgezOrganicMap> {
     if (oldWidget.centerLatitude != widget.centerLatitude ||
         oldWidget.centerLongitude != widget.centerLongitude ||
         oldWidget.zoom != widget.zoom) {
-      controller.setCamera(
-        latitude: widget.centerLatitude,
-        longitude: widget.centerLongitude,
-        zoom: widget.zoom,
-      );
+      final latitude = widget.centerLatitude;
+      final longitude = widget.centerLongitude;
+      if (latitude != null && longitude != null) {
+        controller.setCamera(
+          latitude: latitude,
+          longitude: longitude,
+          zoom: widget.zoom,
+        );
+      }
     }
   }
 
@@ -119,7 +128,7 @@ class _EdgezOrganicMapState extends State<EdgezOrganicMap> {
     }
     return AndroidView(
       viewType: 'edgez_flutter_sdk/organic_map',
-      creationParams: <String, Object>{
+      creationParams: <String, Object?>{
         'nodes':
             widget.nodes.map((node) => node.toMap()).toList(growable: false),
         'centerLatitude': widget.centerLatitude,
