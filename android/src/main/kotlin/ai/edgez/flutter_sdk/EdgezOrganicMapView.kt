@@ -151,7 +151,7 @@ private class EdgezOrganicMapView(
     private var renderingReady = false
     private var initialCameraApplied = false
     private var locationPermissionGranted = false
-    private val enableMapDownloads = creationParams["enableMapDownloads"] as? Boolean ?: true
+    private val enableMapDownloads = creationParams["enableMapDownloads"] as? Boolean ?: false
     private val requestedRegions = mutableSetOf<String>()
     private val dismissedRegions = mutableSetOf<String>()
     private var pendingRegionId: String? = null
@@ -264,6 +264,7 @@ private class EdgezOrganicMapView(
                 pendingRegionId = null
                 result.success(null)
             }
+            "getCamera" -> result.success(readCurrentCamera())
             else -> result.notImplemented()
         }
     }
@@ -272,11 +273,16 @@ private class EdgezOrganicMapView(
         if (disposed || mapController != null) return
         val mapView = MapView(root.context)
         mapView.setOnTouchListener { _, event ->
-            if (enableMapDownloads &&
-                (event.actionMasked == MotionEvent.ACTION_UP ||
-                    event.actionMasked == MotionEvent.ACTION_CANCEL)
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
             ) {
-                root.postDelayed({ refreshDownloadPrompt() }, DOWNLOAD_PROMPT_GESTURE_DELAY_MS)
+                root.postDelayed(
+                    {
+                        notifyCameraChanged()
+                        if (enableMapDownloads) refreshDownloadPrompt()
+                    },
+                    DOWNLOAD_PROMPT_GESTURE_DELAY_MS,
+                )
             }
             false
         }
@@ -390,7 +396,28 @@ private class EdgezOrganicMapView(
         Framework.nativeZoomToPoint(latitude, longitude, zoom, false)
         controller.updateCompassOffset(0, 0)
         controller.view.postInvalidate()
+        root.post { notifyCameraChanged() }
     }
+
+    private fun notifyCameraChanged() {
+        if (disposed || !renderingReady) return
+        readCurrentCamera()?.let { camera ->
+            channel.invokeMethod("mapCameraChanged", camera)
+        }
+    }
+
+    private fun readCurrentCamera(): Map<String, Any>? = runCatching {
+            val center = Framework.nativeGetScreenRectCenter()
+            val latitude = center.getOrNull(0) ?: return@runCatching null
+            val longitude = center.getOrNull(1) ?: return@runCatching null
+            val currentZoom = Framework.nativeGetDrawScale()
+            if (currentZoom < 1) return@runCatching null
+            mapOf(
+                "latitude" to latitude,
+                "longitude" to longitude,
+                "zoom" to currentZoom,
+            )
+        }.getOrNull()
 
     @SuppressLint("MissingPermission")
     private fun currentPhoneLocation(): Location? {
@@ -487,7 +514,7 @@ private class EdgezOrganicMapView(
     }
 
     private fun refreshDownloadPrompt() {
-        if (!enableMapDownloads || !renderingReady || !ConnectionState.INSTANCE.isConnected) return
+        if (!enableMapDownloads || !renderingReady) return
         val regionId = runCatching {
             if (Framework.nativeGetDrawScale() < MIN_DOWNLOAD_PROMPT_ZOOM ||
                 Framework.nativeIsDownloadedMapAtScreenCenter()
@@ -511,13 +538,6 @@ private class EdgezOrganicMapView(
 
     private fun startRegionDownload(regionId: String) {
         pendingRegionId = null
-        if (!ConnectionState.INSTANCE.isConnected) {
-            channel.invokeMethod(
-                "mapDownloadFailed",
-                mapOf("regionId" to regionId, "status" to "No network connection"),
-            )
-            return
-        }
         runCatching {
             if (ConnectionState.INSTANCE.isMobileConnected) MapManager.nativeEnableDownloadOn3g()
             if (requestedRegions.add(regionId)) MapManager.startDownload(regionId)

@@ -17,6 +17,7 @@ class DashboardScreen extends StatelessWidget {
     required this.dashboardDisplays,
     required this.onOpenProvisioning,
     required this.onOpenMap,
+    required this.mapCamera,
     required this.onOpenNode,
     super.key,
   });
@@ -28,6 +29,7 @@ class DashboardScreen extends StatelessWidget {
   final Map<String, ExampleDashboardDisplay> dashboardDisplays;
   final VoidCallback onOpenProvisioning;
   final VoidCallback onOpenMap;
+  final EdgezMapCamera? mapCamera;
   final ValueChanged<EdgezMeshNode> onOpenNode;
 
   @override
@@ -75,7 +77,11 @@ class DashboardScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          DashboardMapPreview(nodes: users, onOpenMap: onOpenMap),
+          DashboardMapPreview(
+            nodes: users,
+            camera: mapCamera,
+            onOpenMap: onOpenMap,
+          ),
           const SizedBox(height: 16),
           Text('Visualization widgets',
               style: Theme.of(context).textTheme.titleMedium),

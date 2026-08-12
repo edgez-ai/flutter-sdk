@@ -33,6 +33,36 @@ class EdgezMapNode {
       };
 }
 
+@immutable
+class EdgezMapDownloadUpdate {
+  const EdgezMapDownloadUpdate({
+    required this.regionId,
+    required this.status,
+    this.progress,
+    this.finished = false,
+    this.failed = false,
+  });
+
+  final String regionId;
+  final String status;
+  final double? progress;
+  final bool finished;
+  final bool failed;
+}
+
+@immutable
+class EdgezMapCamera {
+  const EdgezMapCamera({
+    required this.latitude,
+    required this.longitude,
+    required this.zoom,
+  });
+
+  final double latitude;
+  final double longitude;
+  final int zoom;
+}
+
 /// Controls an [EdgezOrganicMap] after its Android platform view is created.
 class EdgezOrganicMapController {
   EdgezOrganicMapController._(
@@ -58,6 +88,19 @@ class EdgezOrganicMapController {
       _channel.invokeMethod<void>('dismissDownloadRegion', <String, Object>{
         'regionId': regionId,
       });
+
+  Future<EdgezMapCamera?> getCamera() async {
+    final map = await _channel.invokeMapMethod<String, dynamic>('getCamera');
+    final latitude = (map?['latitude'] as num?)?.toDouble();
+    final longitude = (map?['longitude'] as num?)?.toDouble();
+    final zoom = (map?['zoom'] as num?)?.toInt();
+    if (latitude == null || longitude == null || zoom == null) return null;
+    return EdgezMapCamera(
+      latitude: latitude,
+      longitude: longitude,
+      zoom: zoom,
+    );
+  }
 
   Future<void> setCamera({
     required double latitude,
@@ -87,8 +130,11 @@ class EdgezOrganicMap extends StatefulWidget {
     this.centerLatitude,
     this.centerLongitude,
     this.zoom = 9,
-    this.enableMapDownloads = true,
+    this.enableMapDownloads = false,
     this.useHybridComposition = false,
+    this.onMapRegionAvailable,
+    this.onMapDownloadUpdate,
+    this.onCameraChanged,
     this.onMapCreated,
     super.key,
   })  : assert(centerLatitude == null ||
@@ -102,12 +148,18 @@ class EdgezOrganicMap extends StatefulWidget {
   final double? centerLatitude;
   final double? centerLongitude;
   final int zoom;
+
+  /// Enables offline-region discovery and download events for a full map.
+  /// Keep this disabled for embedded previews.
   final bool enableMapDownloads;
 
   /// Uses Android hybrid composition for layouts that clip or scroll the map.
   /// This is recommended for embedded dashboard previews because Organic Maps
   /// renders through a native `SurfaceView`.
   final bool useHybridComposition;
+  final ValueChanged<String>? onMapRegionAvailable;
+  final ValueChanged<EdgezMapDownloadUpdate>? onMapDownloadUpdate;
+  final ValueChanged<EdgezMapCamera>? onCameraChanged;
   final ValueChanged<EdgezOrganicMapController>? onMapCreated;
 
   @override
@@ -116,9 +168,6 @@ class EdgezOrganicMap extends StatefulWidget {
 
 class _EdgezOrganicMapState extends State<EdgezOrganicMap> {
   EdgezOrganicMapController? _controller;
-  String? _availableRegion;
-  String? _downloadStatus;
-  double? _downloadProgress;
 
   @override
   void dispose() {
@@ -131,51 +180,57 @@ class _EdgezOrganicMapState extends State<EdgezOrganicMap> {
     final arguments = call.arguments;
     switch (call.method) {
       case 'mapRegionAvailable':
-        setState(() {
-          _availableRegion = (arguments as Map?)?['regionId'] as String?;
-        });
+        final regionId = (arguments as Map?)?['regionId'] as String?;
+        if (regionId != null) widget.onMapRegionAvailable?.call(regionId);
         return null;
       case 'mapDownloadProgress':
         final map = arguments as Map?;
-        setState(() {
-          _availableRegion = null;
-          _downloadStatus = map?['status'] as String?;
-          _downloadProgress = (map?['progress'] as num?)?.toDouble();
-        });
+        widget.onMapDownloadUpdate?.call(
+          EdgezMapDownloadUpdate(
+            regionId: map?['regionId'] as String? ?? '',
+            status: map?['status'] as String? ?? 'Downloading map',
+            progress: (map?['progress'] as num?)?.toDouble(),
+          ),
+        );
         return null;
       case 'mapDownloadFinished':
-        setState(() {
-          _availableRegion = null;
-          _downloadStatus = (arguments as Map?)?['status'] as String?;
-          _downloadProgress = 1;
-        });
+        final map = arguments as Map?;
+        widget.onMapDownloadUpdate?.call(
+          EdgezMapDownloadUpdate(
+            regionId: map?['regionId'] as String? ?? '',
+            status: map?['status'] as String? ?? 'Offline map cached',
+            progress: 1,
+            finished: true,
+          ),
+        );
         return null;
       case 'mapDownloadFailed':
-        setState(() {
-          _downloadStatus = (arguments as Map?)?['status'] as String?;
-          _downloadProgress = null;
-        });
+        final map = arguments as Map?;
+        widget.onMapDownloadUpdate?.call(
+          EdgezMapDownloadUpdate(
+            regionId: map?['regionId'] as String? ?? '',
+            status: map?['status'] as String? ?? 'Map download failed',
+            failed: true,
+          ),
+        );
+        return null;
+      case 'mapCameraChanged':
+        final map = arguments as Map?;
+        final latitude = (map?['latitude'] as num?)?.toDouble();
+        final longitude = (map?['longitude'] as num?)?.toDouble();
+        final zoom = (map?['zoom'] as num?)?.toInt();
+        if (latitude != null && longitude != null && zoom != null) {
+          widget.onCameraChanged?.call(
+            EdgezMapCamera(
+              latitude: latitude,
+              longitude: longitude,
+              zoom: zoom,
+            ),
+          );
+        }
         return null;
     }
     return null;
-  }
-
-  void _downloadAvailableRegion() {
-    final region = _availableRegion;
-    if (region == null) return;
-    setState(() {
-      _availableRegion = null;
-      _downloadStatus = 'Preparing map download: $region';
-      _downloadProgress = null;
-    });
-    _controller?.downloadRegion(region);
-  }
-
-  void _dismissAvailableRegion() {
-    final region = _availableRegion;
-    if (region == null) return;
-    setState(() => _availableRegion = null);
-    _controller?.dismissDownloadRegion(region);
   }
 
   @override
@@ -230,70 +285,7 @@ class _EdgezOrganicMapState extends State<EdgezOrganicMap> {
         widget.onMapCreated?.call(controller);
       },
     );
-    if (!widget.enableMapDownloads) return mapView;
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        mapView,
-        if (_downloadStatus case final status?)
-          Positioned(
-            top: 12,
-            left: 12,
-            right: 12,
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(status),
-                    if (_downloadProgress case final progress?) ...<Widget>[
-                      const SizedBox(height: 8),
-                      LinearProgressIndicator(value: progress),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        if (_availableRegion case final region?)
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text('Download map: $region?',
-                        style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: 4),
-                    const Text('It will be cached for offline use.'),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: <Widget>[
-                        FilledButton(
-                          onPressed: _downloadAvailableRegion,
-                          child: const Text('Download'),
-                        ),
-                        const SizedBox(width: 8),
-                        TextButton(
-                          onPressed: _dismissAvailableRegion,
-                          child: const Text('Not now'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
+    return mapView;
   }
 }
 

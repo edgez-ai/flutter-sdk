@@ -103,6 +103,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   bool otaInstallInProgress = false;
   String otaMessage = '';
   String locationMessage = '';
+  EdgezMapCamera? mapCamera;
 
   String meshCountry = 'US';
   String meshId = 'edgez';
@@ -1243,6 +1244,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                     destination = AppDestination.map;
                     selectedNodeNum = null;
                   }),
+                  mapCamera: mapCamera,
                   onOpenNode: _openNode,
                 )
               : selected.opensConversation
@@ -1323,6 +1325,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                         ),
           AppDestination.map => MapScreen(
               nodes: meshState.sortedNodes,
+              camera: mapCamera,
+              onCameraChanged: (camera) {
+                mapCamera = camera;
+              },
               onBack: () => setState(() {
                 destination = AppDestination.dashboard;
               }),
