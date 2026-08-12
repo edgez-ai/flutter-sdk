@@ -26,6 +26,7 @@ import androidx.lifecycle.LifecycleOwner
 import app.organicmaps.sdk.Framework
 import app.organicmaps.sdk.MapController
 import app.organicmaps.sdk.MapRenderingListener
+import app.organicmaps.sdk.MapStyle
 import app.organicmaps.sdk.MapView
 import app.organicmaps.sdk.OrganicMaps
 import app.organicmaps.sdk.downloader.CountryItem
@@ -266,7 +267,62 @@ private class EdgezOrganicMapView(
             }
             "findDownloadableRegion" -> result.success(findDownloadableRegion())
             "getCamera" -> result.success(readCurrentCamera())
+            "setPerspective3d" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: false
+                runMapSetting(result) {
+                    Framework.nativeSet3dMode(enabled, enabled)
+                }
+            }
+            "setMapTheme" -> {
+                val theme = call.argument<String>("theme")
+                runMapSetting(result) {
+                    MapStyle.set(if (theme == "night") MapStyle.Dark else MapStyle.Clear)
+                }
+            }
+            "setSatelliteMode" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: false
+                val tileUrl = call.argument<String>("tileUrl").orEmpty()
+                val cacheSizeMb = call.argument<Number>("cacheSizeMb")?.toInt()
+                    ?.coerceIn(16, 2_048) ?: DEFAULT_SATELLITE_CACHE_MB
+                val areaOpacity = call.argument<Number>("areaOpacity")?.toInt()
+                    ?.coerceIn(0, 100) ?: DEFAULT_SATELLITE_AREA_OPACITY
+                if (enabled && !Framework.nativeIsWellFormedBackgroundTilesUrl(tileUrl)) {
+                    result.error(
+                        "invalid_tile_url",
+                        "Satellite URL must use http(s) and contain {z}, {x}, and {y}",
+                        null,
+                    )
+                } else {
+                    runMapSetting(result) {
+                        if (enabled) {
+                            Framework.nativeSetBackgroundTiles(
+                                true,
+                                tileUrl,
+                                cacheSizeMb,
+                                areaOpacity,
+                            )
+                        } else {
+                            Framework.nativeSetBackgroundTilesEnabled(false)
+                        }
+                    }
+                }
+            }
             else -> result.notImplemented()
+        }
+    }
+
+    private fun runMapSetting(result: MethodChannel.Result, action: () -> Unit) {
+        if (!renderingReady) {
+            result.error("map_not_ready", "The map renderer is not ready", null)
+            return
+        }
+        runCatching {
+            action()
+            mapController?.view?.postInvalidate()
+        }.onSuccess {
+            result.success(null)
+        }.onFailure { error ->
+            result.error("map_setting_failed", error.message, null)
         }
     }
 
@@ -633,5 +689,7 @@ private class EdgezOrganicMapView(
         private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
         private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
         private const val DOWNLOAD_PROMPT_GESTURE_DELAY_MS = 500L
+        private const val DEFAULT_SATELLITE_CACHE_MB = 256
+        private const val DEFAULT_SATELLITE_AREA_OPACITY = 35
     }
 }

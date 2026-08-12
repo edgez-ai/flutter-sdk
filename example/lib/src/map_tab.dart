@@ -23,12 +23,22 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
+  static const String _satelliteTileUrl =
+      String.fromEnvironment('EDGEZ_SATELLITE_TILE_URL');
+  static const String _satelliteAttribution = String.fromEnvironment(
+    'EDGEZ_SATELLITE_ATTRIBUTION',
+    defaultValue: 'Satellite imagery provider',
+  );
+
   EdgezOrganicMapController? _mapController;
   String? _availableRegion;
   EdgezMapDownloadUpdate? _downloadUpdate;
   EdgezMapCamera? _latestCamera;
   final Set<String> _downloadRequestedRegions = <String>{};
   bool _closing = false;
+  bool _is3d = false;
+  bool _isNight = false;
+  bool _isSatellite = false;
 
   @override
   void initState() {
@@ -144,6 +154,55 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _set3d(bool enabled) async {
+    try {
+      await _mapController?.setPerspective3d(enabled);
+      if (mounted) setState(() => _is3d = enabled);
+    } on PlatformException catch (error) {
+      _showMapSettingError(error);
+    }
+  }
+
+  Future<void> _setNight(bool enabled) async {
+    try {
+      await _mapController?.setMapTheme(
+        enabled ? EdgezMapTheme.night : EdgezMapTheme.day,
+      );
+      if (mounted) setState(() => _isNight = enabled);
+    } on PlatformException catch (error) {
+      _showMapSettingError(error);
+    }
+  }
+
+  Future<void> _setSatellite(bool enabled) async {
+    if (enabled && _satelliteTileUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Set EDGEZ_SATELLITE_TILE_URL to an XYZ {z}/{x}/{y} imagery URL.',
+          ),
+        ),
+      );
+      return;
+    }
+    try {
+      await _mapController?.setSatelliteMode(
+        enabled: enabled,
+        tileUrl: _satelliteTileUrl,
+      );
+      if (mounted) setState(() => _isSatellite = enabled);
+    } on PlatformException catch (error) {
+      _showMapSettingError(error);
+    }
+  }
+
+  void _showMapSettingError(PlatformException error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error.message ?? 'Unable to change map view')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final positionedNodes = widget.nodes
@@ -203,6 +262,36 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   onPressed: _closeMap,
                   tooltip: 'Close map',
                   icon: const Icon(Icons.close),
+                ),
+              ),
+              Positioned(
+                top: 72,
+                right: 12,
+                child: Column(
+                  children: <Widget>[
+                    _MapViewButton(
+                      selected: _is3d,
+                      tooltip: _is3d ? 'Switch to 2D' : 'Switch to 3D',
+                      label: _is3d ? '3D' : '2D',
+                      onPressed: () => _set3d(!_is3d),
+                    ),
+                    const SizedBox(height: 8),
+                    _MapViewButton(
+                      selected: _isNight,
+                      tooltip: _isNight ? 'Use day map' : 'Use night map',
+                      icon: _isNight ? Icons.dark_mode : Icons.light_mode,
+                      onPressed: () => _setNight(!_isNight),
+                    ),
+                    const SizedBox(height: 8),
+                    _MapViewButton(
+                      selected: _isSatellite,
+                      tooltip: _isSatellite
+                          ? 'Use standard map'
+                          : 'Use satellite imagery',
+                      icon: _isSatellite ? Icons.map : Icons.satellite_alt,
+                      onPressed: () => _setSatellite(!_isSatellite),
+                    ),
+                  ],
                 ),
               ),
               Positioned(
@@ -279,8 +368,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 bottom: 8,
                 child: Text(
                   positionedNodes.isEmpty
-                      ? 'No mesh nodes are sharing a location · Map data © OpenStreetMap contributors'
-                      : '${positionedNodes.length} mesh nodes · Map data © OpenStreetMap contributors',
+                      ? 'No mesh nodes are sharing a location · ${_mapAttribution()}'
+                      : '${positionedNodes.length} mesh nodes · ${_mapAttribution()}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     shadows: const <Shadow>[
                       Shadow(color: Colors.white, blurRadius: 4),
@@ -294,6 +383,43 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       ),
     );
   }
+
+  String _mapAttribution() => _isSatellite
+      ? 'Map data © OpenStreetMap contributors · $_satelliteAttribution'
+      : 'Map data © OpenStreetMap contributors';
+}
+
+class _MapViewButton extends StatelessWidget {
+  const _MapViewButton({
+    required this.selected,
+    required this.tooltip,
+    required this.onPressed,
+    this.icon,
+    this.label,
+  });
+
+  final bool selected;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final IconData? icon;
+  final String? label;
+
+  @override
+  Widget build(BuildContext context) => IconButton.filled(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        style: IconButton.styleFrom(
+          backgroundColor: selected
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          foregroundColor: selected
+              ? Theme.of(context).colorScheme.onPrimary
+              : Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        icon: label == null
+            ? Icon(icon)
+            : Text(label!, style: const TextStyle(fontWeight: FontWeight.bold)),
+      );
 }
 
 class DashboardMapPreview extends StatelessWidget {

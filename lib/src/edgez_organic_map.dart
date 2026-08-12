@@ -65,6 +65,9 @@ class EdgezMapCamera {
   final int zoom;
 }
 
+/// Color theme used by the Organic Maps vector layer.
+enum EdgezMapTheme { day, night }
+
 /// Controls an [EdgezOrganicMap] after its Android platform view is created.
 class EdgezOrganicMapController {
   EdgezOrganicMapController._(
@@ -111,6 +114,38 @@ class EdgezOrganicMapController {
       'latitude': latitude,
       'longitude': longitude,
       'zoom': zoom,
+    });
+  }
+
+  /// Enables a tilted perspective with 3D buildings when [enabled] is true.
+  Future<void> setPerspective3d(bool enabled) =>
+      _channel.invokeMethod<void>('setPerspective3d', <String, Object>{
+        'enabled': enabled,
+      });
+
+  Future<void> setMapTheme(EdgezMapTheme theme) =>
+      _channel.invokeMethod<void>('setMapTheme', <String, Object>{
+        'theme': theme.name,
+      });
+
+  /// Switches between the standard vector map and custom XYZ imagery.
+  ///
+  /// [tileUrl] must be an HTTP(S) template containing `{z}`, `{x}`, and `{y}`.
+  /// The application is responsible for permission to use the imagery and for
+  /// displaying the provider's required attribution.
+  Future<void> setSatelliteMode({
+    required bool enabled,
+    String? tileUrl,
+    int cacheSizeMb = 256,
+    int areaOpacity = 35,
+  }) {
+    assert(cacheSizeMb >= 16 && cacheSizeMb <= 2048);
+    assert(areaOpacity >= 0 && areaOpacity <= 100);
+    return _channel.invokeMethod<void>('setSatelliteMode', <String, Object?>{
+      'enabled': enabled,
+      'tileUrl': tileUrl,
+      'cacheSizeMb': cacheSizeMb,
+      'areaOpacity': areaOpacity,
     });
   }
 }
