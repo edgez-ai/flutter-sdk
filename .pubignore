@@ -6,6 +6,7 @@
 /.codex/
 /android/.gradle/
 /build/
+/tools/
 /example/.dart_tool/
 /example/.idea/
 /example/android/.gradle/
