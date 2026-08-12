@@ -148,6 +148,16 @@ class EdgezOrganicMapController {
       'areaOpacity': areaOpacity,
     });
   }
+
+  /// Uses an MBTiles database bundled in the Android host application's assets.
+  Future<void> setBundledSatelliteMode({
+    required bool enabled,
+    required String assetName,
+  }) =>
+      _channel.invokeMethod<void>('setBundledSatelliteMode', <String, Object>{
+        'enabled': enabled,
+        'assetName': assetName,
+      });
 }
 
 /// Native Organic Maps view backed by the EdgeZ offline Android library.

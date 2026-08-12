@@ -23,12 +23,8 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
-  static const String _satelliteTileUrl =
-      String.fromEnvironment('EDGEZ_SATELLITE_TILE_URL');
-  static const String _satelliteAttribution = String.fromEnvironment(
-    'EDGEZ_SATELLITE_ATTRIBUTION',
-    defaultValue: 'Satellite imagery provider',
-  );
+  static const String _satelliteAttribution =
+      'Sentinel-2 cloudless by EOX (modified Copernicus 2016), CC BY 4.0';
 
   EdgezOrganicMapController? _mapController;
   String? _availableRegion;
@@ -175,20 +171,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _setSatellite(bool enabled) async {
-    if (enabled && _satelliteTileUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Set EDGEZ_SATELLITE_TILE_URL to an XYZ {z}/{x}/{y} imagery URL.',
-          ),
-        ),
-      );
-      return;
-    }
     try {
-      await _mapController?.setSatelliteMode(
+      await _mapController?.setBundledSatelliteMode(
         enabled: enabled,
-        tileUrl: _satelliteTileUrl,
+        assetName: 'stockholm_satellite.mbtiles',
       );
       if (mounted) setState(() => _isSatellite = enabled);
     } on PlatformException catch (error) {

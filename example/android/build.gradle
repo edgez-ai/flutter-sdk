@@ -4,7 +4,7 @@ allprojects {
         mavenCentral()
         maven { url 'https://jitpack.io' }
         ivy {
-            url 'https://github.com/edgez-ai/organicmaps/releases/download/v0.0.4'
+            url 'https://github.com/edgez-ai/organicmaps/releases/download/v0.0.5'
             patternLayout {
                 artifact '[artifact]-[revision].[ext]'
             }

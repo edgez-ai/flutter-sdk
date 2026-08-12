@@ -38,6 +38,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
+import java.io.File
 import java.util.Locale
 
 internal class EdgezOrganicMapViewFactory(
@@ -65,12 +66,12 @@ internal class EdgezOrganicMapViewFactory(
 }
 
 private class EdgezOrganicMapsEngine(context: Context) {
+    private val applicationContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val callbacks = mutableListOf<Pair<() -> Unit, (Throwable) -> Unit>>()
     private var initializing = false
 
     val organicMaps: OrganicMaps
-
     init {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
         val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -86,6 +87,26 @@ private class EdgezOrganicMapsEngine(context: Context) {
             versionCode,
             packageInfo.versionName ?: "0.0.0",
         )
+    }
+
+    fun installMbtilesAsset(assetName: String): File {
+        require(!assetName.contains('/') && assetName.endsWith(".mbtiles")) {
+            "Invalid MBTiles asset name"
+        }
+        val directory = File(applicationContext.filesDir, "edgez-mbtiles").apply {
+            check(isDirectory || mkdirs()) { "Cannot create MBTiles directory" }
+        }
+        val destination = File(directory, assetName)
+        if (destination.isFile && destination.length() > 0L) return destination
+
+        val temporary = File(directory, "$assetName.tmp")
+        applicationContext.assets.open(assetName).use { input ->
+            temporary.outputStream().use(input::copyTo)
+        }
+        if (destination.exists() && !destination.delete())
+            error("Cannot replace MBTiles asset")
+        check(temporary.renameTo(destination)) { "Cannot install MBTiles asset" }
+        return destination
     }
 
     @Synchronized
@@ -304,6 +325,24 @@ private class EdgezOrganicMapView(
                         } else {
                             Framework.nativeSetBackgroundTilesEnabled(false)
                         }
+                    }
+                }
+            }
+            "setBundledSatelliteMode" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: false
+                val assetName = call.argument<String>("assetName").orEmpty()
+                runMapSetting(result) {
+                    if (enabled) {
+                        val archive = engine.installMbtilesAsset(assetName)
+                        Framework.nativeSetBackgroundTileSources(
+                            true,
+                            "",
+                            arrayOf(archive.absolutePath),
+                            DEFAULT_SATELLITE_CACHE_MB,
+                            DEFAULT_SATELLITE_AREA_OPACITY,
+                        )
+                    } else {
+                        Framework.nativeSetBackgroundTilesEnabled(false)
                     }
                 }
             }
