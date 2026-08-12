@@ -1,3 +1,12 @@
+## 0.2.0
+
+- Added automatic Android consumer R8/ProGuard rules for the Organic Maps Java
+  API used through JNI.
+- Fixed optimized release builds crashing in
+  `BookmarkManager.nativeLoadBookmarks()` during map initialization.
+- Preserved native entry-point names while allowing the rest of the host app
+  to remain minified and optimized.
+
 ## 0.1.9
 
 - Added the Organic Maps-based Android map widget with mesh-node markers,
