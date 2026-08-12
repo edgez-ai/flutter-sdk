@@ -1,3 +1,17 @@
+## 0.1.9
+
+- Added the Organic Maps-based Android map widget with mesh-node markers,
+  current-position tracking, synchronized embedded/full-screen cameras, and
+  offline map-region downloads.
+- Added 2D/3D perspective and day/night map controls.
+- Updated the Android map library to Organic Maps 0.0.5 and added online XYZ
+  satellite imagery plus direct offline MBTiles support.
+- Added a bundled Stockholm satellite-map demonstration to the example app.
+
+## 0.1.8
+
+- Added mesh speed-test support and related example-app improvements.
+
 ## 0.1.7
 
 - Excluded the local device from SDK node discovery, including topology GPS
