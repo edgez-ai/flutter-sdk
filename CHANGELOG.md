@@ -1,3 +1,10 @@
+## 0.2.1
+
+- Fixed Organic Maps region downloads crashing in minified Android release
+  builds when JNI resolves `HttpClient.runAsync` and OkHttp cancellation.
+- Preserved Java types used in JNI method descriptors and `cancel()` on
+  concrete `okhttp3.Call` implementations without disabling host-app R8.
+
 ## 0.2.0
 
 - Added automatic Android consumer R8/ProGuard rules for the Organic Maps Java
