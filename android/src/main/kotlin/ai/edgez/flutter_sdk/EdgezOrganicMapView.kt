@@ -264,6 +264,7 @@ private class EdgezOrganicMapView(
                 pendingRegionId = null
                 result.success(null)
             }
+            "findDownloadableRegion" -> result.success(findDownloadableRegion())
             "getCamera" -> result.success(readCurrentCamera())
             else -> result.notImplemented()
         }
@@ -521,18 +522,7 @@ private class EdgezOrganicMapView(
     }
 
     private fun refreshDownloadPrompt() {
-        if (!enableMapDownloads || !renderingReady) return
-        val regionId = runCatching {
-            if (Framework.nativeGetDrawScale() < MIN_DOWNLOAD_PROMPT_ZOOM ||
-                Framework.nativeIsDownloadedMapAtScreenCenter()
-            ) {
-                return@runCatching null
-            }
-            val center = Framework.nativeGetScreenRectCenter()
-            val latitude = center.getOrNull(0) ?: return@runCatching null
-            val longitude = center.getOrNull(1) ?: return@runCatching null
-            MapManager.nativeFindCountry(latitude, longitude)?.takeIf(String::isNotBlank)
-        }.getOrNull() ?: return
+        val regionId = findDownloadableRegion() ?: return
         if (regionId == pendingRegionId ||
             regionId in requestedRegions ||
             regionId in dismissedRegions
@@ -543,11 +533,36 @@ private class EdgezOrganicMapView(
         channel.invokeMethod("mapRegionAvailable", mapOf("regionId" to regionId))
     }
 
+    private fun findDownloadableRegion(): String? {
+        if (!enableMapDownloads || !renderingReady) return null
+        return runCatching {
+            if (Framework.nativeGetDrawScale() < MIN_DOWNLOAD_PROMPT_ZOOM ||
+                Framework.nativeIsDownloadedMapAtScreenCenter()
+            ) {
+                return@runCatching null
+            }
+            val center = Framework.nativeGetScreenRectCenter()
+            val latitude = center.getOrNull(0) ?: return@runCatching null
+            val longitude = center.getOrNull(1) ?: return@runCatching null
+            MapManager.nativeFindCountry(latitude, longitude)?.takeIf(String::isNotBlank)
+        }.getOrNull()
+    }
+
     private fun startRegionDownload(regionId: String) {
         pendingRegionId = null
         runCatching {
             if (ConnectionState.INSTANCE.isMobileConnected) MapManager.nativeEnableDownloadOn3g()
-            if (requestedRegions.add(regionId)) MapManager.startDownload(regionId)
+            if (requestedRegions.add(regionId)) {
+                channel.invokeMethod(
+                    "mapDownloadProgress",
+                    mapOf(
+                        "regionId" to regionId,
+                        "status" to "Queued map: $regionId",
+                        "progress" to null,
+                    ),
+                )
+                MapManager.startDownload(regionId)
+            }
         }.onFailure { error ->
             requestedRegions.remove(regionId)
             channel.invokeMethod(

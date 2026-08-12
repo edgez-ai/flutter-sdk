@@ -24,9 +24,9 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   EdgezOrganicMapController? _mapController;
-  String? _availableRegion;
   EdgezMapDownloadUpdate? _downloadUpdate;
   EdgezMapCamera? _latestCamera;
+  final Set<String> _downloadRequestedRegions = <String>{};
   bool _closing = false;
 
   @override
@@ -71,24 +71,66 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _downloadRegion() {
-    final regionId = _availableRegion;
-    if (regionId == null) return;
+  Future<void> _checkDownloadableRegion() async {
+    final controller = _mapController;
+    if (controller == null) return;
+    try {
+      final regionId = await controller.findDownloadableRegion();
+      if (!mounted) return;
+      setState(() {
+        if (regionId == null) {
+          _downloadUpdate = const EdgezMapDownloadUpdate(
+            regionId: '',
+            status:
+                'Zoom in to an uncached region to download its detailed map.',
+          );
+        } else {
+          _downloadUpdate = null;
+        }
+      });
+      if (regionId != null) await _downloadRegion(regionId);
+    } on MissingPluginException {
+      if (!mounted) return;
+      setState(() {
+        _downloadUpdate = const EdgezMapDownloadUpdate(
+          regionId: '',
+          status: 'Rebuild and reinstall the app to enable map downloads.',
+          failed: true,
+        );
+      });
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _downloadUpdate = EdgezMapDownloadUpdate(
+          regionId: '',
+          status: 'Unable to check map region: ${error.message ?? error.code}',
+          failed: true,
+        );
+      });
+    }
+  }
+
+  Future<void> _downloadRegion(String regionId) async {
+    if (!_downloadRequestedRegions.add(regionId)) return;
     setState(() {
-      _availableRegion = null;
       _downloadUpdate = EdgezMapDownloadUpdate(
         regionId: regionId,
         status: 'Preparing map download: $regionId',
       );
     });
-    _mapController?.downloadRegion(regionId);
-  }
-
-  void _dismissRegion() {
-    final regionId = _availableRegion;
-    if (regionId == null) return;
-    setState(() => _availableRegion = null);
-    _mapController?.dismissDownloadRegion(regionId);
+    try {
+      await _mapController?.downloadRegion(regionId);
+    } on PlatformException catch (error) {
+      _downloadRequestedRegions.remove(regionId);
+      if (!mounted) return;
+      setState(() {
+        _downloadUpdate = EdgezMapDownloadUpdate(
+          regionId: regionId,
+          status: 'Map download failed: ${error.message ?? error.code}',
+          failed: true,
+        );
+      });
+    }
   }
 
   @override
@@ -120,14 +162,19 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 zoom: widget.camera?.zoom ?? 9,
                 enableMapDownloads: true,
                 onCameraChanged: (camera) => _latestCamera = camera,
-                onMapCreated: (controller) => _mapController = controller,
+                onMapCreated: (controller) {
+                  _mapController = controller;
+                  Future<void>.delayed(
+                    const Duration(seconds: 1),
+                    _checkDownloadableRegion,
+                  );
+                },
                 onMapRegionAvailable: (regionId) {
-                  if (mounted) setState(() => _availableRegion = regionId);
+                  unawaited(_downloadRegion(regionId));
                 },
                 onMapDownloadUpdate: (update) {
                   if (!mounted) return;
                   setState(() {
-                    _availableRegion = null;
                     _downloadUpdate = update;
                   });
                 },
@@ -141,10 +188,19 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   icon: const Icon(Icons.close),
                 ),
               ),
+              Positioned(
+                top: 12,
+                left: 12,
+                child: IconButton.filled(
+                  onPressed: _checkDownloadableRegion,
+                  tooltip: 'Download offline map',
+                  icon: const Icon(Icons.download_for_offline),
+                ),
+              ),
               if (_downloadUpdate case final update?)
                 Positioned(
                   top: 12,
-                  left: 12,
+                  left: 72,
                   right: 72,
                   child: Card(
                     child: Padding(
@@ -158,43 +214,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                             const SizedBox(height: 8),
                             LinearProgressIndicator(value: progress),
                           ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              if (_availableRegion case final regionId?)
-                Positioned(
-                  left: 12,
-                  right: 12,
-                  bottom: 36,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Text(
-                            'Download map: $regionId?',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: 4),
-                          const Text('It will be cached for offline use.'),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: <Widget>[
-                              FilledButton(
-                                onPressed: _downloadRegion,
-                                child: const Text('Download'),
-                              ),
-                              const SizedBox(width: 8),
-                              TextButton(
-                                onPressed: _dismissRegion,
-                                child: const Text('Not now'),
-                              ),
-                            ],
-                          ),
                         ],
                       ),
                     ),

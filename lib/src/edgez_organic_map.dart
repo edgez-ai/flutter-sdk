@@ -91,6 +91,9 @@ class EdgezOrganicMapController {
         'regionId': regionId,
       });
 
+  Future<String?> findDownloadableRegion() =>
+      _channel.invokeMethod<String>('findDownloadableRegion');
+
   Future<EdgezMapCamera?> getCamera() async {
     final map = await _channel.invokeMapMethod<String, dynamic>('getCamera');
     return _cameraFromMap(map);
