@@ -56,7 +56,9 @@ class EdgezMapCamera {
     required this.latitude,
     required this.longitude,
     required this.zoom,
-  });
+  })  : assert(latitude >= -90 && latitude <= 90),
+        assert(longitude >= -180 && longitude <= 180),
+        assert(zoom >= 1 && zoom <= 20);
 
   final double latitude;
   final double longitude;
@@ -91,15 +93,7 @@ class EdgezOrganicMapController {
 
   Future<EdgezMapCamera?> getCamera() async {
     final map = await _channel.invokeMapMethod<String, dynamic>('getCamera');
-    final latitude = (map?['latitude'] as num?)?.toDouble();
-    final longitude = (map?['longitude'] as num?)?.toDouble();
-    final zoom = (map?['zoom'] as num?)?.toInt();
-    if (latitude == null || longitude == null || zoom == null) return null;
-    return EdgezMapCamera(
-      latitude: latitude,
-      longitude: longitude,
-      zoom: zoom,
-    );
+    return _cameraFromMap(map);
   }
 
   Future<void> setCamera({
@@ -215,19 +209,8 @@ class _EdgezOrganicMapState extends State<EdgezOrganicMap> {
         );
         return null;
       case 'mapCameraChanged':
-        final map = arguments as Map?;
-        final latitude = (map?['latitude'] as num?)?.toDouble();
-        final longitude = (map?['longitude'] as num?)?.toDouble();
-        final zoom = (map?['zoom'] as num?)?.toInt();
-        if (latitude != null && longitude != null && zoom != null) {
-          widget.onCameraChanged?.call(
-            EdgezMapCamera(
-              latitude: latitude,
-              longitude: longitude,
-              zoom: zoom,
-            ),
-          );
-        }
+        final camera = _cameraFromMap(arguments as Map?);
+        if (camera != null) widget.onCameraChanged?.call(camera);
         return null;
     }
     return null;
@@ -287,6 +270,28 @@ class _EdgezOrganicMapState extends State<EdgezOrganicMap> {
     );
     return mapView;
   }
+}
+
+EdgezMapCamera? _cameraFromMap(Map? map) {
+  final latitude = (map?['latitude'] as num?)?.toDouble();
+  final rawLongitude = (map?['longitude'] as num?)?.toDouble();
+  final rawZoom = (map?['zoom'] as num?)?.toInt();
+  if (latitude == null ||
+      rawLongitude == null ||
+      rawZoom == null ||
+      !latitude.isFinite ||
+      !rawLongitude.isFinite ||
+      latitude < -90 ||
+      latitude > 90 ||
+      rawZoom < 1) {
+    return null;
+  }
+  final longitude = ((rawLongitude + 180) % 360 + 360) % 360 - 180;
+  return EdgezMapCamera(
+    latitude: latitude,
+    longitude: longitude,
+    zoom: rawZoom.clamp(1, 20),
+  );
 }
 
 class _OrganicMapsAndroidView extends StatelessWidget {

@@ -407,17 +407,24 @@ private class EdgezOrganicMapView(
     }
 
     private fun readCurrentCamera(): Map<String, Any>? = runCatching {
-            val center = Framework.nativeGetScreenRectCenter()
-            val latitude = center.getOrNull(0) ?: return@runCatching null
-            val longitude = center.getOrNull(1) ?: return@runCatching null
-            val currentZoom = Framework.nativeGetDrawScale()
-            if (currentZoom < 1) return@runCatching null
-            mapOf(
-                "latitude" to latitude,
-                "longitude" to longitude,
-                "zoom" to currentZoom,
-            )
-        }.getOrNull()
+        val center = Framework.nativeGetScreenRectCenter()
+        val latitude = center.getOrNull(0) ?: return@runCatching null
+        val rawLongitude = center.getOrNull(1) ?: return@runCatching null
+        val currentZoom = Framework.nativeGetDrawScale()
+        if (!latitude.isFinite() ||
+            !rawLongitude.isFinite() ||
+            latitude !in -90.0..90.0 ||
+            currentZoom < 1
+        ) {
+            return@runCatching null
+        }
+        val longitude = ((rawLongitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+        mapOf(
+            "latitude" to latitude,
+            "longitude" to longitude,
+            "zoom" to currentZoom.coerceIn(1, 20),
+        )
+    }.getOrNull()
 
     @SuppressLint("MissingPermission")
     private fun currentPhoneLocation(): Location? {
