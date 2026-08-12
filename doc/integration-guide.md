@@ -128,14 +128,6 @@ dedicated `NetworkPacket.location_update` message. Firmware `0.5.5` or newer is
 required. Incoming `(0,0)` coordinates are ignored, so a missing device fix
 cannot overwrite the last valid position.
 
-For hardware with an L76K, set `EdgezBeaconConfig(useDeviceGps: true)` and,
-after `state.deviceSettings` has been read, call
-`session.setDeviceGpsEnabled(true)` when the reported setting is off. The
-session stops sending phone locations while device GPS is selected. Read the
-latest valid fix from `state.selfLocation`; it is populated from the connected
-device's self beacon. If no receiver or fix is available, firmware simply
-omits location until a later acquisition succeeds.
-
 ## 6. Render live state
 
 ```dart
@@ -202,19 +194,16 @@ Provisioning is a separate control flow from normal mesh use:
 1. Disconnect the current device and call `session.beginProvisioning()`.
 2. Scan, select the target, stop scanning, and connect.
 3. Wait for `state.bleReady`.
-4. Call `requestDeviceSettings()` and wait for `state.deviceSettings`; no
-   authorization handshake or license-status validation is required.
-5. Let the user edit settings and create a separate device identity with
+4. Call `authorizeSession()` and wait for an authorized license in
+   `state.status.licenseStatus`.
+5. Call `requestDeviceSettings()` and wait for `state.deviceSettings`.
+6. Let the user edit settings and create a separate device identity with
    `EdgezIdentityStore().createIdentity(...)`.
-6. Call `sendDeviceSettings(settings, identity: deviceIdentity, scripts: ...)`.
-7. Disconnect and call `session.endProvisioning()`.
-
-Set `EdgezDeviceSettings.deviceGpsEnabled` when sending settings to choose the L76K.
-When it is `false`, provisioning may supply static `latitude` and `longitude`;
-when it is `true`, leave those fields unset and let the device acquire fixes.
+7. Call `sendDeviceSettings(settings, identity: deviceIdentity, scripts: ...)`.
+8. Disconnect and call `session.endProvisioning()`.
 
 Use [`provisioning_screen.dart`](../example/lib/src/provisioning_screen.dart) as
-the detailed reference.
+the detailed reference, including timeouts and rejected-license handling.
 
 ## 9. Install and upload sensor drivers
 

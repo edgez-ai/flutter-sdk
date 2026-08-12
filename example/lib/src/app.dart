@@ -16,6 +16,7 @@ import 'drivers_tab.dart';
 import 'example_database.dart';
 import 'models.dart';
 import 'marketplace_driver_install.dart';
+import 'map_tab.dart';
 import 'nodes_tab.dart';
 import 'provisioning_screen.dart';
 import 'settings_tab.dart';
@@ -25,6 +26,7 @@ import 'voice_call_screen.dart';
 enum AppDestination {
   dashboard('Dashboard', Icons.dashboard_outlined, Icons.dashboard),
   nodes('Nodes', Icons.hub_outlined, Icons.hub),
+  map('Map', Icons.map_outlined, Icons.map),
   drivers('Drivers', Icons.usb_outlined, Icons.usb),
   settings('Settings', Icons.bluetooth_connected_outlined,
       Icons.bluetooth_connected);
@@ -35,6 +37,13 @@ enum AppDestination {
   final IconData icon;
   final IconData selectedIcon;
 }
+
+const _navigationDestinations = <AppDestination>[
+  AppDestination.dashboard,
+  AppDestination.nodes,
+  AppDestination.drivers,
+  AppDestination.settings,
+];
 
 const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
 const _speedHistoryWindow = Duration(minutes: 30);
@@ -94,6 +103,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   bool otaInstallInProgress = false;
   String otaMessage = '';
   String locationMessage = '';
+  EdgezMapCamera? mapCamera;
 
   String meshCountry = 'US';
   String meshId = 'edgez';
@@ -112,6 +122,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   String deviceBeaconIntervalSeconds = '10';
   bool deviceShareLocation = false;
   bool deviceGpsEnabled = false;
+  bool? pendingDeviceGpsEnabled;
+  Timer? deviceGpsUpdateTimer;
   EdgezDeviceSettings? observedDeviceSettings;
   EdgezLocation? observedSelfLocation;
   String deviceLatitude = '';
@@ -435,6 +447,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     WidgetsBinding.instance.removeObserver(this);
     unawaited(driverLinkSubscription?.cancel());
     persistDebounce?.cancel();
+    deviceGpsUpdateTimer?.cancel();
     persistenceEnabled = false;
     session.removeListener(_persistSessionSnapshot);
     session.removeListener(_handleCallNotificationState);
@@ -957,13 +970,49 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   void _setDeviceGpsEnabled(bool value) {
-    setState(() => deviceGpsEnabled = value);
+    setState(() {
+      deviceGpsEnabled = value;
+      pendingDeviceGpsEnabled = value;
+    });
+    deviceGpsUpdateTimer?.cancel();
+    deviceGpsUpdateTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted || pendingDeviceGpsEnabled != value) return;
+      final reported = session.state.deviceSettings?.deviceGpsEnabled;
+      setState(() {
+        pendingDeviceGpsEnabled = null;
+        if (reported != null) deviceGpsEnabled = reported;
+      });
+      if (reported != null && reported != value) {
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          const SnackBar(
+              content: Text('Device did not accept the GPS setting')),
+        );
+      }
+    });
+    unawaited(_updateDeviceGpsEnabled(value));
     if (!value) {
       if (deviceModeEnabled && deviceShareLocation) {
         unawaited(_refreshDeviceLocation());
       } else if (!deviceModeEnabled && shareLocation) {
         unawaited(_getBestKnownLocation());
       }
+    }
+  }
+
+  Future<void> _updateDeviceGpsEnabled(bool value) async {
+    try {
+      await session.setDeviceGpsEnabled(value);
+    } catch (error) {
+      if (!mounted || pendingDeviceGpsEnabled != value) return;
+      deviceGpsUpdateTimer?.cancel();
+      final reported = session.state.deviceSettings?.deviceGpsEnabled;
+      setState(() {
+        pendingDeviceGpsEnabled = null;
+        if (reported != null) deviceGpsEnabled = reported;
+      });
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to update device GPS: $error')),
+      );
     }
   }
 
@@ -979,7 +1028,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     if (!mounted) return;
     setState(() {
       if (settings != null) {
-        deviceGpsEnabled = settings.deviceGpsEnabled;
+        final pending = pendingDeviceGpsEnabled;
+        if (pending == null || settings.deviceGpsEnabled == pending) {
+          deviceGpsEnabled = settings.deviceGpsEnabled;
+          if (pending != null) {
+            pendingDeviceGpsEnabled = null;
+            deviceGpsUpdateTimer?.cancel();
+          }
+        }
       }
       if (selfLocation != null) {
         locationMessage = 'Device GPS: '
@@ -1184,6 +1240,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   sensorSamples: meshState.sensorSamples,
                   dashboardDisplays: dashboardDisplays,
                   onOpenProvisioning: _openProvisioning,
+                  onOpenMap: () => setState(() {
+                    destination = AppDestination.map;
+                    selectedNodeNum = null;
+                  }),
+                  mapCamera: mapCamera,
                   onOpenNode: _openNode,
                 )
               : selected.opensConversation
@@ -1262,6 +1323,16 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                               unawaited(_setDashboardDisplay(display)),
                           onBack: () => setState(() => selectedNodeNum = null),
                         ),
+          AppDestination.map => MapScreen(
+              nodes: meshState.sortedNodes,
+              camera: mapCamera,
+              onCameraChanged: (camera) {
+                mapCamera = camera;
+              },
+              onBack: () => setState(() {
+                destination = AppDestination.dashboard;
+              }),
+            ),
           AppDestination.drivers => DriversScreen(
               drivers: drivers,
               driverStore: driverStore,
@@ -1483,28 +1554,30 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       onCancel: _closeProvisioning,
                       onComplete: _closeProvisioning,
                     )
-                  : Scaffold(
-                      body: body,
-                      bottomNavigationBar: NavigationBar(
-                        selectedIndex:
-                            AppDestination.values.indexOf(destination),
-                        onDestinationSelected: (index) => setState(() {
-                          destination = AppDestination.values[index];
-                          showDebug = false;
-                          if (destination != AppDestination.nodes) {
-                            selectedNodeNum = null;
-                            showTopology = false;
-                          }
-                        }),
-                        destinations: AppDestination.values.map((item) {
-                          return NavigationDestination(
-                            icon: Icon(item.icon),
-                            selectedIcon: Icon(item.selectedIcon),
-                            label: item.label,
-                          );
-                        }).toList(),
-                      ),
-                    ),
+                  : destination == AppDestination.map
+                      ? body
+                      : Scaffold(
+                          body: body,
+                          bottomNavigationBar: NavigationBar(
+                            selectedIndex:
+                                _navigationDestinations.indexOf(destination),
+                            onDestinationSelected: (index) => setState(() {
+                              destination = _navigationDestinations[index];
+                              showDebug = false;
+                              if (destination != AppDestination.nodes) {
+                                selectedNodeNum = null;
+                                showTopology = false;
+                              }
+                            }),
+                            destinations: _navigationDestinations.map((item) {
+                              return NavigationDestination(
+                                icon: Icon(item.icon),
+                                selectedIcon: Icon(item.selectedIcon),
+                                label: item.label,
+                              );
+                            }).toList(),
+                          ),
+                        ),
         );
       },
     );

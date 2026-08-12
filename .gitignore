@@ -10,3 +10,4 @@ example/android/build/
 *.keystore
 example/android/key.properties
 /android/.gradle
+.DS_Store

@@ -43,7 +43,7 @@ receive.
 | BLE discovery and connection | `EdgezMeshSession.startBleScan`, `connectBle`, `disconnect` | [`app.dart`](../example/lib/src/app.dart), [`settings_tab.dart`](../example/lib/src/settings_tab.dart) | Discovered devices appear in `state.bleDevices`. |
 | Mesh initialization | `initializeMesh(EdgezMeshConfig)` | [`app.dart`](../example/lib/src/app.dart) | The session remembers config and sends it when the native BLE service reports ready. |
 | Identity and keys | `EdgezIdentityStore` | [`app.dart`](../example/lib/src/app.dart) | Creates and persists an X25519-compatible identity and supports key regeneration. |
-| Mesh status | `state.status`, `state.bleReady` | [`shared_widgets.dart`](../example/lib/src/shared_widgets.dart) | Includes link readiness, firmware version, and local MAC. |
+| Mesh and license status | `state.status`, `state.bleReady` | [`shared_widgets.dart`](../example/lib/src/shared_widgets.dart) | Includes link readiness, firmware version, local MAC, and license state. |
 | Node discovery | `state.nodes`, `state.sortedNodes` | [`nodes_tab.dart`](../example/lib/src/nodes_tab.dart) | Beacon data includes identity, marker, device type, location, and public key when available. |
 | Sensor telemetry | `state.sensorSamples` | [`device_detail_screen.dart`](../example/lib/src/device_detail_screen.dart), [`dashboard_tab.dart`](../example/lib/src/dashboard_tab.dart) | Supports location, environmental, vibration, accelerometer, gyroscope, and binary-length values. |
 | Topology | `state.topologyLinks` | [`topology_screen.dart`](../example/lib/src/topology_screen.dart) | Links expose reporter, peer, last-seen time, and decoded RSSI. |
@@ -51,8 +51,7 @@ receive.
 | Encrypted voice messages | `startVoiceMessage`, `finishVoiceMessage`, `playVoiceMessage` | [`conversation_screen.dart`](../example/lib/src/conversation_screen.dart) | Recording and playback are provided by the Android plugin. |
 | Live voice calls | `startVoiceCall`, `acceptVoiceCall`, `endVoiceCall` | [`voice_call_screen.dart`](../example/lib/src/voice_call_screen.dart) | Dedicated incoming/outgoing/active call UI; accepted calls remain usable over the Android lock screen. |
 | Background notifications | `onIncomingMessage`, `onIncomingCall`, native notification helpers | [`app.dart`](../example/lib/src/app.dart), [`EdgezBleForegroundService.kt`](../android/src/main/kotlin/ai/edgez/flutter_sdk/EdgezBleForegroundService.kt) | Android foreground service, message notifications, and lock-screen call actions; see the [background guide](background-notifications.md). |
-| Device provisioning | `requestDeviceSettings`, `sendDeviceSettings` | [`provisioning_screen.dart`](../example/lib/src/provisioning_screen.dart) | The example implements an eight-step flow without a license handshake or license-status gate. |
-| Optional device GPS | `EdgezDeviceSettings.deviceGpsEnabled`, `setDeviceGpsEnabled`, `state.selfLocation` | [`settings_tab.dart`](../example/lib/src/settings_tab.dart), [`provisioning_screen.dart`](../example/lib/src/provisioning_screen.dart) | Selects a low-duty-cycle L76K instead of static/phone coordinates; the connected device's self beacon supplies the app location. |
+| Device provisioning | `authorizeSession`, `requestDeviceSettings`, `sendDeviceSettings` | [`provisioning_screen.dart`](../example/lib/src/provisioning_screen.dart) | The example implements an eight-step flow and blocks rejected licenses. |
 | Sensor drivers | `EdgezDriverStore`, `sendDeviceSettings(... scripts:)` | [`driver_catalog.dart`](../example/lib/src/driver_catalog.dart), [`drivers_tab.dart`](../example/lib/src/drivers_tab.dart) | SDK storage validates bundles; the host resolves and downloads marketplace content. |
 | Firmware OTA | `isOtaReady`, `performOta`, `abortOta` | [`app.dart`](../example/lib/src/app.dart), [`settings_tab.dart`](../example/lib/src/settings_tab.dart) | Host fetches and validates the manifest/image; SDK performs acknowledged BLE transfer and reports progress. |
 | Cached app data | `restoreCachedMeshData` | [`example_database.dart`](../example/lib/src/example_database.dart) | The example persists nodes, messages, sensor samples, geofences, and dashboard choices in SQLite. Persistence is not part of the SDK. |
@@ -68,9 +67,7 @@ snapshot from `session.state`:
 - `nodes`, `sensorSamples`, and `topologyLinks` describe the discovered mesh.
 - `conversations` and `voiceCall` describe peer communication.
 - `otaReady`, `otaInProgress`, and `otaProgress` describe firmware updates.
-- `deviceSettings` is populated during provisioning and reports whether device
-  GPS is enabled. `selfLocation` contains the latest valid location from the
-  connected device's own beacon.
+- `deviceSettings` is populated during provisioning.
 
 Collections exposed by the state are unmodifiable. Persist or derive data from
 the latest snapshot rather than mutating it.
@@ -81,9 +78,9 @@ the latest snapshot rather than mutating it.
 - The private identity key is stored by `EdgezIdentityStore` using
   `shared_preferences`. Review whether platform-backed secure storage is needed
   for your threat model before production deployment.
-- SDK release metadata remains attached to authorization and mesh
-  initialization for protocol compatibility. Its signature is empty because
-  current firmware does not validate an SDK license key.
+- A signed SDK release credential is attached to authorization and mesh
+  initialization. Applications should use the credential bundled with the SDK;
+  the signing private key must never ship in an app.
 - Marketplace URLs, response identity, bundle fields, and HTTPS images are
   validated by the example host code before a bundle reaches `EdgezDriverStore`.
 

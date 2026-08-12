@@ -28,8 +28,64 @@ an `EdgezPlatformTransport` implementation to mock BLE commands and incoming
 events without hardware.
 
 The example app persists nodes, conversations, sensor history, geofences, and
-dashboard preferences in SQLite. It does not include the map tab or Organic
-Maps dependencies.
+dashboard preferences in SQLite. Its Map tab displays live mesh nodes that
+share a location. Organic Maps uses Android location permission and device
+orientation sensors to render the current position and heading natively.
+
+## Offline Organic Maps
+
+`EdgezOrganicMap` embeds the EdgeZ Organic Maps Android renderer and accepts a
+list of `EdgezMapNode` markers. The plugin uses the v0.0.4 Android libraries
+published on the
+[EdgeZ Organic Maps release](https://github.com/edgez-ai/organicmaps/releases/tag/v0.0.4).
+
+Add the release as an Ivy artifact repository in the host application's
+`android/build.gradle` `allprojects.repositories` block:
+
+```groovy
+ivy {
+    url 'https://github.com/edgez-ai/organicmaps/releases/download/v0.0.4'
+    patternLayout { artifact '[artifact]-[revision].[ext]' }
+    metadataSources { artifact() }
+    content { includeGroup 'ai.edgez.organicmaps' }
+}
+```
+
+Organic Maps also requires core-library desugaring in the host app. Add this
+inside `android/app/build.gradle`:
+
+```groovy
+android {
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+}
+```
+
+Then place the widget in a bounded layout:
+
+```dart
+EdgezOrganicMap(
+  nodes: const [
+    EdgezMapNode(
+      id: 'gateway-1',
+      label: 'Gateway',
+      latitude: 59.3293,
+      longitude: 18.0686,
+      marker: 'blue',
+    ),
+  ],
+)
+```
+
+The bundled world map provides the offline base map. Detailed regional maps
+still require the Organic Maps download APIs in a future SDK surface.
 
 ## Background messages and calls
 
@@ -81,12 +137,9 @@ The Android implementation should be wired from the current project seams:
 - `app/src/main/java/ai/edgez/edgez/DeviceSettingModels.kt`
 - the existing mesh control protobuf schema in the Android app
 
-The map-specific files are deliberately not part of this SDK/example split:
-
-- `MapScreen.kt`
-- `LocationMapLauncher.kt`
-- `NodeMapMarkerUi.kt`
-- Organic Maps Gradle modules and `third_party/organicmaps`
+Map rendering is exposed through the Android platform view in
+`EdgezOrganicMapView.kt`; Flutter applications do not need to copy the native
+Organic Maps source tree.
 
 ## Example
 

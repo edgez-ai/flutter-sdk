@@ -118,7 +118,7 @@ void main() {
     expect(calls, isEmpty);
   });
 
-  test('empty release signature is sent as zero bytes', () async {
+  test('empty license key keeps the compatibility init packet', () async {
     final unsignedSdk = EdgezMeshSdk(
       methodChannel: channel,
       releaseCredential: const EdgezSdkReleaseCredential(
@@ -132,12 +132,11 @@ void main() {
       const EdgezMeshConfig(identity: identity),
     );
 
-    final packet = _packetFrom(calls.single);
-    expect(packet.init.sdkReleaseSignature, isEmpty);
-    expect(
-      (calls.single.arguments as Map)['sdkReleaseSignatureBytes'],
-      0,
-    );
+    expect(calls, hasLength(1));
+    final arguments = calls.single.arguments as Map;
+    expect(arguments['sdkCompatibility'], '^0.5.0');
+    expect(arguments['sdkReleaseId'], 'source-checkout');
+    expect(arguments['sdkReleaseSignatureBytes'], 0);
   });
 
   test('release metadata keeps compatibility and release identity', () {

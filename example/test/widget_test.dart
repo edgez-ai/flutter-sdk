@@ -143,6 +143,8 @@ void main() {
               ),
           },
           onOpenProvisioning: () {},
+          onOpenMap: () {},
+          mapCamera: null,
           onOpenNode: (_) {},
         ),
       ),

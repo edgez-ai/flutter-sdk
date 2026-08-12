@@ -388,6 +388,45 @@ class SettingsScreen extends StatefulWidget {
                                     'timeouts ${usbLinkStats.timeouts}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
+                        Row(
+                          children: <Widget>[
+                            Icon(
+                              meshStatus?.licensed == true
+                                  ? Icons.verified
+                                  : meshStatus == null
+                                      ? Icons.help_outline
+                                      : Icons.gpp_bad_outlined,
+                              size: 16,
+                              color: meshStatus?.licensed == true
+                                  ? Theme.of(context).colorScheme.primary
+                                  : meshStatus == null
+                                      ? Theme.of(context).colorScheme.outline
+                                      : Theme.of(context).colorScheme.error,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'License: ${meshStatus?.licenseStatus.label ?? switch ((
+                                      activeConnection,
+                                      bleConnecting,
+                                      bleReady
+                                    )) {
+                                      (_, true, _) =>
+                                        'Waiting for BLE connection',
+                                      (EdgezConnectionType.none, false, _) =>
+                                        'Connect a BLE device',
+                                      (EdgezConnectionType.ble, false, false) =>
+                                        'Waiting for BLE control channel',
+                                      (EdgezConnectionType.ble, false, true) =>
+                                        'Waiting for device status',
+                                      (EdgezConnectionType.usb, false, _) =>
+                                        'Waiting for device status',
+                                    }}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

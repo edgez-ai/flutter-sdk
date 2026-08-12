@@ -4,6 +4,7 @@ import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
 import 'device_detail_screen.dart';
+import 'map_tab.dart';
 import 'models.dart';
 import 'shared_widgets.dart';
 
@@ -15,6 +16,8 @@ class DashboardScreen extends StatelessWidget {
     required this.sensorSamples,
     required this.dashboardDisplays,
     required this.onOpenProvisioning,
+    required this.onOpenMap,
+    required this.mapCamera,
     required this.onOpenNode,
     super.key,
   });
@@ -25,6 +28,8 @@ class DashboardScreen extends StatelessWidget {
   final Map<int, List<EdgezSensorSample>> sensorSamples;
   final Map<String, ExampleDashboardDisplay> dashboardDisplays;
   final VoidCallback onOpenProvisioning;
+  final VoidCallback onOpenMap;
+  final EdgezMapCamera? mapCamera;
   final ValueChanged<EdgezMeshNode> onOpenNode;
 
   @override
@@ -66,7 +71,16 @@ class DashboardScreen extends StatelessWidget {
                   value: activeConnection.name.toUpperCase()),
               _DashboardValue(
                   label: 'Known nodes', value: users.length.toString()),
+              _DashboardValue(
+                  label: 'License',
+                  value: status?.licenseStatus.label ?? 'Waiting for device'),
             ],
+          ),
+          const SizedBox(height: 16),
+          DashboardMapPreview(
+            nodes: users,
+            camera: mapCamera,
+            onOpenMap: onOpenMap,
           ),
           const SizedBox(height: 16),
           Text('Visualization widgets',
