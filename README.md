@@ -40,7 +40,11 @@ with Gemma 4 E2B and LiteRT-LM. Voice messages can be translated locally after
 a one-time 2.6 GB download started on first use; message audio and generated
 text stay on the phone. The conversation screen shows download progress and
 exposes the target-language selector, transcript, and translated result. Later
-launches reuse the cached model.
+launches reuse the cached model. On Android, each result is spoken
+automatically with the same Moonshine Voice Kokoro/Piper pipeline used by the
+reference translator and can be replayed from the speaker button. The selected
+language's voice assets download on first use and are reused offline; Chinese
+uses the reference app's `kokoro_zf_xiaoxiao` voice override.
 
 The SDK method `decodeVoiceMessageToWav` normalizes its Opus/Ogg and AMR/3GP
 voice containers to the 16 kHz mono WAV input expected by the model. LiteRT-LM

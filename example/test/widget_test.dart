@@ -1,6 +1,7 @@
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:edgez_flutter_sdk_example/src/conversation_screen.dart';
 import 'package:edgez_flutter_sdk_example/src/dashboard_tab.dart';
+import 'package:edgez_flutter_sdk_example/src/gemma_voice_translator.dart';
 import 'package:edgez_flutter_sdk_example/src/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
@@ -332,6 +333,38 @@ void main() {
     );
 
     await tester.tap(find.byTooltip('Install Gemma 4 to translate'));
+
+    expect(requested, isTrue);
+  });
+
+  testWidgets('translated voice message exposes TTS replay', (tester) async {
+    var requested = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ConversationBubble(
+            message: const EdgezConversationMessage(
+              nodeNum: 7,
+              text: '',
+              mine: false,
+              timestampMs: 1,
+              voiceBytes: <int>[1, 2, 3],
+              voiceCodec: 2,
+              durationMs: 500,
+            ),
+            onReplayVoiceMessage: (_) {},
+            translation: const GemmaVoiceTranslation(
+              transcript: 'Hello',
+              translation: 'Hola',
+              targetLanguage: 'Spanish',
+            ),
+            onSpeakTranslation: () => requested = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Speak translation'));
 
     expect(requested, isTrue);
   });

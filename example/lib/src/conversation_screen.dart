@@ -74,6 +74,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   final Map<String, GemmaVoiceTranslation> translations =
       <String, GemmaVoiceTranslation>{};
   final Map<String, String> translationErrors = <String, String>{};
+  final Map<String, String> speechErrors = <String, String>{};
   final Set<String> translatingMessages = <String>{};
 
   @override
@@ -131,11 +132,27 @@ class _ConversationScreenState extends State<ConversationScreen> {
         }
       }
       final translation = await translate(message, translationLanguage);
-      if (mounted) setState(() => translations[key] = translation);
+      if (!mounted) return;
+      setState(() => translations[key] = translation);
+      await _speakTranslation(key, translation);
     } catch (error) {
       if (mounted) setState(() => translationErrors[key] = '$error');
     } finally {
       if (mounted) setState(() => translatingMessages.remove(key));
+    }
+  }
+
+  Future<void> _speakTranslation(
+    String key,
+    GemmaVoiceTranslation translation,
+  ) async {
+    final translator = widget.gemmaTranslator;
+    if (translator == null) return;
+    setState(() => speechErrors.remove(key));
+    try {
+      await translator.speak(translation);
+    } catch (error) {
+      if (mounted) setState(() => speechErrors[key] = '$error');
     }
   }
 
@@ -388,6 +405,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                       onReplayVoiceMessage: widget.onReplayVoiceMessage,
                       translation: translations[_messageKey(message)],
                       translationError: translationErrors[_messageKey(message)],
+                      speechError: speechErrors[_messageKey(message)],
                       translating:
                           translatingMessages.contains(_messageKey(message)),
                       canTranslate: widget.gemmaTranslator?.isInstalled == true,
@@ -395,6 +413,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
                           widget.onTranslateVoiceMessage == null
                               ? null
                               : () => _translateVoiceMessage(message),
+                      onSpeakTranslation:
+                          translations[_messageKey(message)] == null
+                              ? null
+                              : () => _speakTranslation(
+                                    _messageKey(message),
+                                    translations[_messageKey(message)]!,
+                                  ),
                     ),
                 ],
               ),
@@ -646,6 +671,21 @@ class _GemmaTranslationBar extends StatelessWidget {
                 value: translator.downloadProgress / 100,
               ),
             ],
+            if (translator.preparingSpeech) ...<Widget>[
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: translator.speechDownloadProgress > 0
+                    ? translator.speechDownloadProgress / 100
+                    : null,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                translator.speechDownloadProgress < 100
+                    ? 'Preparing Moonshine voice · ${translator.speechDownloadProgress}%'
+                    : 'Moonshine voice ready',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             if (translator.errorMessage.isNotEmpty && !downloading)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -671,9 +711,11 @@ class ConversationBubble extends StatelessWidget {
     required this.onReplayVoiceMessage,
     this.translation,
     this.translationError,
+    this.speechError,
     this.translating = false,
     this.canTranslate = false,
     this.onTranslateVoiceMessage,
+    this.onSpeakTranslation,
     super.key,
   });
 
@@ -681,9 +723,11 @@ class ConversationBubble extends StatelessWidget {
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
   final GemmaVoiceTranslation? translation;
   final String? translationError;
+  final String? speechError;
   final bool translating;
   final bool canTranslate;
   final VoidCallback? onTranslateVoiceMessage;
+  final VoidCallback? onSpeakTranslation;
 
   @override
   Widget build(BuildContext context) {
@@ -740,11 +784,26 @@ class ConversationBubble extends StatelessWidget {
                       style: Theme.of(context).textTheme.labelSmall),
                 if (translation != null) ...<Widget>[
                   const SizedBox(height: 8),
-                  Text(
-                    '${translation!.targetLanguage}: ${translation!.translation}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          '${translation!.targetLanguage}: ${translation!.translation}',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
                         ),
+                      ),
+                      if (onSpeakTranslation != null)
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: 'Speak translation',
+                          onPressed: onSpeakTranslation,
+                          icon: const Icon(Icons.volume_up_outlined, size: 20),
+                        ),
+                    ],
                   ),
                   if (translation!.transcript.isNotEmpty)
                     Text(
@@ -755,6 +814,15 @@ class ConversationBubble extends StatelessWidget {
                 if (translationError?.isNotEmpty == true)
                   Text(
                     'Translation failed: $translationError',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                  ),
+                if (speechError?.isNotEmpty == true)
+                  Text(
+                    'Speech failed: $speechError',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
