@@ -577,6 +577,37 @@ void main() {
       session.dispose();
     });
 
+    test('session stores one reusable transcript on a voice message', () {
+      final session = EdgezMeshSession(sdk: sdk);
+      const message = EdgezConversationMessage(
+        nodeNum: 7,
+        text: 'Voice message',
+        mine: false,
+        timestampMs: 100,
+        messageUuid: 'voice-1',
+        voiceBytes: <int>[1, 2, 3],
+        voiceCodec: 2,
+      );
+      session.restoreCachedMeshData(
+        nodes: const <int, EdgezMeshNode>{},
+        conversations: const <int, List<EdgezConversationMessage>>{
+          7: <EdgezConversationMessage>[message],
+        },
+      );
+
+      session.updateConversationMessageTranscript(
+        message,
+        transcript: '你好，世界。',
+        language: 'Chinese',
+      );
+
+      final saved = session.state.conversations[7]!.single;
+      expect(saved.transcript, '你好，世界。');
+      expect(saved.transcriptLanguage, 'Chinese');
+      expect(saved.voiceBytes, message.voiceBytes);
+      session.dispose();
+    });
+
     test('session decodes an inbound BLE beacon and typed sensors', () async {
       final session = EdgezMeshSession(sdk: sdk);
       final packet = NetworkPacket(

@@ -662,6 +662,8 @@ class EdgezConversationMessage {
     this.voiceBytes = const <int>[],
     this.voiceCodec = 0,
     this.durationMs = 0,
+    this.transcript = '',
+    this.transcriptLanguage = '',
   });
 
   final int nodeNum;
@@ -673,9 +675,32 @@ class EdgezConversationMessage {
   final List<int> voiceBytes;
   final int voiceCodec;
   final int durationMs;
+  final String transcript;
+  final String transcriptLanguage;
 
   bool get isVoice =>
       voiceBytes.isNotEmpty || voiceCodec != 0 || durationMs > 0;
+
+  EdgezConversationMessage copyWith({
+    String? messageUuid,
+    String? status,
+    String? transcript,
+    String? transcriptLanguage,
+  }) {
+    return EdgezConversationMessage(
+      nodeNum: nodeNum,
+      text: text,
+      mine: mine,
+      timestampMs: timestampMs,
+      messageUuid: messageUuid ?? this.messageUuid,
+      status: status ?? this.status,
+      voiceBytes: voiceBytes,
+      voiceCodec: voiceCodec,
+      durationMs: durationMs,
+      transcript: transcript ?? this.transcript,
+      transcriptLanguage: transcriptLanguage ?? this.transcriptLanguage,
+    );
+  }
 
   factory EdgezConversationMessage.fromMap(Map<Object?, Object?> map) {
     return EdgezConversationMessage(
@@ -690,6 +715,8 @@ class EdgezConversationMessage {
           : const <int>[],
       voiceCodec: map['voiceCodec'] as int? ?? 0,
       durationMs: map['durationMs'] as int? ?? 0,
+      transcript: map['transcript'] as String? ?? '',
+      transcriptLanguage: map['transcriptLanguage'] as String? ?? '',
     );
   }
 }

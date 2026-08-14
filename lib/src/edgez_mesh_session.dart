@@ -341,6 +341,36 @@ class EdgezMeshSession extends ChangeNotifier {
     );
   }
 
+  /// Stores a voice transcript on its conversation message so later
+  /// translations can reuse text without decoding the audio again.
+  void updateConversationMessageTranscript(
+    EdgezConversationMessage target, {
+    required String transcript,
+    required String language,
+  }) {
+    if (transcript.trim().isEmpty) return;
+    final messages = _state.conversations[target.nodeNum];
+    if (messages == null) return;
+    var changed = false;
+    final updated = messages.map((message) {
+      final sameMessage = target.messageUuid.isNotEmpty
+          ? message.messageUuid == target.messageUuid
+          : message.timestampMs == target.timestampMs &&
+              message.mine == target.mine;
+      if (!sameMessage) return message;
+      changed = true;
+      return message.copyWith(
+        transcript: transcript.trim(),
+        transcriptLanguage: language,
+      );
+    }).toList(growable: false);
+    if (!changed) return;
+    final conversations =
+        Map<int, List<EdgezConversationMessage>>.of(_state.conversations)
+          ..[target.nodeNum] = updated;
+    _setState(_state.copyWith(conversations: conversations));
+  }
+
   Future<void> startBleScan() async {
     try {
       await sdk.startBleScan();
@@ -2056,16 +2086,9 @@ class EdgezMeshSession extends ChangeNotifier {
           return message;
         }
         changed = true;
-        return EdgezConversationMessage(
-          nodeNum: message.nodeNum,
-          text: message.text,
-          mine: message.mine,
-          timestampMs: message.timestampMs,
+        return message.copyWith(
           messageUuid: messageUuid ?? message.messageUuid,
           status: status ?? message.status,
-          voiceBytes: message.voiceBytes,
-          voiceCodec: message.voiceCodec,
-          durationMs: message.durationMs,
         );
       }).toList(growable: false);
       conversations[entry.key] = updated;

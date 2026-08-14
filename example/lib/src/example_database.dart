@@ -44,6 +44,8 @@ class ExampleDatabase {
             voice_bytes BLOB NOT NULL DEFAULT X'',
             voice_codec INTEGER NOT NULL DEFAULT 0,
             duration_ms INTEGER NOT NULL DEFAULT 0,
+            transcript TEXT NOT NULL DEFAULT '',
+            transcript_language TEXT NOT NULL DEFAULT '',
             UNIQUE(node_num, timestamp_ms, mine, text, message_uuid)
           )
         ''');
@@ -85,6 +87,7 @@ class ExampleDatabase {
           ON sensor_data(node_num, timestamp_ms)
         ''');
         await _createSpeedMetricsSchema(db);
+        await _createAppSettingsSchema(db);
       },
       onOpen: _ensureSchema,
     );
@@ -92,6 +95,7 @@ class ExampleDatabase {
 
   Future<void> _ensureSchema(Database db) async {
     await _createSpeedMetricsSchema(db);
+    await _createAppSettingsSchema(db);
     final columns = await db.rawQuery('PRAGMA table_info(nodes)');
     final columnNames = columns.map((row) => row['name'] as String).toSet();
     if (!columnNames.contains('public_key')) {
@@ -114,6 +118,23 @@ class ExampleDatabase {
       await db.execute(
           'ALTER TABLE conversation_messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0');
     }
+    if (!messageColumnNames.contains('transcript')) {
+      await db.execute(
+          "ALTER TABLE conversation_messages ADD COLUMN transcript TEXT NOT NULL DEFAULT ''");
+    }
+    if (!messageColumnNames.contains('transcript_language')) {
+      await db.execute(
+          "ALTER TABLE conversation_messages ADD COLUMN transcript_language TEXT NOT NULL DEFAULT ''");
+    }
+  }
+
+  static Future<void> _createAppSettingsSchema(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_settings (
+        setting_key TEXT PRIMARY KEY,
+        setting_value TEXT NOT NULL
+      )
+    ''');
   }
 
   static Future<void> _createSpeedMetricsSchema(DatabaseExecutor db) async {
@@ -126,6 +147,25 @@ class ExampleDatabase {
         expected_packets INTEGER NOT NULL
       )
     ''');
+  }
+
+  Future<String?> loadAppSetting(String key) async {
+    final rows = await _requireDatabase().query(
+      'app_settings',
+      columns: const <String>['setting_value'],
+      where: 'setting_key = ?',
+      whereArgs: <Object?>[key],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.single['setting_value'] as String;
+  }
+
+  Future<void> saveAppSetting(String key, String value) async {
+    await _requireDatabase().insert(
+      'app_settings',
+      <String, Object?>{'setting_key': key, 'setting_value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<List<ExampleSpeedMetric>> loadSpeedMetrics(
@@ -256,6 +296,8 @@ class ExampleDatabase {
           voiceBytes: row['voice_bytes'] as List<int>? ?? const <int>[],
           voiceCodec: row['voice_codec'] as int? ?? 0,
           durationMs: row['duration_ms'] as int? ?? 0,
+          transcript: row['transcript'] as String? ?? '',
+          transcriptLanguage: row['transcript_language'] as String? ?? '',
         ),
       );
     }
@@ -452,8 +494,26 @@ class ExampleDatabase {
         'voice_bytes': message.voiceBytes,
         'voice_codec': message.voiceCodec,
         'duration_ms': message.durationMs,
+        'transcript': message.transcript,
+        'transcript_language': message.transcriptLanguage,
       },
       conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+    await txn.update(
+      'conversation_messages',
+      <String, Object?>{
+        'transcript': message.transcript,
+        'transcript_language': message.transcriptLanguage,
+      },
+      where: 'node_num = ? AND timestamp_ms = ? AND mine = ? '
+          'AND text = ? AND message_uuid = ?',
+      whereArgs: <Object?>[
+        message.nodeNum,
+        message.timestampMs,
+        message.mine ? 1 : 0,
+        message.text,
+        message.messageUuid,
+      ],
     );
   }
 

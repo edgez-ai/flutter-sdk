@@ -8,7 +8,11 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.view.WindowManager
+import ai.moonshine.voice.AssetDownloader
+import ai.moonshine.voice.JNI
+import ai.moonshine.voice.ModelSpec
 import ai.moonshine.voice.TextToSpeech as MoonshineTextToSpeech
+import ai.moonshine.voice.Transcriber
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -71,6 +75,15 @@ class MainActivity : FlutterActivity() {
                     speechExecutor.execute { moonshineSpeech?.stop() }
                     result.success(null)
                 }
+                "transcribe" -> {
+                    val wavBytes = call.argument<ByteArray>("wavBytes")
+                    val language = call.argument<String>("language")
+                    if (wavBytes == null || wavBytes.isEmpty() || language.isNullOrBlank()) {
+                        result.error("invalid_arguments", "Missing WAV audio or language", null)
+                    } else {
+                        transcribeVoiceMessage(wavBytes, language, result)
+                    }
+                }
                 "release" -> releaseSpeechEngine(result)
                 else -> result.notImplemented()
             }
@@ -124,7 +137,11 @@ class MainActivity : FlutterActivity() {
                     notifySpeechProgress(100, "Moonshine voice ready")
                 }
                 engine.stop()
-                engine.sayInBackground(text)
+                // Queue punctuation-delimited clauses separately. Moonshine
+                // pipelines synthesis and playback, so the first clause can
+                // start playing while it generates the remainder. Its built-in
+                // splitter does not recognize Chinese/Japanese punctuation.
+                splitForSpeech(text).forEach(engine::sayInBackground)
                 runOnUiThread { result.success(null) }
             } catch (error: Throwable) {
                 Log.e("EdgezMoonshineTts", "Moonshine speech failed", error)
@@ -136,6 +153,151 @@ class MainActivity : FlutterActivity() {
             }
         }
     }
+
+    private fun splitForSpeech(text: String): List<String> {
+        val parts = text.trim()
+            .split(Regex("(?<=[。！？.!?])\\s*"))
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+        return parts.ifEmpty { listOf(text) }
+    }
+
+    private fun transcribeVoiceMessage(
+        wavBytes: ByteArray,
+        language: String,
+        result: MethodChannel.Result,
+    ) {
+        speechRequest.incrementAndGet()
+        speechExecutor.execute {
+            var transcriber: Transcriber? = null
+            try {
+                // STT and TTS both use ONNX Runtime. Keep only one Moonshine
+                // engine resident, and Gemma is released by Dart before this.
+                moonshineSpeech?.close()
+                moonshineSpeech = null
+                moonshineLanguage = null
+
+                val modelDirectory = File(filesDir, "moonshine/stt-$language-base")
+                val modelSpec = ModelSpec.stt(
+                    language,
+                    JNI.MOONSHINE_MODEL_ARCH_BASE,
+                    false,
+                )
+                notifySpeechProgress(0, "Preparing Moonshine $language transcript")
+                val modelRoot = AssetDownloader().ensureModelPresent(
+                    modelDirectory,
+                    modelSpec,
+                ) { path, index, total, downloaded, size ->
+                    val fileProgress = if (size > 0L) {
+                        downloaded.toDouble() / size.toDouble()
+                    } else {
+                        0.0
+                    }
+                    val progress = if (total > 0) {
+                        (((index - 1).coerceAtLeast(0) + fileProgress) / total * 100)
+                            .toInt()
+                            .coerceIn(0, 99)
+                    } else {
+                        0
+                    }
+                    notifySpeechProgress(progress, path)
+                }
+
+                val audio = decodePcmWav(wavBytes)
+                transcriber = Transcriber()
+                transcriber.loadFromFiles(
+                    modelRoot.absolutePath,
+                    JNI.MOONSHINE_MODEL_ARCH_BASE,
+                )
+                val transcript = transcriber
+                    .transcribeWithoutStreaming(audio.samples, audio.sampleRate)
+                    .text()
+                    .trim()
+                check(transcript.isNotEmpty()) { "Moonshine returned an empty transcript" }
+                notifySpeechProgress(100, "Transcript saved")
+                runOnUiThread { result.success(transcript) }
+            } catch (error: Throwable) {
+                Log.e("EdgezMoonshineStt", "Moonshine transcription failed", error)
+                completeSpeechError(
+                    result,
+                    "moonshine_stt_failed",
+                    error.message ?: error.javaClass.simpleName,
+                )
+            } finally {
+                transcriber?.close()
+            }
+        }
+    }
+
+    private data class DecodedWav(
+        val samples: FloatArray,
+        val sampleRate: Int,
+    )
+
+    private fun decodePcmWav(bytes: ByteArray): DecodedWav {
+        check(bytes.size >= 44 && ascii(bytes, 0, 4) == "RIFF" &&
+            ascii(bytes, 8, 4) == "WAVE") { "Unsupported WAV header" }
+        var offset = 12
+        var channels = 0
+        var sampleRate = 0
+        var bitsPerSample = 0
+        var audioFormat = 0
+        var dataOffset = -1
+        var dataSize = 0
+        while (offset + 8 <= bytes.size) {
+            val id = ascii(bytes, offset, 4)
+            val chunkSize = littleEndianInt(bytes, offset + 4)
+            val body = offset + 8
+            check(chunkSize >= 0 && body + chunkSize <= bytes.size) {
+                "Invalid WAV chunk"
+            }
+            when (id) {
+                "fmt " -> {
+                    check(chunkSize >= 16) { "Invalid WAV format chunk" }
+                    audioFormat = littleEndianShort(bytes, body)
+                    channels = littleEndianShort(bytes, body + 2)
+                    sampleRate = littleEndianInt(bytes, body + 4)
+                    bitsPerSample = littleEndianShort(bytes, body + 14)
+                }
+                "data" -> {
+                    dataOffset = body
+                    dataSize = chunkSize
+                }
+            }
+            offset = body + chunkSize + (chunkSize and 1)
+        }
+        check(audioFormat == 1 && channels > 0 && sampleRate > 0 && bitsPerSample == 16) {
+            "Moonshine requires 16-bit PCM WAV audio"
+        }
+        check(dataOffset >= 0 && dataSize > 0) { "WAV audio is empty" }
+        val frameBytes = channels * 2
+        val frameCount = dataSize / frameBytes
+        val samples = FloatArray(frameCount)
+        for (frame in 0 until frameCount) {
+            var mixed = 0f
+            for (channel in 0 until channels) {
+                val position = dataOffset + frame * frameBytes + channel * 2
+                val value = ((bytes[position + 1].toInt() shl 8) or
+                    (bytes[position].toInt() and 0xff)).toShort().toInt()
+                mixed += value / 32768f
+            }
+            samples[frame] = mixed / channels
+        }
+        return DecodedWav(samples, sampleRate)
+    }
+
+    private fun ascii(bytes: ByteArray, offset: Int, length: Int): String =
+        bytes.copyOfRange(offset, offset + length).toString(Charsets.US_ASCII)
+
+    private fun littleEndianShort(bytes: ByteArray, offset: Int): Int =
+        (bytes[offset].toInt() and 0xff) or
+            ((bytes[offset + 1].toInt() and 0xff) shl 8)
+
+    private fun littleEndianInt(bytes: ByteArray, offset: Int): Int =
+        (bytes[offset].toInt() and 0xff) or
+            ((bytes[offset + 1].toInt() and 0xff) shl 8) or
+            ((bytes[offset + 2].toInt() and 0xff) shl 16) or
+            ((bytes[offset + 3].toInt() and 0xff) shl 24)
 
     private fun releaseSpeechEngine(result: MethodChannel.Result) {
         speechRequest.incrementAndGet()

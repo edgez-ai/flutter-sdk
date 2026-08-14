@@ -272,6 +272,7 @@ void main() {
               updatedAtMs: 1700000001000,
             ),
             callState: const EdgezVoiceCallState(),
+            voiceSourceLanguage: 'English',
             onBack: () {},
             onSendMessage: (_) async {},
             onStartVoiceMessage: () async => true,
@@ -367,6 +368,31 @@ void main() {
     await tester.tap(find.byTooltip('Speak translation'));
 
     expect(requested, isTrue);
+  });
+
+  testWidgets('voice message displays its persisted transcript',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ConversationBubble(
+            message: const EdgezConversationMessage(
+              nodeNum: 7,
+              text: '',
+              mine: false,
+              timestampMs: 1,
+              voiceBytes: <int>[1, 2, 3],
+              voiceCodec: 2,
+              transcript: '你好，世界。',
+              transcriptLanguage: 'Chinese',
+            ),
+            onReplayVoiceMessage: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Transcript (Chinese): 你好，世界。'), findsOneWidget);
   });
 
   testWidgets('voice call stays full screen and shows the answered-call timer',

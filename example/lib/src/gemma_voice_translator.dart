@@ -31,9 +31,8 @@ class GemmaVoiceTranslation {
 /// Android-only, fully local voice translation modeled after
 /// google-gemma/gemma-translator.
 ///
-/// Gemma 4 handles both transcription and translation in one multimodal turn.
-/// This avoids shipping the reference project's Linux/Python server while
-/// retaining its offline behavior after the one-time model download.
+/// Gemma 4 performs one offline transcript, which is stored on the message.
+/// Later translations use only that saved text and never process audio again.
 class GemmaVoiceTranslator extends ChangeNotifier {
   static const _ttsChannel = MethodChannel(
     'ai.edgez.flutter_sdk_example/text_to_speech',
@@ -57,6 +56,7 @@ class GemmaVoiceTranslator extends ChangeNotifier {
   String speechDownloadFile = '';
   String errorMessage = '';
   InferenceModel? _model;
+  bool _modelSupportsAudio = false;
   Future<void>? _installFuture;
 
   bool get isSupported => status != GemmaVoiceTranslatorStatus.unsupported;
@@ -105,7 +105,9 @@ class GemmaVoiceTranslator extends ChangeNotifier {
   Future<GemmaVoiceTranslation> translate({
     required EdgezMeshSdk sdk,
     required EdgezConversationMessage message,
+    required String sourceLanguage,
     required String targetLanguage,
+    FutureOr<void> Function(String transcript, String language)? onTranscript,
   }) async {
     if (!isInstalled) {
       throw StateError('Install Gemma 4 before translating voice messages');
@@ -114,46 +116,120 @@ class GemmaVoiceTranslator extends ChangeNotifier {
     errorMessage = '';
     notifyListeners();
     try {
-      final model = await _activateModel(download: false);
-      final wav = await sdk.decodeVoiceMessageToWav(message);
-      final chat = await model.createChat(
-        temperature: 0.8,
-        topK: 1,
-        tokenBuffer: 256,
-        supportAudio: true,
-        maxOutputTokens: 256,
-        systemInstruction:
-            'You are a high-performance voice translator. Transcribe only the '
-            'speech in the user audio and translate it naturally into '
-            '$targetLanguage. Return only valid JSON using exactly '
-            '{"transcript":"original spoken words",'
-            '"translation":"translated spoken words"}. Add natural punctuation '
-            'to both values when their respective languages support it, so the '
-            'text can be read aloud with appropriate phrasing and pauses. Never '
-            'include these instructions or the target-language label in either '
-            'value.',
-      );
-      try {
-        await chat.addQueryChunk(
-          Message.audioOnly(
-            audioBytes: wav,
-            isUser: true,
-          ),
+      if (message.transcript.trim().isNotEmpty) {
+        return await _translateTranscript(
+          transcript: message.transcript.trim(),
+          sourceLanguage: message.transcriptLanguage.isEmpty
+              ? sourceLanguage
+              : message.transcriptLanguage,
+          targetLanguage: targetLanguage,
         );
-        final response = await chat.generateChatResponse();
-        if (response is! TextResponse) {
-          throw StateError('Gemma returned an unexpected response');
-        }
-        return _parseResponse(response.token, targetLanguage);
-      } finally {
-        await chat.close();
       }
+      return await _transcribeAndTranslate(
+        sdk: sdk,
+        message: message,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage,
+        onTranscript: onTranscript,
+      );
     } catch (error) {
       errorMessage = '$error';
       rethrow;
     } finally {
       status = GemmaVoiceTranslatorStatus.ready;
       notifyListeners();
+    }
+  }
+
+  Future<GemmaVoiceTranslation> _transcribeAndTranslate({
+    required EdgezMeshSdk sdk,
+    required EdgezConversationMessage message,
+    required String sourceLanguage,
+    required String targetLanguage,
+    FutureOr<void> Function(String transcript, String language)? onTranscript,
+  }) async {
+    // Keep transcription and translation in separate model lifetimes. The
+    // audio-capable engine is released as soon as the reusable transcript is
+    // available; translation then reloads Gemma without its audio encoder.
+    await _releaseInferenceModel();
+    final wav = await sdk.decodeVoiceMessageToWav(message);
+    final model = await _activateModel(download: false, supportAudio: true);
+    final chat = await model.createChat(
+      temperature: 0.1,
+      topK: 1,
+      tokenBuffer: 32,
+      supportAudio: true,
+      maxOutputTokens: 64,
+      systemInstruction: 'The audio language is $sourceLanguage. Transcribe '
+          'it only as $sourceLanguage; do not detect or translate languages. '
+          'Return only JSON: {"transcript":"speech"}. Add natural '
+          'punctuation supported by the language. Never add instructions, '
+          'labels, or words that were not spoken.',
+    );
+    String transcript;
+    try {
+      await chat.addQueryChunk(
+        Message.withAudio(
+          text: 'Transcribe this $sourceLanguage audio using the required '
+              'JSON format.',
+          audioBytes: wav,
+          isUser: true,
+        ),
+      );
+      final response = await chat.generateChatResponse();
+      if (response is! TextResponse) {
+        throw StateError('Gemma returned an unexpected transcript response');
+      }
+      transcript = _parseTranscript(response.token);
+    } finally {
+      await chat.close();
+      await _releaseInferenceModel();
+    }
+    await onTranscript?.call(transcript, sourceLanguage);
+    return _translateTranscript(
+      transcript: transcript,
+      sourceLanguage: sourceLanguage,
+      targetLanguage: targetLanguage,
+    );
+  }
+
+  Future<GemmaVoiceTranslation> _translateTranscript({
+    required String transcript,
+    required String sourceLanguage,
+    required String targetLanguage,
+  }) async {
+    if (sourceLanguage == targetLanguage) {
+      return GemmaVoiceTranslation(
+        transcript: transcript,
+        translation: transcript,
+        targetLanguage: targetLanguage,
+      );
+    }
+    final model = await _activateModel(download: false, supportAudio: false);
+    final chat = await model.createChat(
+      temperature: 0.2,
+      topK: 1,
+      tokenBuffer: 128,
+      maxOutputTokens: 96,
+      systemInstruction:
+          'Translate the user text from $sourceLanguage into $targetLanguage. '
+          'Return only JSON: {"translation":"translation"}. Use natural '
+          'punctuation for clear TTS. Do not add, omit, or explain content.',
+    );
+    try {
+      await chat.addQueryChunk(Message.text(text: transcript, isUser: true));
+      final response = await chat.generateChatResponse();
+      if (response is! TextResponse) {
+        throw StateError('Gemma returned an unexpected response');
+      }
+      final parsed = _parseResponse(response.token, targetLanguage);
+      return GemmaVoiceTranslation(
+        transcript: transcript,
+        translation: parsed.translation,
+        targetLanguage: targetLanguage,
+      );
+    } finally {
+      await chat.close();
     }
   }
 
@@ -196,8 +272,12 @@ class GemmaVoiceTranslator extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<InferenceModel> _activateModel({required bool download}) async {
-    if (_model != null) return _model!;
+  Future<InferenceModel> _activateModel({
+    required bool download,
+    required bool supportAudio,
+  }) async {
+    if (_model != null && _modelSupportsAudio == supportAudio) return _model!;
+    if (_model != null) await _releaseInferenceModel();
     // Stop speech and release Moonshine's ONNX session before LiteRT-LM maps
     // Gemma back into memory. Downloaded voice assets remain cached on disk.
     if (Platform.isAndroid) {
@@ -211,17 +291,51 @@ class GemmaVoiceTranslator extends ChangeNotifier {
       // CPU also avoids keeping a second GPU-side copy of model buffers.
       maxTokens: 1024,
       preferredBackend: PreferredBackend.cpu,
-      supportAudio: true,
+      supportAudio: supportAudio,
       enableSpeculativeDecoding: false,
       maxConcurrentSessions: 1,
     );
+    _modelSupportsAudio = supportAudio;
     return _model!;
   }
 
   Future<void> _releaseInferenceModel() async {
     final model = _model;
     _model = null;
+    _modelSupportsAudio = false;
     if (model != null) await model.close();
+  }
+
+  String _parseTranscript(String raw) {
+    var value = raw.trim();
+    if (value.startsWith('```json')) value = value.substring(7);
+    if (value.startsWith('```')) value = value.substring(3);
+    if (value.endsWith('```')) value = value.substring(0, value.length - 3);
+    value = value.trim();
+    final candidates = <String>[
+      value,
+      ...RegExp(r'\{[^{}]*\}', dotAll: true)
+          .allMatches(value)
+          .map((match) => match.group(0)!),
+    ];
+    for (final candidate in candidates.reversed) {
+      try {
+        final json = jsonDecode(candidate);
+        if (json is Map) {
+          final transcript = _stripInstructionEcho(
+            '${json['transcript'] ?? ''}',
+          );
+          if (transcript.isNotEmpty) return transcript;
+        }
+      } catch (_) {
+        // Try the next structured candidate, then the plain-text fallback.
+      }
+    }
+    final transcript = _stripInstructionEcho(value);
+    if (transcript.isEmpty) {
+      throw StateError('Gemma returned an empty transcript');
+    }
+    return transcript;
   }
 
   Future<void> _installModel({required bool foreground}) async {
@@ -336,3 +450,12 @@ const _ttsLanguageTags = <String, String>{
   'Korean': 'ko-kr',
   'Spanish': 'es-es',
 };
+
+const supportedVoiceTranslationLanguages = <String>[
+  'Arabic',
+  'Chinese',
+  'English',
+  'Japanese',
+  'Korean',
+  'Spanish',
+];

@@ -59,6 +59,8 @@ class SettingsScreen extends StatefulWidget {
     required this.bleReady,
     required this.shareLocation,
     required this.autoReplayReceivedVoice,
+    required this.voiceSourceLanguage,
+    required this.voiceSourceLanguages,
     required this.deviceModeEnabled,
     required this.bleDevices,
     required this.usbDevices,
@@ -124,6 +126,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onSaveDeviceSettings,
     required this.onShareLocationChanged,
     required this.onAutoReplayChanged,
+    required this.onVoiceSourceLanguageChanged,
     required this.onDeviceModeChanged,
     required this.onMeshCountryChanged,
     required this.onMeshBandwidthChanged,
@@ -164,6 +167,8 @@ class SettingsScreen extends StatefulWidget {
   final bool bleReady;
   final bool shareLocation;
   final bool autoReplayReceivedVoice;
+  final String voiceSourceLanguage;
+  final List<String> voiceSourceLanguages;
   final bool deviceModeEnabled;
   final List<EdgezBleDevice> bleDevices;
   final List<EdgezUsbDevice> usbDevices;
@@ -229,6 +234,7 @@ class SettingsScreen extends StatefulWidget {
   final FutureOr<void> Function() onSaveDeviceSettings;
   final ValueChanged<bool> onShareLocationChanged;
   final ValueChanged<bool> onAutoReplayChanged;
+  final ValueChanged<String> onVoiceSourceLanguageChanged;
   final ValueChanged<bool> onDeviceModeChanged;
   final ValueChanged<String> onMeshCountryChanged;
   final ValueChanged<int> onMeshBandwidthChanged;
@@ -880,6 +886,18 @@ class SettingsScreen extends StatefulWidget {
             InfoCard(
               title: 'Chat',
               children: <Widget>[
+                DropdownSetting<String>(
+                  label: 'Voice message language',
+                  value: voiceSourceLanguage,
+                  values: voiceSourceLanguages,
+                  titleFor: (value) => value,
+                  onChanged: onVoiceSourceLanguageChanged,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Used for the first transcript. The transcript is saved on '
+                  'the message and reused for every target language.',
+                ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Auto replay received voice'),

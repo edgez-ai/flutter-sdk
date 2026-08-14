@@ -48,6 +48,7 @@ const _navigationDestinations = <AppDestination>[
 
 const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
 const _speedHistoryWindow = Duration(minutes: 30);
+const _voiceSourceLanguageSetting = 'voice_source_language';
 const _downloadsChannel = MethodChannel(
   'ai.edgez.flutter_sdk_example/downloads',
 );
@@ -91,6 +92,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   String lastPersistSignature = '';
   bool shareLocation = false;
   bool autoReplayReceivedVoice = false;
+  String voiceSourceLanguage = 'Chinese';
   bool deviceModeEnabled = false;
   bool provisionMode = false;
   List<ExampleDriver> drivers = ExampleDriverCatalog.bundled;
@@ -468,6 +470,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       final nodes = await database.loadNodes();
       final savedDashboardDisplays = await database.loadDashboardDisplays();
       final conversations = await database.loadConversations();
+      final savedVoiceSourceLanguage =
+          await database.loadAppSetting(_voiceSourceLanguageSetting);
       final loadedSpeedMetrics = await database.loadSpeedMetrics(
         sinceMs:
             DateTime.now().subtract(_speedHistoryWindow).millisecondsSinceEpoch,
@@ -489,6 +493,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         hydrationComplete = true;
         dashboardDisplays = savedDashboardDisplays;
         speedMetrics = loadedSpeedMetrics;
+        if (supportedVoiceTranslationLanguages
+            .contains(savedVoiceSourceLanguage)) {
+          voiceSourceLanguage = savedVoiceSourceLanguage!;
+        }
         lastPersistedSpeedMetricMs = loadedSpeedMetrics.isEmpty
             ? 0
             : loadedSpeedMetrics.last.timestampMs;
@@ -618,6 +626,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
           ..write(message.status)
           ..write('|')
           ..write(message.messageUuid)
+          ..write('|')
+          ..write(message.transcript)
+          ..write('|')
+          ..write(message.transcriptLanguage)
           ..write(';');
       }
     }
@@ -868,6 +880,51 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         currentSettings.deviceGpsEnabled != deviceGpsEnabled) {
       await session.setDeviceGpsEnabled(deviceGpsEnabled);
     }
+  }
+
+  void _setVoiceSourceLanguage(String language) {
+    if (!supportedVoiceTranslationLanguages.contains(language)) return;
+    setState(() => voiceSourceLanguage = language);
+    if (databaseReady) {
+      unawaited(
+        database.saveAppSetting(_voiceSourceLanguageSetting, language),
+      );
+    }
+  }
+
+  Future<GemmaVoiceTranslation> _translateVoiceMessage(
+    EdgezConversationMessage message,
+    String targetLanguage,
+  ) async {
+    final translation = await gemmaVoiceTranslator.translate(
+      sdk: session.sdk,
+      message: message,
+      sourceLanguage: voiceSourceLanguage,
+      targetLanguage: targetLanguage,
+      onTranscript: (transcript, language) {
+        session.updateConversationMessageTranscript(
+          message,
+          transcript: transcript,
+          language: language,
+        );
+      },
+    );
+    return translation;
+  }
+
+  Future<GemmaVoiceTranslation> _retranscribeVoiceMessage(
+    EdgezConversationMessage message,
+    String targetLanguage,
+  ) {
+    session.updateConversationMessageTranscript(
+      message,
+      transcript: '',
+      language: '',
+    );
+    return _translateVoiceMessage(
+      message.copyWith(transcript: '', transcriptLanguage: ''),
+      targetLanguage,
+    );
   }
 
   Future<void> _regenerateUserKeyPair() async {
@@ -1268,12 +1325,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       onStopVoiceMessage: _stopVoiceMessage,
                       onReplayVoiceMessage: session.playVoiceMessage,
                       gemmaTranslator: gemmaVoiceTranslator,
-                      onTranslateVoiceMessage: (message, targetLanguage) =>
-                          gemmaVoiceTranslator.translate(
-                        sdk: session.sdk,
-                        message: message,
-                        targetLanguage: targetLanguage,
-                      ),
+                      voiceSourceLanguage: voiceSourceLanguage,
+                      onTranslateVoiceMessage: _translateVoiceMessage,
+                      onRetranscribeVoiceMessage: _retranscribeVoiceMessage,
                       onStartSpeedTest: _startSpeedTest,
                       callState: meshState.voiceCall,
                       onStartCall: () =>
@@ -1322,12 +1376,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                           onStopVoiceMessage: _stopVoiceMessage,
                           onReplayVoiceMessage: session.playVoiceMessage,
                           gemmaTranslator: gemmaVoiceTranslator,
-                          onTranslateVoiceMessage: (message, targetLanguage) =>
-                              gemmaVoiceTranslator.translate(
-                            sdk: session.sdk,
-                            message: message,
-                            targetLanguage: targetLanguage,
-                          ),
+                          voiceSourceLanguage: voiceSourceLanguage,
+                          onTranslateVoiceMessage: _translateVoiceMessage,
+                          onRetranscribeVoiceMessage: _retranscribeVoiceMessage,
                           onStartSpeedTest: _startSpeedTest,
                           callState: meshState.voiceCall,
                           onStartCall: () =>
@@ -1381,6 +1432,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   bleReady: meshState.bleReady,
                   shareLocation: shareLocation,
                   autoReplayReceivedVoice: autoReplayReceivedVoice,
+                  voiceSourceLanguage: voiceSourceLanguage,
+                  voiceSourceLanguages: supportedVoiceTranslationLanguages,
                   deviceModeEnabled: deviceModeEnabled,
                   bleDevices: meshState.sortedBleDevices,
                   usbDevices: usbDevices,
@@ -1466,6 +1519,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   onShareLocationChanged: _setShareLocation,
                   onAutoReplayChanged: (value) =>
                       setState(() => autoReplayReceivedVoice = value),
+                  onVoiceSourceLanguageChanged: _setVoiceSourceLanguage,
                   onDeviceModeChanged: (value) =>
                       setState(() => deviceModeEnabled = value),
                   onMeshCountryChanged: (value) => setState(() {

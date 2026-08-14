@@ -21,8 +21,10 @@ class ConversationScreen extends StatefulWidget {
     required this.onStartSpeedTest,
     required this.callState,
     required this.onStartCall,
+    required this.voiceSourceLanguage,
     this.gemmaTranslator,
     this.onTranslateVoiceMessage,
+    this.onRetranscribeVoiceMessage,
     super.key,
   });
 
@@ -42,25 +44,22 @@ class ConversationScreen extends StatefulWidget {
   ) onStartSpeedTest;
   final EdgezVoiceCallState callState;
   final Future<void> Function() onStartCall;
+  final String voiceSourceLanguage;
   final GemmaVoiceTranslator? gemmaTranslator;
   final Future<GemmaVoiceTranslation> Function(
     EdgezConversationMessage message,
     String targetLanguage,
   )? onTranslateVoiceMessage;
+  final Future<GemmaVoiceTranslation> Function(
+    EdgezConversationMessage message,
+    String targetLanguage,
+  )? onRetranscribeVoiceMessage;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
 class _ConversationScreenState extends State<ConversationScreen> {
-  static const _translationLanguages = <String>[
-    'Arabic',
-    'Chinese',
-    'English',
-    'Japanese',
-    'Korean',
-    'Spanish',
-  ];
   final TextEditingController controller = TextEditingController();
   String status = '';
   bool recording = false;
@@ -108,10 +107,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
           ? message.messageUuid
           : '${message.nodeNum}:${message.timestampMs}:${message.mine}';
 
-  Future<void> _translateVoiceMessage(
-    EdgezConversationMessage message,
-  ) async {
-    final translate = widget.onTranslateVoiceMessage;
+  Future<void> _translateVoiceMessage(EdgezConversationMessage message,
+      {bool retranscribe = false}) async {
+    final translate = retranscribe
+        ? widget.onRetranscribeVoiceMessage
+        : widget.onTranslateVoiceMessage;
     final translator = widget.gemmaTranslator;
     if (translate == null || translator == null) return;
     final key = _messageKey(message);
@@ -119,6 +119,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     setState(() {
       translatingMessages.add(key);
       translationErrors.remove(key);
+      if (retranscribe) translations.remove(key);
     });
     try {
       if (!translator.isInstalled) {
@@ -302,8 +303,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
             if (widget.gemmaTranslator?.isSupported == true) ...<Widget>[
               _GemmaTranslationBar(
                 translator: widget.gemmaTranslator!,
+                sourceLanguage: widget.voiceSourceLanguage,
                 language: translationLanguage,
-                languages: _translationLanguages,
+                languages: supportedVoiceTranslationLanguages,
                 onLanguageChanged: (value) {
                   if (value != null) {
                     setState(() => translationLanguage = value);
@@ -413,6 +415,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
                           widget.onTranslateVoiceMessage == null
                               ? null
                               : () => _translateVoiceMessage(message),
+                      onRetranscribeVoiceMessage: message.transcript.isEmpty ||
+                              widget.onRetranscribeVoiceMessage == null
+                          ? null
+                          : () => _translateVoiceMessage(
+                                message,
+                                retranscribe: true,
+                              ),
                       onSpeakTranslation:
                           translations[_messageKey(message)] == null
                               ? null
@@ -608,12 +617,14 @@ String _formatBitRate(double bitsPerSecond) {
 class _GemmaTranslationBar extends StatelessWidget {
   const _GemmaTranslationBar({
     required this.translator,
+    required this.sourceLanguage,
     required this.language,
     required this.languages,
     required this.onLanguageChanged,
   });
 
   final GemmaVoiceTranslator translator;
+  final String sourceLanguage;
   final String language;
   final List<String> languages;
   final ValueChanged<String?> onLanguageChanged;
@@ -637,13 +648,23 @@ class _GemmaTranslationBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    ready
-                        ? 'Gemma 4 offline voice translation'
-                        : downloading
-                            ? 'Downloading Gemma 4 · ${translator.downloadProgress}%'
-                            : 'Offline voice translation · 2.6 GB download',
-                    style: Theme.of(context).textTheme.titleSmall,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        ready
+                            ? 'Gemma 4 offline voice translation'
+                            : downloading
+                                ? 'Downloading Gemma 4 · ${translator.downloadProgress}%'
+                                : 'Offline voice translation · 2.6 GB download',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      if (ready)
+                        Text(
+                          'Source: $sourceLanguage · transcript saved once',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
                   ),
                 ),
                 if (ready)
@@ -715,6 +736,7 @@ class ConversationBubble extends StatelessWidget {
     this.translating = false,
     this.canTranslate = false,
     this.onTranslateVoiceMessage,
+    this.onRetranscribeVoiceMessage,
     this.onSpeakTranslation,
     super.key,
   });
@@ -727,6 +749,7 @@ class ConversationBubble extends StatelessWidget {
   final bool translating;
   final bool canTranslate;
   final VoidCallback? onTranslateVoiceMessage;
+  final VoidCallback? onRetranscribeVoiceMessage;
   final VoidCallback? onSpeakTranslation;
 
   @override
@@ -774,6 +797,14 @@ class ConversationBubble extends StatelessWidget {
                               )
                             : const Icon(Icons.translate, size: 20),
                       ),
+                    if (isVoice && onRetranscribeVoiceMessage != null)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Transcribe again using the Settings language',
+                        onPressed:
+                            !translating ? onRetranscribeVoiceMessage : null,
+                        icon: const Icon(Icons.refresh, size: 20),
+                      ),
                   ],
                 ),
                 if (isVoice)
@@ -807,10 +838,16 @@ class ConversationBubble extends StatelessWidget {
                   ),
                   if (translation!.transcript.isNotEmpty)
                     Text(
-                      'Transcript: ${translation!.transcript}',
+                      'Transcript: ${message.transcript.isNotEmpty ? message.transcript : translation!.transcript}',
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                 ],
+                if (translation == null && message.transcript.isNotEmpty)
+                  Text(
+                    'Transcript${message.transcriptLanguage.isEmpty ? '' : ' (${message.transcriptLanguage})'}: '
+                    '${message.transcript}',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
                 if (translationError?.isNotEmpty == true)
                   Text(
                     'Translation failed: $translationError',
