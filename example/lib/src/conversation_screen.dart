@@ -4,6 +4,7 @@ import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
 import 'models.dart';
+import 'gemma_voice_translator.dart';
 
 class ConversationScreen extends StatefulWidget {
   const ConversationScreen({
@@ -20,6 +21,8 @@ class ConversationScreen extends StatefulWidget {
     required this.onStartSpeedTest,
     required this.callState,
     required this.onStartCall,
+    this.gemmaTranslator,
+    this.onTranslateVoiceMessage,
     super.key,
   });
 
@@ -39,12 +42,25 @@ class ConversationScreen extends StatefulWidget {
   ) onStartSpeedTest;
   final EdgezVoiceCallState callState;
   final Future<void> Function() onStartCall;
+  final GemmaVoiceTranslator? gemmaTranslator;
+  final Future<GemmaVoiceTranslation> Function(
+    EdgezConversationMessage message,
+    String targetLanguage,
+  )? onTranslateVoiceMessage;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
 class _ConversationScreenState extends State<ConversationScreen> {
+  static const _translationLanguages = <String>[
+    'Arabic',
+    'Chinese',
+    'English',
+    'Japanese',
+    'Korean',
+    'Spanish',
+  ];
   final TextEditingController controller = TextEditingController();
   String status = '';
   bool recording = false;
@@ -54,11 +70,73 @@ class _ConversationScreenState extends State<ConversationScreen> {
   int speedTestSentBytes = 0;
   int speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
   int speedTestHop = 0;
+  String translationLanguage = 'English';
+  final Map<String, GemmaVoiceTranslation> translations =
+      <String, GemmaVoiceTranslation>{};
+  final Map<String, String> translationErrors = <String, String>{};
+  final Set<String> translatingMessages = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.gemmaTranslator?.addListener(_gemmaChanged);
+  }
+
+  @override
+  void didUpdateWidget(ConversationScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.gemmaTranslator != widget.gemmaTranslator) {
+      oldWidget.gemmaTranslator?.removeListener(_gemmaChanged);
+      widget.gemmaTranslator?.addListener(_gemmaChanged);
+    }
+  }
+
+  void _gemmaChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
+    widget.gemmaTranslator?.removeListener(_gemmaChanged);
     controller.dispose();
     super.dispose();
+  }
+
+  String _messageKey(EdgezConversationMessage message) =>
+      message.messageUuid.isNotEmpty
+          ? message.messageUuid
+          : '${message.nodeNum}:${message.timestampMs}:${message.mine}';
+
+  Future<void> _translateVoiceMessage(
+    EdgezConversationMessage message,
+  ) async {
+    final translate = widget.onTranslateVoiceMessage;
+    final translator = widget.gemmaTranslator;
+    if (translate == null || translator == null) return;
+    final key = _messageKey(message);
+    if (translatingMessages.contains(key)) return;
+    setState(() {
+      translatingMessages.add(key);
+      translationErrors.remove(key);
+    });
+    try {
+      if (!translator.isInstalled) {
+        await translator.install();
+        if (!translator.isInstalled) {
+          throw StateError(
+            translator.errorMessage.isEmpty
+                ? 'Gemma 4 installation did not complete'
+                : translator.errorMessage,
+          );
+        }
+      }
+      final translation = await translate(message, translationLanguage);
+      if (mounted) setState(() => translations[key] = translation);
+    } catch (error) {
+      if (mounted) setState(() => translationErrors[key] = '$error');
+    } finally {
+      if (mounted) setState(() => translatingMessages.remove(key));
+    }
   }
 
   Future<void> _startVoicePress() async {
@@ -204,6 +282,19 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            if (widget.gemmaTranslator?.isSupported == true) ...<Widget>[
+              _GemmaTranslationBar(
+                translator: widget.gemmaTranslator!,
+                language: translationLanguage,
+                languages: _translationLanguages,
+                onLanguageChanged: (value) {
+                  if (value != null) {
+                    setState(() => translationLanguage = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -295,6 +386,15 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     ConversationBubble(
                       message: message,
                       onReplayVoiceMessage: widget.onReplayVoiceMessage,
+                      translation: translations[_messageKey(message)],
+                      translationError: translationErrors[_messageKey(message)],
+                      translating:
+                          translatingMessages.contains(_messageKey(message)),
+                      canTranslate: widget.gemmaTranslator?.isInstalled == true,
+                      onTranslateVoiceMessage:
+                          widget.onTranslateVoiceMessage == null
+                              ? null
+                              : () => _translateVoiceMessage(message),
                     ),
                 ],
               ),
@@ -480,15 +580,110 @@ String _formatBitRate(double bitsPerSecond) {
   return '${bitsPerSecond.toStringAsFixed(0)} bps';
 }
 
+class _GemmaTranslationBar extends StatelessWidget {
+  const _GemmaTranslationBar({
+    required this.translator,
+    required this.language,
+    required this.languages,
+    required this.onLanguageChanged,
+  });
+
+  final GemmaVoiceTranslator translator;
+  final String language;
+  final List<String> languages;
+  final ValueChanged<String?> onLanguageChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final downloading =
+        translator.status == GemmaVoiceTranslatorStatus.downloading;
+    final ready = translator.isInstalled;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(
+                  Icons.translate,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    ready
+                        ? 'Gemma 4 offline voice translation'
+                        : downloading
+                            ? 'Downloading Gemma 4 · ${translator.downloadProgress}%'
+                            : 'Offline voice translation · 2.6 GB download',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                if (ready)
+                  DropdownButton<String>(
+                    value: language,
+                    onChanged: onLanguageChanged,
+                    items: <DropdownMenuItem<String>>[
+                      for (final item in languages)
+                        DropdownMenuItem<String>(
+                          value: item,
+                          child: Text(item),
+                        ),
+                    ],
+                  )
+                else if (!downloading)
+                  FilledButton.tonal(
+                    onPressed: translator.install,
+                    child: const Text('Install'),
+                  ),
+              ],
+            ),
+            if (downloading) ...<Widget>[
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: translator.downloadProgress / 100,
+              ),
+            ],
+            if (translator.errorMessage.isNotEmpty && !downloading)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  translator.errorMessage,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ConversationBubble extends StatelessWidget {
   const ConversationBubble({
     required this.message,
     required this.onReplayVoiceMessage,
+    this.translation,
+    this.translationError,
+    this.translating = false,
+    this.canTranslate = false,
+    this.onTranslateVoiceMessage,
     super.key,
   });
 
   final EdgezConversationMessage message;
   final ValueChanged<EdgezConversationMessage> onReplayVoiceMessage;
+  final GemmaVoiceTranslation? translation;
+  final String? translationError;
+  final bool translating;
+  final bool canTranslate;
+  final VoidCallback? onTranslateVoiceMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -510,15 +705,62 @@ class ConversationBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(isVoice
-                    ? 'Voice message ${_formatDuration(message.durationMs)}'
-                    : message.text),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(isVoice
+                          ? 'Voice message ${_formatDuration(message.durationMs)}'
+                          : message.text),
+                    ),
+                    if (isVoice && onTranslateVoiceMessage != null)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: canTranslate
+                            ? 'Translate voice message'
+                            : 'Install Gemma 4 to translate',
+                        onPressed:
+                            !translating ? onTranslateVoiceMessage : null,
+                        icon: translating
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.translate, size: 20),
+                      ),
+                  ],
+                ),
                 if (isVoice)
                   Text(
                       message.voiceBytes.isEmpty
                           ? 'No replay data'
                           : 'Tap to replay',
                       style: Theme.of(context).textTheme.labelSmall),
+                if (translation != null) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    '${translation!.targetLanguage}: ${translation!.translation}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  if (translation!.transcript.isNotEmpty)
+                    Text(
+                      'Transcript: ${translation!.transcript}',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                ],
+                if (translationError?.isNotEmpty == true)
+                  Text(
+                    'Translation failed: $translationError',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                  ),
                 if (message.status.isNotEmpty)
                   Text(
                     isDelivered ? 'Delivered' : message.status,

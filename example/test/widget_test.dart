@@ -307,6 +307,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('voice translation can start before Gemma is installed',
+      (tester) async {
+    var requested = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ConversationBubble(
+            message: const EdgezConversationMessage(
+              nodeNum: 7,
+              text: '',
+              mine: false,
+              timestampMs: 1,
+              voiceBytes: <int>[1, 2, 3],
+              voiceCodec: 2,
+              durationMs: 500,
+            ),
+            onReplayVoiceMessage: (_) {},
+            canTranslate: false,
+            onTranslateVoiceMessage: () => requested = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Install Gemma 4 to translate'));
+
+    expect(requested, isTrue);
+  });
+
   testWidgets('voice call stays full screen and shows the answered-call timer',
       (tester) async {
     var call = const EdgezVoiceCallState(

@@ -157,6 +157,29 @@ void main() {
       expect(ble.callsFor('getBestKnownLocation'), hasLength(1));
     });
 
+    test('normalizes voice-message audio through the Android transport',
+        () async {
+      ble.results['decodeVoiceMessageToWav'] = Uint8List.fromList(
+        <int>[0x52, 0x49, 0x46, 0x46],
+      );
+      const message = EdgezConversationMessage(
+        nodeNum: 7,
+        text: '',
+        mine: false,
+        timestampMs: 1,
+        voiceBytes: <int>[1, 2, 3],
+        voiceCodec: 2,
+        durationMs: 500,
+      );
+
+      final wav = await sdk.decodeVoiceMessageToWav(message);
+
+      expect(wav, <int>[0x52, 0x49, 0x46, 0x46]);
+      final call = ble.callsFor('decodeVoiceMessageToWav').single;
+      expect(call.argumentMap['bytes'], Uint8List.fromList(<int>[1, 2, 3]));
+      expect(call.argumentMap['codec'], 2);
+    });
+
     test('forwards background notification commands to Android', () async {
       ble.results['requestNotificationPermission'] = true;
       ble.results['notificationsAllowed'] = true;

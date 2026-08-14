@@ -32,6 +32,10 @@ android {
         targetSdk flutter.targetSdkVersion
         versionCode flutter.versionCode
         versionName flutter.versionName
+        ndk {
+            // LiteRT-LM's Android native assets currently ship arm64 only.
+            abiFilters 'arm64-v8a'
+        }
     }
 
     signingConfigs {

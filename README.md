@@ -32,6 +32,23 @@ dashboard preferences in SQLite. Its Map tab displays live mesh nodes that
 share a location. Organic Maps uses Android location permission and device
 orientation sensors to render the current position and heading natively.
 
+## Android offline voice translation
+
+The example ports the core flow from
+[Gemma Translator](https://github.com/google-gemma/gemma-translator) to Android
+with Gemma 4 E2B and LiteRT-LM. Voice messages can be translated locally after
+a one-time 2.6 GB download started on first use; message audio and generated
+text stay on the phone. The conversation screen shows download progress and
+exposes the target-language selector, transcript, and translated result. Later
+launches reuse the cached model.
+
+The SDK method `decodeVoiceMessageToWav` normalizes its Opus/Ogg and AMR/3GP
+voice containers to the 16 kHz mono WAV input expected by the model. LiteRT-LM
+currently requires an `arm64-v8a` Android device. Host apps that reuse the
+example integration must initialize `LiteRtLmEngine`, add the optional OpenCL
+libraries to their application manifest, and provide enough free storage for
+the model plus download headroom.
+
 ## Offline Organic Maps
 
 `EdgezOrganicMap` embeds the EdgeZ Organic Maps Android renderer and accepts a

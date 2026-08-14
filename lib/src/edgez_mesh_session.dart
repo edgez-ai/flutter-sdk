@@ -1064,6 +1064,12 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<Uint8List> decodeVoiceMessageToWav(
+    EdgezConversationMessage message,
+  ) {
+    return sdk.decodeVoiceMessageToWav(message);
+  }
+
   void removeNode(int nodeNum) {
     final nodes = Map<int, EdgezMeshNode>.of(_state.nodes)..remove(nodeNum);
     final sensorSamples =

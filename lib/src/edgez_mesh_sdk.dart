@@ -358,6 +358,30 @@ class EdgezMeshSdk {
     });
   }
 
+  /// Decodes an Android voice-message container into 16 kHz, mono PCM WAV.
+  ///
+  /// The normalized WAV is suitable for on-device audio models such as Gemma
+  /// 4. The Android implementation accepts both codecs emitted by this SDK
+  /// (Opus/Ogg and AMR-NB/3GP).
+  Future<Uint8List> decodeVoiceMessageToWav(
+    EdgezConversationMessage message,
+  ) async {
+    if (message.voiceBytes.isEmpty) {
+      throw StateError('Voice message has no audio bytes');
+    }
+    final bytes = await _transport.invokeMethod<Object?>(
+      'decodeVoiceMessageToWav',
+      <String, Object?>{
+        'bytes': Uint8List.fromList(message.voiceBytes),
+        'codec': message.voiceCodec,
+      },
+    );
+    if (bytes is! List) {
+      throw StateError('Android did not return decoded voice audio');
+    }
+    return Uint8List.fromList(List<int>.from(bytes));
+  }
+
   Future<void> startLiveVoiceAudio() async {
     final permitted = await requestMicrophonePermission();
     if (!permitted) throw StateError('Microphone permission denied');

@@ -25,6 +25,10 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.AudioFormat
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.Build
@@ -50,6 +54,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.SecureRandom
@@ -1315,6 +1320,7 @@ class EdgezFlutterSdkPlugin :
                 stopVoiceRecording(send, result)
             }
             "playVoiceMessage" -> playVoiceMessage(call, result)
+            "decodeVoiceMessageToWav" -> decodeVoiceMessageToWav(call, result)
             "isOtaReady" -> result.success(gatt != null && otaCharacteristic != null)
             "performOta" -> performOta(call, result)
             "abortOta" -> {
@@ -1920,6 +1926,198 @@ class EdgezFlutterSdkPlugin :
                 result.error("voice_play_failed", it.message ?: "Voice replay failed", null)
             },
         )
+    }
+
+    private fun decodeVoiceMessageToWav(call: MethodCall, result: MethodChannel.Result) {
+        val bytes = call.argument<ByteArray>("bytes")
+        val codec = call.argument<Int>("codec") ?: 0
+        if (bytes == null || bytes.isEmpty()) {
+            result.error("voice_missing", "Voice message has no audio bytes", null)
+            return
+        }
+        thread(name = "edgez-voice-decode") {
+            runCatching { decodeVoiceContainer(bytes, codec) }.fold(
+                onSuccess = { wav -> mainHandler.post { result.success(wav) } },
+                onFailure = { error ->
+                    mainHandler.post {
+                        result.error(
+                            "voice_decode_failed",
+                            error.message ?: "Voice message could not be decoded",
+                            null,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    private fun decodeVoiceContainer(bytes: ByteArray, codecId: Int): ByteArray {
+        val dir = File(context.cacheDir, "edgez_voice")
+        if (!dir.exists()) check(dir.mkdirs()) { "Unable to create voice cache" }
+        val extension = if (codecId == VOICE_CODEC_OPUS) "ogg" else "3gp"
+        val input = File(dir, "decode_${System.currentTimeMillis()}.$extension")
+        input.writeBytes(bytes)
+        val extractor = MediaExtractor()
+        var decoder: MediaCodec? = null
+        try {
+            extractor.setDataSource(input.absolutePath)
+            val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index)
+                    .getString(MediaFormat.KEY_MIME)
+                    ?.startsWith("audio/") == true
+            } ?: error("Voice message contains no audio track")
+            val inputFormat = extractor.getTrackFormat(trackIndex)
+            val mime = inputFormat.getString(MediaFormat.KEY_MIME)
+                ?: error("Voice message audio format is unknown")
+            extractor.selectTrack(trackIndex)
+            decoder = MediaCodec.createDecoderByType(mime)
+            decoder.configure(inputFormat, null, null, 0)
+            decoder.start()
+
+            val output = ByteArrayOutputStream()
+            val info = MediaCodec.BufferInfo()
+            var inputEnded = false
+            var outputEnded = false
+            var sampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            var channelCount = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
+            var idlePolls = 0
+            while (!outputEnded) {
+                if (!inputEnded) {
+                    val inputIndex = decoder.dequeueInputBuffer(10_000)
+                    if (inputIndex >= 0) {
+                        val buffer = decoder.getInputBuffer(inputIndex)
+                            ?: error("Voice decoder input buffer is unavailable")
+                        buffer.clear()
+                        val size = extractor.readSampleData(buffer, 0)
+                        if (size < 0) {
+                            decoder.queueInputBuffer(
+                                inputIndex,
+                                0,
+                                0,
+                                0,
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM,
+                            )
+                            inputEnded = true
+                        } else {
+                            decoder.queueInputBuffer(
+                                inputIndex,
+                                0,
+                                size,
+                                extractor.sampleTime.coerceAtLeast(0),
+                                0,
+                            )
+                            extractor.advance()
+                        }
+                    }
+                }
+
+                when (val outputIndex = decoder.dequeueOutputBuffer(info, 10_000)) {
+                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        val format = decoder.outputFormat
+                        sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        if (format.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                            pcmEncoding = format.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                        }
+                        idlePolls = 0
+                    }
+                    MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                        idlePolls++
+                        check(idlePolls < 1_000) { "Voice decoder timed out" }
+                    }
+                    else -> if (outputIndex >= 0) {
+                        idlePolls = 0
+                        if (info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                            val buffer = decoder.getOutputBuffer(outputIndex)
+                                ?: error("Voice decoder output buffer is unavailable")
+                            buffer.position(info.offset)
+                            buffer.limit(info.offset + info.size)
+                            val chunk = ByteArray(info.size)
+                            buffer.get(chunk)
+                            output.write(chunk)
+                        }
+                        outputEnded = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                        decoder.releaseOutputBuffer(outputIndex, false)
+                    }
+                }
+            }
+
+            val pcm = normalizePcm16Mono(
+                output.toByteArray(),
+                pcmEncoding,
+                channelCount,
+                sampleRate,
+                16_000,
+            )
+            check(pcm.isNotEmpty()) { "Voice decoder returned no audio" }
+            return pcm16Wav(pcm, 16_000)
+        } finally {
+            runCatching { decoder?.stop() }
+            decoder?.release()
+            extractor.release()
+            input.delete()
+        }
+    }
+
+    private fun normalizePcm16Mono(
+        bytes: ByteArray,
+        encoding: Int,
+        channels: Int,
+        sourceRate: Int,
+        targetRate: Int,
+    ): ShortArray {
+        check(channels > 0 && sourceRate > 0) { "Invalid decoded audio format" }
+        val samples = when (encoding) {
+            AudioFormat.ENCODING_PCM_FLOAT -> {
+                val floats = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+                ShortArray(floats.remaining()) {
+                    (floats.get().coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
+                }
+            }
+            AudioFormat.ENCODING_PCM_8BIT -> ShortArray(bytes.size) { index ->
+                (((bytes[index].toInt() and 0xff) - 128) shl 8).toShort()
+            }
+            else -> {
+                val shorts = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                ShortArray(shorts.remaining()) { shorts.get() }
+            }
+        }
+        val frameCount = samples.size / channels
+        val mono = ShortArray(frameCount) { frame ->
+            var total = 0L
+            for (channel in 0 until channels) total += samples[frame * channels + channel]
+            (total / channels).toInt().toShort()
+        }
+        if (sourceRate == targetRate || mono.isEmpty()) return mono
+        val targetCount = ((mono.size.toLong() * targetRate) / sourceRate).toInt()
+        return ShortArray(targetCount) { index ->
+            val sourcePosition = index.toDouble() * sourceRate / targetRate
+            val left = sourcePosition.toInt().coerceIn(0, mono.lastIndex)
+            val right = (left + 1).coerceAtMost(mono.lastIndex)
+            val fraction = sourcePosition - left
+            (mono[left] + (mono[right] - mono[left]) * fraction).toInt().toShort()
+        }
+    }
+
+    private fun pcm16Wav(samples: ShortArray, sampleRate: Int): ByteArray {
+        val dataSize = samples.size * 2
+        return ByteBuffer.allocate(44 + dataSize).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray(Charsets.US_ASCII))
+            putInt(36 + dataSize)
+            put("WAVE".toByteArray(Charsets.US_ASCII))
+            put("fmt ".toByteArray(Charsets.US_ASCII))
+            putInt(16)
+            putShort(1)
+            putShort(1)
+            putInt(sampleRate)
+            putInt(sampleRate * 2)
+            putShort(2)
+            putShort(16)
+            put("data".toByteArray(Charsets.US_ASCII))
+            putInt(dataSize)
+            samples.forEach(::putShort)
+        }.array()
     }
 
     private fun performOta(call: MethodCall, result: MethodChannel.Result) {

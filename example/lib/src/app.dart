@@ -14,6 +14,7 @@ import 'device_detail_screen.dart';
 import 'driver_catalog.dart';
 import 'drivers_tab.dart';
 import 'example_database.dart';
+import 'gemma_voice_translator.dart';
 import 'models.dart';
 import 'marketplace_driver_install.dart';
 import 'map_tab.dart';
@@ -68,6 +69,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   late final EdgezBleConfigurationStore bleConfigurationStore;
   late final EdgezDriverStore driverStore;
   late final EdgezDeviceLogStore deviceLogStore;
+  late final GemmaVoiceTranslator gemmaVoiceTranslator;
   late final AppLinks appLinks;
   StreamSubscription<Uri>? driverLinkSubscription;
   AppDestination destination = AppDestination.dashboard;
@@ -152,6 +154,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       onIncomingCall: _showIncomingCall,
       deviceLogStore: deviceLogStore,
     );
+    gemmaVoiceTranslator = GemmaVoiceTranslator();
+    unawaited(gemmaVoiceTranslator.initialize());
     database = ExampleDatabase();
     identityStore = EdgezIdentityStore();
     bleConfigurationStore = EdgezBleConfigurationStore();
@@ -453,6 +457,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     session.removeListener(_handleCallNotificationState);
     session.removeListener(_handleDeviceGpsState);
     session.dispose();
+    gemmaVoiceTranslator.dispose();
     unawaited(database.close());
     super.dispose();
   }
@@ -1262,6 +1267,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       onStartVoiceMessage: _startVoiceMessage,
                       onStopVoiceMessage: _stopVoiceMessage,
                       onReplayVoiceMessage: session.playVoiceMessage,
+                      gemmaTranslator: gemmaVoiceTranslator,
+                      onTranslateVoiceMessage: (message, targetLanguage) =>
+                          gemmaVoiceTranslator.translate(
+                        sdk: session.sdk,
+                        message: message,
+                        targetLanguage: targetLanguage,
+                      ),
                       onStartSpeedTest: _startSpeedTest,
                       callState: meshState.voiceCall,
                       onStartCall: () =>
@@ -1309,6 +1321,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                           onStartVoiceMessage: _startVoiceMessage,
                           onStopVoiceMessage: _stopVoiceMessage,
                           onReplayVoiceMessage: session.playVoiceMessage,
+                          gemmaTranslator: gemmaVoiceTranslator,
+                          onTranslateVoiceMessage: (message, targetLanguage) =>
+                              gemmaVoiceTranslator.translate(
+                            sdk: session.sdk,
+                            message: message,
+                            targetLanguage: targetLanguage,
+                          ),
                           onStartSpeedTest: _startSpeedTest,
                           callState: meshState.voiceCall,
                           onStartCall: () =>
