@@ -28,6 +28,13 @@ class GemmaVoiceTranslation {
   final String targetLanguage;
 }
 
+class _DetectedTranscript {
+  const _DetectedTranscript({required this.text, required this.language});
+
+  final String text;
+  final String language;
+}
+
 /// Android-only, fully local voice translation modeled after
 /// google-gemma/gemma-translator.
 ///
@@ -105,7 +112,6 @@ class GemmaVoiceTranslator extends ChangeNotifier {
   Future<GemmaVoiceTranslation> translate({
     required EdgezMeshSdk sdk,
     required EdgezConversationMessage message,
-    required String sourceLanguage,
     required String targetLanguage,
     FutureOr<void> Function(String transcript, String language)? onTranscript,
   }) async {
@@ -119,16 +125,13 @@ class GemmaVoiceTranslator extends ChangeNotifier {
       if (message.transcript.trim().isNotEmpty) {
         return await _translateTranscript(
           transcript: message.transcript.trim(),
-          sourceLanguage: message.transcriptLanguage.isEmpty
-              ? sourceLanguage
-              : message.transcriptLanguage,
+          sourceLanguage: message.transcriptLanguage.trim(),
           targetLanguage: targetLanguage,
         );
       }
       return await _transcribeAndTranslate(
         sdk: sdk,
         message: message,
-        sourceLanguage: sourceLanguage,
         targetLanguage: targetLanguage,
         onTranscript: onTranscript,
       );
@@ -144,7 +147,6 @@ class GemmaVoiceTranslator extends ChangeNotifier {
   Future<GemmaVoiceTranslation> _transcribeAndTranslate({
     required EdgezMeshSdk sdk,
     required EdgezConversationMessage message,
-    required String sourceLanguage,
     required String targetLanguage,
     FutureOr<void> Function(String transcript, String language)? onTranscript,
   }) async {
@@ -160,18 +162,19 @@ class GemmaVoiceTranslator extends ChangeNotifier {
       tokenBuffer: 32,
       supportAudio: true,
       maxOutputTokens: 64,
-      systemInstruction: 'The audio language is $sourceLanguage. Transcribe '
-          'it only as $sourceLanguage; do not detect or translate languages. '
-          'Return only JSON: {"transcript":"speech"}. Add natural '
-          'punctuation supported by the language. Never add instructions, '
-          'labels, or words that were not spoken.',
+      systemInstruction: 'Detect the language spoken in the audio and '
+          'transcribe it exactly without translating it. Return only JSON: '
+          '{"language":"English","transcript":"speech"}. Use the '
+          'language name in English. Add natural punctuation when the spoken '
+          'language supports it, so the transcript is easy to read aloud. '
+          'Never add instructions, labels, or words that were not spoken.',
     );
-    String transcript;
+    late _DetectedTranscript detected;
     try {
       await chat.addQueryChunk(
         Message.withAudio(
-          text: 'Transcribe this $sourceLanguage audio using the required '
-              'JSON format.',
+          text: 'Detect the spoken language and transcribe this audio using '
+              'the required JSON format.',
           audioBytes: wav,
           isUser: true,
         ),
@@ -180,15 +183,15 @@ class GemmaVoiceTranslator extends ChangeNotifier {
       if (response is! TextResponse) {
         throw StateError('Gemma returned an unexpected transcript response');
       }
-      transcript = _parseTranscript(response.token);
+      detected = _parseTranscript(response.token);
     } finally {
       await chat.close();
       await _releaseInferenceModel();
     }
-    await onTranscript?.call(transcript, sourceLanguage);
+    await onTranscript?.call(detected.text, detected.language);
     return _translateTranscript(
-      transcript: transcript,
-      sourceLanguage: sourceLanguage,
+      transcript: detected.text,
+      sourceLanguage: detected.language,
       targetLanguage: targetLanguage,
     );
   }
@@ -198,7 +201,8 @@ class GemmaVoiceTranslator extends ChangeNotifier {
     required String sourceLanguage,
     required String targetLanguage,
   }) async {
-    if (sourceLanguage == targetLanguage) {
+    if (sourceLanguage.isNotEmpty &&
+        sourceLanguage.toLowerCase() == targetLanguage.toLowerCase()) {
       return GemmaVoiceTranslation(
         transcript: transcript,
         translation: transcript,
@@ -211,10 +215,14 @@ class GemmaVoiceTranslator extends ChangeNotifier {
       topK: 1,
       tokenBuffer: 128,
       maxOutputTokens: 96,
-      systemInstruction:
-          'Translate the user text from $sourceLanguage into $targetLanguage. '
-          'Return only JSON: {"translation":"translation"}. Use natural '
-          'punctuation for clear TTS. Do not add, omit, or explain content.',
+      systemInstruction: sourceLanguage.isEmpty
+          ? 'Detect the language of the user text and translate it into '
+              '$targetLanguage. Return only JSON: '
+              '{"translation":"translation"}. Use natural punctuation for '
+              'clear TTS. Do not add, omit, or explain content.'
+          : 'Translate the user text from $sourceLanguage into $targetLanguage. '
+              'Return only JSON: {"translation":"translation"}. Use natural '
+              'punctuation for clear TTS. Do not add, omit, or explain content.',
     );
     try {
       await chat.addQueryChunk(Message.text(text: transcript, isUser: true));
@@ -306,7 +314,7 @@ class GemmaVoiceTranslator extends ChangeNotifier {
     if (model != null) await model.close();
   }
 
-  String _parseTranscript(String raw) {
+  _DetectedTranscript _parseTranscript(String raw) {
     var value = raw.trim();
     if (value.startsWith('```json')) value = value.substring(7);
     if (value.startsWith('```')) value = value.substring(3);
@@ -325,17 +333,46 @@ class GemmaVoiceTranslator extends ChangeNotifier {
           final transcript = _stripInstructionEcho(
             '${json['transcript'] ?? ''}',
           );
-          if (transcript.isNotEmpty) return transcript;
+          final language = _normalizeDetectedLanguage(
+            '${json['language'] ?? ''}',
+          );
+          if (transcript.isNotEmpty && language.isNotEmpty) {
+            return _DetectedTranscript(text: transcript, language: language);
+          }
         }
       } catch (_) {
         // Try the next structured candidate, then the plain-text fallback.
       }
     }
-    final transcript = _stripInstructionEcho(value);
-    if (transcript.isEmpty) {
-      throw StateError('Gemma returned an empty transcript');
-    }
-    return transcript;
+    throw StateError(
+      'Gemma did not return a transcript with a detected language',
+    );
+  }
+
+  String _normalizeDetectedLanguage(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return '';
+    final lower = raw.toLowerCase().replaceAll('_', '-');
+    const aliases = <String, String>{
+      'ar': 'Arabic',
+      'arabic': 'Arabic',
+      'zh': 'Chinese',
+      'zh-cn': 'Chinese',
+      'zh-hans': 'Chinese',
+      'chinese': 'Chinese',
+      'mandarin': 'Chinese',
+      'en': 'English',
+      'en-us': 'English',
+      'english': 'English',
+      'ja': 'Japanese',
+      'japanese': 'Japanese',
+      'ko': 'Korean',
+      'korean': 'Korean',
+      'es': 'Spanish',
+      'spanish': 'Spanish',
+    };
+    return aliases[lower] ??
+        '${raw.substring(0, 1).toUpperCase()}${raw.substring(1)}';
   }
 
   Future<void> _installModel({required bool foreground}) async {

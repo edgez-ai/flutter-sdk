@@ -272,7 +272,7 @@ void main() {
               updatedAtMs: 1700000001000,
             ),
             callState: const EdgezVoiceCallState(),
-            voiceSourceLanguage: 'English',
+            defaultTargetLanguage: 'English',
             onBack: () {},
             onSendMessage: (_) async {},
             onStartVoiceMessage: () async => true,

@@ -2,6 +2,10 @@ package ai.edgez.flutter_sdk_example
 
 import android.content.ContentValues
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -28,6 +32,7 @@ class MainActivity : FlutterActivity() {
     private val speechRequest = AtomicInteger()
     private var moonshineSpeech: MoonshineTextToSpeech? = null
     private var moonshineLanguage: String? = null
+    @Volatile private var speechAudioTrack: AudioTrack? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -72,7 +77,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "stop" -> {
                     speechRequest.incrementAndGet()
-                    speechExecutor.execute { moonshineSpeech?.stop() }
+                    stopSpeechPlayback()
                     result.success(null)
                 }
                 "transcribe" -> {
@@ -92,10 +97,16 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         speechRequest.incrementAndGet()
-        speechExecutor.shutdownNow()
-        moonshineSpeech?.close()
-        moonshineSpeech = null
-        moonshineLanguage = null
+        stopSpeechPlayback()
+        // Moonshine's native synthesizer must be closed on the same serialized
+        // executor after any in-flight ONNX call finishes. Closing it here can
+        // destroy a mutex that the synthesis thread is still using.
+        speechExecutor.execute {
+            moonshineSpeech?.close()
+            moonshineSpeech = null
+            moonshineLanguage = null
+        }
+        speechExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -136,12 +147,15 @@ class MainActivity : FlutterActivity() {
                     moonshineLanguage = languageTag
                     notifySpeechProgress(100, "Moonshine voice ready")
                 }
-                engine.stop()
-                // Queue punctuation-delimited clauses separately. Moonshine
-                // pipelines synthesis and playback, so the first clause can
-                // start playing while it generates the remainder. Its built-in
-                // splitter does not recognize Chinese/Japanese punctuation.
-                splitForSpeech(text).forEach(engine::sayInBackground)
+                // Moonshine 0.1.2's built-in player calls
+                // AudioTrack.Builder.setContext(), which is unavailable on
+                // Android 12. Synthesize with the same voice model, then play
+                // PCM through an API-21-compatible AudioTrack that we own.
+                for (part in splitForSpeech(text)) {
+                    if (speechRequest.get() != request) break
+                    val audio = engine.synthesize(part)
+                    playSynthesizedAudio(audio.samples, audio.sampleRateHz, request)
+                }
                 runOnUiThread { result.success(null) }
             } catch (error: Throwable) {
                 Log.e("EdgezMoonshineTts", "Moonshine speech failed", error)
@@ -160,6 +174,63 @@ class MainActivity : FlutterActivity() {
             .map(String::trim)
             .filter(String::isNotEmpty)
         return parts.ifEmpty { listOf(text) }
+    }
+
+    private fun playSynthesizedAudio(
+        samples: FloatArray,
+        sampleRate: Int,
+        request: Int,
+    ) {
+        if (samples.isEmpty() || sampleRate <= 0 || speechRequest.get() != request) return
+        val minimumBuffer = AudioTrack.getMinBufferSize(
+            sampleRate,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_FLOAT,
+        ).coerceAtLeast(4096)
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setLegacyStreamType(AudioManager.STREAM_MUSIC)
+                    .build(),
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build(),
+            )
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .setBufferSizeInBytes(minimumBuffer)
+            .build()
+        speechAudioTrack = track
+        try {
+            track.play()
+            var offset = 0
+            while (offset < samples.size && speechRequest.get() == request) {
+                val written = track.write(
+                    samples,
+                    offset,
+                    samples.size - offset,
+                    AudioTrack.WRITE_BLOCKING,
+                )
+                if (written <= 0) break
+                offset += written
+            }
+        } finally {
+            if (speechAudioTrack === track) speechAudioTrack = null
+            runCatching { track.pause() }
+            runCatching { track.flush() }
+            track.release()
+        }
+    }
+
+    private fun stopSpeechPlayback() {
+        val track = speechAudioTrack ?: return
+        runCatching { track.pause() }
+        runCatching { track.flush() }
     }
 
     private fun transcribeVoiceMessage(
@@ -301,6 +372,7 @@ class MainActivity : FlutterActivity() {
 
     private fun releaseSpeechEngine(result: MethodChannel.Result) {
         speechRequest.incrementAndGet()
+        stopSpeechPlayback()
         speechExecutor.execute {
             try {
                 moonshineSpeech?.close()

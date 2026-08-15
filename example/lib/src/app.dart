@@ -48,7 +48,7 @@ const _navigationDestinations = <AppDestination>[
 
 const _otaManifestUrl = 'https://www.edgez.ai/api/ota/firmware';
 const _speedHistoryWindow = Duration(minutes: 30);
-const _voiceSourceLanguageSetting = 'voice_source_language';
+const _defaultVoiceTargetLanguageSetting = 'default_voice_translation_language';
 const _downloadsChannel = MethodChannel(
   'ai.edgez.flutter_sdk_example/downloads',
 );
@@ -92,7 +92,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   String lastPersistSignature = '';
   bool shareLocation = false;
   bool autoReplayReceivedVoice = false;
-  String voiceSourceLanguage = 'Chinese';
+  String defaultVoiceTargetLanguage = 'English';
   bool deviceModeEnabled = false;
   bool provisionMode = false;
   List<ExampleDriver> drivers = ExampleDriverCatalog.bundled;
@@ -470,8 +470,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       final nodes = await database.loadNodes();
       final savedDashboardDisplays = await database.loadDashboardDisplays();
       final conversations = await database.loadConversations();
-      final savedVoiceSourceLanguage =
-          await database.loadAppSetting(_voiceSourceLanguageSetting);
+      final savedDefaultVoiceTargetLanguage = await database.loadAppSetting(
+        _defaultVoiceTargetLanguageSetting,
+      );
       final loadedSpeedMetrics = await database.loadSpeedMetrics(
         sinceMs:
             DateTime.now().subtract(_speedHistoryWindow).millisecondsSinceEpoch,
@@ -494,8 +495,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         dashboardDisplays = savedDashboardDisplays;
         speedMetrics = loadedSpeedMetrics;
         if (supportedVoiceTranslationLanguages
-            .contains(savedVoiceSourceLanguage)) {
-          voiceSourceLanguage = savedVoiceSourceLanguage!;
+            .contains(savedDefaultVoiceTargetLanguage)) {
+          defaultVoiceTargetLanguage = savedDefaultVoiceTargetLanguage!;
         }
         lastPersistedSpeedMetricMs = loadedSpeedMetrics.isEmpty
             ? 0
@@ -882,12 +883,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     }
   }
 
-  void _setVoiceSourceLanguage(String language) {
+  void _setDefaultVoiceTargetLanguage(String language) {
     if (!supportedVoiceTranslationLanguages.contains(language)) return;
-    setState(() => voiceSourceLanguage = language);
+    setState(() => defaultVoiceTargetLanguage = language);
     if (databaseReady) {
       unawaited(
-        database.saveAppSetting(_voiceSourceLanguageSetting, language),
+        database.saveAppSetting(_defaultVoiceTargetLanguageSetting, language),
       );
     }
   }
@@ -899,7 +900,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     final translation = await gemmaVoiceTranslator.translate(
       sdk: session.sdk,
       message: message,
-      sourceLanguage: voiceSourceLanguage,
       targetLanguage: targetLanguage,
       onTranscript: (transcript, language) {
         session.updateConversationMessageTranscript(
@@ -1325,7 +1325,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       onStopVoiceMessage: _stopVoiceMessage,
                       onReplayVoiceMessage: session.playVoiceMessage,
                       gemmaTranslator: gemmaVoiceTranslator,
-                      voiceSourceLanguage: voiceSourceLanguage,
+                      defaultTargetLanguage: defaultVoiceTargetLanguage,
                       onTranslateVoiceMessage: _translateVoiceMessage,
                       onRetranscribeVoiceMessage: _retranscribeVoiceMessage,
                       onStartSpeedTest: _startSpeedTest,
@@ -1376,7 +1376,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                           onStopVoiceMessage: _stopVoiceMessage,
                           onReplayVoiceMessage: session.playVoiceMessage,
                           gemmaTranslator: gemmaVoiceTranslator,
-                          voiceSourceLanguage: voiceSourceLanguage,
+                          defaultTargetLanguage: defaultVoiceTargetLanguage,
                           onTranslateVoiceMessage: _translateVoiceMessage,
                           onRetranscribeVoiceMessage: _retranscribeVoiceMessage,
                           onStartSpeedTest: _startSpeedTest,
@@ -1432,8 +1432,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   bleReady: meshState.bleReady,
                   shareLocation: shareLocation,
                   autoReplayReceivedVoice: autoReplayReceivedVoice,
-                  voiceSourceLanguage: voiceSourceLanguage,
-                  voiceSourceLanguages: supportedVoiceTranslationLanguages,
+                  defaultVoiceTargetLanguage: defaultVoiceTargetLanguage,
+                  voiceTargetLanguages: supportedVoiceTranslationLanguages,
                   deviceModeEnabled: deviceModeEnabled,
                   bleDevices: meshState.sortedBleDevices,
                   usbDevices: usbDevices,
@@ -1519,7 +1519,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   onShareLocationChanged: _setShareLocation,
                   onAutoReplayChanged: (value) =>
                       setState(() => autoReplayReceivedVoice = value),
-                  onVoiceSourceLanguageChanged: _setVoiceSourceLanguage,
+                  onDefaultVoiceTargetLanguageChanged:
+                      _setDefaultVoiceTargetLanguage,
                   onDeviceModeChanged: (value) =>
                       setState(() => deviceModeEnabled = value),
                   onMeshCountryChanged: (value) => setState(() {

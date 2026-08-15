@@ -21,7 +21,7 @@ class ConversationScreen extends StatefulWidget {
     required this.onStartSpeedTest,
     required this.callState,
     required this.onStartCall,
-    required this.voiceSourceLanguage,
+    required this.defaultTargetLanguage,
     this.gemmaTranslator,
     this.onTranslateVoiceMessage,
     this.onRetranscribeVoiceMessage,
@@ -44,7 +44,7 @@ class ConversationScreen extends StatefulWidget {
   ) onStartSpeedTest;
   final EdgezVoiceCallState callState;
   final Future<void> Function() onStartCall;
-  final String voiceSourceLanguage;
+  final String defaultTargetLanguage;
   final GemmaVoiceTranslator? gemmaTranslator;
   final Future<GemmaVoiceTranslation> Function(
     EdgezConversationMessage message,
@@ -69,7 +69,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   int speedTestSentBytes = 0;
   int speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
   int speedTestHop = 0;
-  String translationLanguage = 'English';
+  late String translationLanguage;
   final Map<String, GemmaVoiceTranslation> translations =
       <String, GemmaVoiceTranslation>{};
   final Map<String, String> translationErrors = <String, String>{};
@@ -79,6 +79,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   @override
   void initState() {
     super.initState();
+    translationLanguage = widget.defaultTargetLanguage;
     widget.gemmaTranslator?.addListener(_gemmaChanged);
   }
 
@@ -88,6 +89,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
     if (oldWidget.gemmaTranslator != widget.gemmaTranslator) {
       oldWidget.gemmaTranslator?.removeListener(_gemmaChanged);
       widget.gemmaTranslator?.addListener(_gemmaChanged);
+    }
+    if (oldWidget.defaultTargetLanguage != widget.defaultTargetLanguage) {
+      translationLanguage = widget.defaultTargetLanguage;
     }
   }
 
@@ -303,7 +307,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
             if (widget.gemmaTranslator?.isSupported == true) ...<Widget>[
               _GemmaTranslationBar(
                 translator: widget.gemmaTranslator!,
-                sourceLanguage: widget.voiceSourceLanguage,
                 language: translationLanguage,
                 languages: supportedVoiceTranslationLanguages,
                 onLanguageChanged: (value) {
@@ -617,14 +620,12 @@ String _formatBitRate(double bitsPerSecond) {
 class _GemmaTranslationBar extends StatelessWidget {
   const _GemmaTranslationBar({
     required this.translator,
-    required this.sourceLanguage,
     required this.language,
     required this.languages,
     required this.onLanguageChanged,
   });
 
   final GemmaVoiceTranslator translator;
-  final String sourceLanguage;
   final String language;
   final List<String> languages;
   final ValueChanged<String?> onLanguageChanged;
@@ -661,7 +662,7 @@ class _GemmaTranslationBar extends StatelessWidget {
                       ),
                       if (ready)
                         Text(
-                          'Source: $sourceLanguage · transcript saved once',
+                          'Source detected once · transcript saved on message',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                     ],

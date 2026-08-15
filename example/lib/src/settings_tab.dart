@@ -59,8 +59,8 @@ class SettingsScreen extends StatefulWidget {
     required this.bleReady,
     required this.shareLocation,
     required this.autoReplayReceivedVoice,
-    required this.voiceSourceLanguage,
-    required this.voiceSourceLanguages,
+    required this.defaultVoiceTargetLanguage,
+    required this.voiceTargetLanguages,
     required this.deviceModeEnabled,
     required this.bleDevices,
     required this.usbDevices,
@@ -126,7 +126,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onSaveDeviceSettings,
     required this.onShareLocationChanged,
     required this.onAutoReplayChanged,
-    required this.onVoiceSourceLanguageChanged,
+    required this.onDefaultVoiceTargetLanguageChanged,
     required this.onDeviceModeChanged,
     required this.onMeshCountryChanged,
     required this.onMeshBandwidthChanged,
@@ -167,8 +167,8 @@ class SettingsScreen extends StatefulWidget {
   final bool bleReady;
   final bool shareLocation;
   final bool autoReplayReceivedVoice;
-  final String voiceSourceLanguage;
-  final List<String> voiceSourceLanguages;
+  final String defaultVoiceTargetLanguage;
+  final List<String> voiceTargetLanguages;
   final bool deviceModeEnabled;
   final List<EdgezBleDevice> bleDevices;
   final List<EdgezUsbDevice> usbDevices;
@@ -234,7 +234,7 @@ class SettingsScreen extends StatefulWidget {
   final FutureOr<void> Function() onSaveDeviceSettings;
   final ValueChanged<bool> onShareLocationChanged;
   final ValueChanged<bool> onAutoReplayChanged;
-  final ValueChanged<String> onVoiceSourceLanguageChanged;
+  final ValueChanged<String> onDefaultVoiceTargetLanguageChanged;
   final ValueChanged<bool> onDeviceModeChanged;
   final ValueChanged<String> onMeshCountryChanged;
   final ValueChanged<int> onMeshBandwidthChanged;
@@ -887,16 +887,17 @@ class SettingsScreen extends StatefulWidget {
               title: 'Chat',
               children: <Widget>[
                 DropdownSetting<String>(
-                  label: 'Voice message language',
-                  value: voiceSourceLanguage,
-                  values: voiceSourceLanguages,
+                  label: 'Default translation language',
+                  value: defaultVoiceTargetLanguage,
+                  values: voiceTargetLanguages,
                   titleFor: (value) => value,
-                  onChanged: onVoiceSourceLanguageChanged,
+                  onChanged: onDefaultVoiceTargetLanguageChanged,
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Used for the first transcript. The transcript is saved on '
-                  'the message and reused for every target language.',
+                  'Used as the initial target language in conversations. The '
+                  'spoken language is detected once and saved with the '
+                  'transcript on the message.',
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
