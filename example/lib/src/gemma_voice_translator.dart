@@ -48,11 +48,16 @@ class GemmaVoiceTranslator extends ChangeNotifier {
   static const modelUrl = 'https://huggingface.co/litert-community/'
       'gemma-4-E2B-it-litert-lm/resolve/main/$modelFileName';
 
-  GemmaVoiceTranslator() {
+  GemmaVoiceTranslator({this.keepSpeechModelResident = true}) {
     if (Platform.isAndroid) {
       _ttsChannel.setMethodCallHandler(_handleSpeechMethod);
     }
   }
+
+  /// Keeps Moonshine/Kokoro loaded while Gemma runs so repeated playback can
+  /// measure warm synthesis latency without paying the voice load cost again.
+  /// This deliberately trades additional peak memory for lower latency.
+  final bool keepSpeechModelResident;
 
   GemmaVoiceTranslatorStatus status = Platform.isAndroid
       ? GemmaVoiceTranslatorStatus.missing
@@ -283,9 +288,10 @@ class GemmaVoiceTranslator extends ChangeNotifier {
   }) async {
     if (_model != null && _modelSupportsAudio == supportAudio) return _model!;
     if (_model != null) await _releaseInferenceModel();
-    // Stop speech and release Moonshine's ONNX session before LiteRT-LM maps
-    // Gemma back into memory. Downloaded voice assets remain cached on disk.
-    if (Platform.isAndroid) {
+    // Low-memory deployments can release Moonshine before LiteRT-LM maps
+    // Gemma. The current test configuration keeps it resident to measure warm
+    // consecutive-playback latency.
+    if (Platform.isAndroid && !keepSpeechModelResident) {
       await _ttsChannel.invokeMethod<void>('release');
     }
     await _installModel(foreground: download);

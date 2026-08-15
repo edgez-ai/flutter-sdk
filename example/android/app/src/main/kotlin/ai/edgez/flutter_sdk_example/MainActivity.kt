@@ -9,6 +9,7 @@ import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
 import android.view.WindowManager
@@ -118,10 +119,14 @@ class MainActivity : FlutterActivity() {
         val request = speechRequest.incrementAndGet()
         speechExecutor.execute {
             try {
+                val requestStartedAt = SystemClock.elapsedRealtime()
                 var engine = moonshineSpeech
+                val reusedEngine = engine != null && moonshineLanguage == languageTag
+                var loadMs = 0L
                 if (engine == null || moonshineLanguage != languageTag) {
                     engine?.close()
                     notifySpeechProgress(0, "Preparing Moonshine voice")
+                    val loadStartedAt = SystemClock.elapsedRealtime()
                     engine = MoonshineTextToSpeech(applicationContext)
                         .language(languageTag)
                         .onProgress { fraction, file ->
@@ -134,6 +139,7 @@ class MainActivity : FlutterActivity() {
                         engine.voice("kokoro_zf_xiaoxiao")
                     }
                     engine.load()
+                    loadMs = SystemClock.elapsedRealtime() - loadStartedAt
                     if (speechRequest.get() != request) {
                         engine.close()
                         completeSpeechError(
@@ -151,11 +157,32 @@ class MainActivity : FlutterActivity() {
                 // AudioTrack.Builder.setContext(), which is unavailable on
                 // Android 12. Synthesize with the same voice model, then play
                 // PCM through an API-21-compatible AudioTrack that we own.
+                var synthesisMs = 0L
+                var synthesizedSamples = 0
+                var clauseNumber = 0
                 for (part in splitForSpeech(text)) {
                     if (speechRequest.get() != request) break
+                    clauseNumber += 1
+                    val synthesisStartedAt = SystemClock.elapsedRealtime()
                     val audio = engine.synthesize(part)
+                    val clauseSynthesisMs =
+                        SystemClock.elapsedRealtime() - synthesisStartedAt
+                    synthesisMs += clauseSynthesisMs
+                    synthesizedSamples += audio.samples.size
+                    Log.i(
+                        "EdgezMoonshineTts",
+                        "clause=$clauseNumber reused=$reusedEngine " +
+                            "synthesisMs=$clauseSynthesisMs samples=${audio.samples.size}",
+                    )
                     playSynthesizedAudio(audio.samples, audio.sampleRateHz, request)
                 }
+                Log.i(
+                    "EdgezMoonshineTts",
+                    "complete reused=$reusedEngine loadMs=$loadMs " +
+                        "synthesisMs=$synthesisMs samples=$synthesizedSamples " +
+                        "elapsedIncludingPlaybackMs=" +
+                        (SystemClock.elapsedRealtime() - requestStartedAt),
+                )
                 runOnUiThread { result.success(null) }
             } catch (error: Throwable) {
                 Log.e("EdgezMoonshineTts", "Moonshine speech failed", error)
