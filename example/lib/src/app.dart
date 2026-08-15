@@ -157,7 +157,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       deviceLogStore: deviceLogStore,
     );
     gemmaVoiceTranslator = GemmaVoiceTranslator();
-    unawaited(gemmaVoiceTranslator.initialize());
     database = ExampleDatabase();
     identityStore = EdgezIdentityStore();
     bleConfigurationStore = EdgezBleConfigurationStore();
@@ -296,6 +295,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
 
   void _openIncomingConversation(int nodeNum) {
     if (!mounted) return;
+    unawaited(gemmaVoiceTranslator.initialize());
     setState(() {
       provisionMode = false;
       destination = AppDestination.nodes;
@@ -1206,6 +1206,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   void _openNode(EdgezMeshNode node) {
+    if (node.opensConversation) {
+      unawaited(gemmaVoiceTranslator.initialize());
+    }
     setState(() => selectedNodeNum = node.nodeNum);
   }
 

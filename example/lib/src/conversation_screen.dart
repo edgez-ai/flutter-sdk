@@ -584,6 +584,7 @@ class _GemmaTranslationBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final downloading =
         translator.status == GemmaVoiceTranslatorStatus.downloading;
+    final checking = translator.status == GemmaVoiceTranslatorStatus.checking;
     final ready = translator.isInstalled;
     return Card(
       child: Padding(
@@ -603,9 +604,11 @@ class _GemmaTranslationBar extends StatelessWidget {
                   child: Text(
                     ready
                         ? 'Translate voice'
-                        : downloading
-                            ? 'Gemma 4 · ${translator.downloadProgress}%'
-                            : 'Offline translation · 2.6 GB',
+                        : checking
+                            ? 'Checking offline translation…'
+                            : downloading
+                                ? 'Gemma 4 · ${translator.downloadProgress}%'
+                                : 'Offline translation · 2.6 GB',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall,
@@ -624,7 +627,7 @@ class _GemmaTranslationBar extends StatelessWidget {
                         ),
                     ],
                   )
-                else if (!downloading)
+                else if (!downloading && !checking)
                   FilledButton.tonal(
                     onPressed: translator.install,
                     style: FilledButton.styleFrom(

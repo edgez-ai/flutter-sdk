@@ -9,6 +9,8 @@ import 'package:flutter_gemma/flutter_gemma.dart';
 
 enum GemmaVoiceTranslatorStatus {
   unsupported,
+  uninitialized,
+  checking,
   missing,
   downloading,
   ready,
@@ -60,7 +62,7 @@ class GemmaVoiceTranslator extends ChangeNotifier {
   final bool keepSpeechModelResident;
 
   GemmaVoiceTranslatorStatus status = Platform.isAndroid
-      ? GemmaVoiceTranslatorStatus.missing
+      ? GemmaVoiceTranslatorStatus.uninitialized
       : GemmaVoiceTranslatorStatus.unsupported;
   int downloadProgress = 0;
   int speechDownloadProgress = 0;
@@ -69,6 +71,7 @@ class GemmaVoiceTranslator extends ChangeNotifier {
   String errorMessage = '';
   InferenceModel? _model;
   bool _modelSupportsAudio = false;
+  Future<void>? _initializationFuture;
   Future<void>? _installFuture;
 
   bool get isSupported => status != GemmaVoiceTranslatorStatus.unsupported;
@@ -76,8 +79,14 @@ class GemmaVoiceTranslator extends ChangeNotifier {
       status == GemmaVoiceTranslatorStatus.ready ||
       status == GemmaVoiceTranslatorStatus.translating;
 
-  Future<void> initialize() async {
-    if (!Platform.isAndroid) return;
+  Future<void> initialize() {
+    if (!Platform.isAndroid) return Future<void>.value();
+    return _initializationFuture ??= _initialize();
+  }
+
+  Future<void> _initialize() async {
+    status = GemmaVoiceTranslatorStatus.checking;
+    notifyListeners();
     try {
       final models = await FlutterGemma.listInstalledModels();
       status = models.any((name) => name.endsWith(modelFileName))
@@ -94,9 +103,15 @@ class GemmaVoiceTranslator extends ChangeNotifier {
     if (!Platform.isAndroid) return Future<void>.value();
     final activeInstall = _installFuture;
     if (activeInstall != null) return activeInstall;
-    final future = _install();
+    final future = _initializeThenInstall();
     _installFuture = future;
     return future.whenComplete(() => _installFuture = null);
+  }
+
+  Future<void> _initializeThenInstall() async {
+    await initialize();
+    if (isInstalled) return;
+    await _install();
   }
 
   Future<void> _install() async {
