@@ -30,6 +30,10 @@ class NodesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final publicChannels = users.where((user) => user.isPublicChannel).toList()
+      ..sort((a, b) => a.nodeNum.compareTo(b.nodeNum));
+    final discoveredUsers =
+        users.where((user) => !user.isPublicChannel).toList();
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -50,13 +54,25 @@ class NodesScreen extends StatelessWidget {
           const SizedBox(height: 6),
           Text('Interface: ${activeConnection.name.toUpperCase()}'),
           const SizedBox(height: 16),
+          Text('Public channels',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          for (final channel in publicChannels) ...<Widget>[
+            NodeCard(
+              user: channel,
+              latestSensor: null,
+              onTap: () => onOpenNode(channel),
+            ),
+            const SizedBox(height: 12),
+          ],
+          const SizedBox(height: 4),
           Text('Discovered users / nodes',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          if (users.isEmpty)
+          if (discoveredUsers.isEmpty)
             const Text(
                 'No beacon or discovery packets received yet. Connect BLE and save mesh settings to join the mesh.'),
-          for (final user in users) ...<Widget>[
+          for (final user in discoveredUsers) ...<Widget>[
             Dismissible(
               key: ValueKey<int>(user.nodeNum),
               direction: DismissDirection.endToStart,
@@ -128,7 +144,9 @@ class NodeCard extends StatelessWidget {
                                 .textTheme
                                 .titleMedium
                                 ?.copyWith(color: color)),
-                        Text('Node ${user.nodeId}'),
+                        Text(user.isPublicChannel
+                            ? 'Talkgroup port ${user.nodeNum}'
+                            : 'Node ${user.nodeId}'),
                         Text('User ${user.exampleUserId}',
                             style: Theme.of(context).textTheme.bodySmall),
                         Text('Type ${user.exampleDeviceType.label}',
@@ -163,8 +181,9 @@ class NodeCard extends StatelessWidget {
                       if (user.sleeping)
                         Text('Sleeping',
                             style: Theme.of(context).textTheme.labelLarge),
-                      Text('Last seen ${formatLastSeenAge(user.lastSeenMs)}',
-                          style: Theme.of(context).textTheme.labelLarge),
+                      if (!user.isPublicChannel)
+                        Text('Last seen ${formatLastSeenAge(user.lastSeenMs)}',
+                            style: Theme.of(context).textTheme.labelLarge),
                       if (user.hasLocation)
                         Icon(Icons.location_on, color: color),
                     ],

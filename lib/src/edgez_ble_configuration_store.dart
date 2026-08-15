@@ -15,6 +15,9 @@ class EdgezBleConfiguration {
     this.usbProductId = 0,
     this.usbDeviceName = '',
     this.logLevel = EdgezDeviceLogLevel.warning,
+    this.meshCountry = 'US',
+    this.meshBandwidthMhz = 1,
+    this.meshFrequencyKhz = 902500,
   });
 
   final String deviceId;
@@ -26,6 +29,9 @@ class EdgezBleConfiguration {
   final int usbProductId;
   final String usbDeviceName;
   final EdgezDeviceLogLevel logLevel;
+  final String meshCountry;
+  final int meshBandwidthMhz;
+  final int meshFrequencyKhz;
 
   bool get hasSelectedDevice => deviceId.isNotEmpty;
 
@@ -51,6 +57,9 @@ class EdgezBleConfigurationStore {
   static const _keyUsbProductId = 'edgez_usb_product_id';
   static const _keyUsbDeviceName = 'edgez_usb_device_name';
   static const _keyLogLevel = 'edgez_log_level';
+  static const _keyMeshCountry = 'edgez_mesh_country';
+  static const _keyMeshBandwidthMhz = 'edgez_mesh_bandwidth_mhz';
+  static const _keyMeshFrequencyKhz = 'edgez_mesh_frequency_khz';
 
   Future<EdgezBleConfiguration> load() async {
     final preferences = await SharedPreferences.getInstance();
@@ -69,6 +78,9 @@ class EdgezBleConfigurationStore {
         (level) => level.wireValue == preferences.getInt(_keyLogLevel),
         orElse: () => EdgezDeviceLogLevel.warning,
       ),
+      meshCountry: preferences.getString(_keyMeshCountry) ?? 'US',
+      meshBandwidthMhz: preferences.getInt(_keyMeshBandwidthMhz) ?? 1,
+      meshFrequencyKhz: preferences.getInt(_keyMeshFrequencyKhz) ?? 902500,
     );
   }
 
@@ -105,6 +117,17 @@ class EdgezBleConfigurationStore {
   Future<void> setLogLevel(EdgezDeviceLogLevel level) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setInt(_keyLogLevel, level.wireValue);
+  }
+
+  Future<void> setMeshRadio({
+    required String country,
+    required int bandwidthMhz,
+    required int frequencyKhz,
+  }) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(_keyMeshCountry, country);
+    await preferences.setInt(_keyMeshBandwidthMhz, bandwidthMhz);
+    await preferences.setInt(_keyMeshFrequencyKhz, frequencyKhz);
   }
 
   Future<void> clearSelectedDevice() async {

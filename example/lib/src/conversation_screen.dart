@@ -226,7 +226,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
         widget.user.opensConversation &&
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
-    final canSpeedTest = canSendVoice && widget.user.opensConversation;
+    final canSendVoiceMessage = canSendVoice && !widget.user.isPublicChannel;
+    final canSpeedTest = canSendVoice &&
+        widget.user.opensConversation &&
+        !widget.user.isPublicChannel;
     final speedTestProgress = speedTestTotalBytes <= 0
         ? 0.0
         : (speedTestSentBytes / speedTestTotalBytes).clamp(0.0, 1.0);
@@ -271,6 +274,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       Text(
                         widget.user.resolvedDisplayName,
@@ -279,14 +283,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       Text(
-                        '${widget.user.exampleDeviceType.label} · '
-                        '${widget.user.opensConversation ? 'Encrypted' : 'Waiting for key'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      Text(
-                        widget.user.nodeId,
+                        widget.user.isPublicChannel
+                            ? 'OpenMANET · Port ${widget.user.nodeNum}'
+                            : '${widget.user.exampleDeviceType.label} · '
+                                '${widget.user.opensConversation ? 'Encrypted' : 'Waiting for key'} · '
+                                '${widget.user.nodeId}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall,
@@ -295,7 +296,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Start voice call',
+                  tooltip: widget.user.isPublicChannel
+                      ? 'Join OpenMANET talkgroup'
+                      : 'Start voice call',
                   onPressed: canSendVoice && widget.callState.isIdle
                       ? () => unawaited(widget.onStartCall())
                       : null,
@@ -319,83 +322,36 @@ class _ConversationScreenState extends State<ConversationScreen> {
             ],
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 child: Row(
-                  children: <Widget>[
-                    Icon(
-                      Icons.speed,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        widget.linkStats == null
-                            ? 'Speed: — · Packet loss: —'
-                            : 'Speed: ${_formatBitRate(widget.linkStats!.bitsPerSecond)} · '
-                                'Packet loss: ${widget.linkStats!.packetLossPercent.toStringAsFixed(2)}%',
-                        key: const ValueKey<String>('conversation-link-stats'),
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Icon(
                       location != null ? Icons.gps_fixed : Icons.gps_off,
+                      size: 20,
                       color: location != null
                           ? widget.user.exampleMarker.color
                           : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Location',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            'Latest sensor location',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          if (location != null) ...<Widget>[
-                            SelectableText(
-                              '${_formatCoordinate(location.data.latitude)}, '
-                              '${_formatCoordinate(location.data.longitude)}',
-                            ),
-                            if (location.timestampMs > 0)
-                              Text(
-                                'Updated ${_formatLocationTime(location.timestampMs)}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                          ] else
-                            Text(
-                              'No GPS location received in sensor data',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                        ],
+                      child: SelectableText(
+                        location == null
+                            ? 'No sensor GPS'
+                            : '${_formatCoordinate(location.data.latitude)}, '
+                                '${_formatCoordinate(location.data.longitude)}'
+                                '${location.timestampMs > 0 ? ' · ${_formatLocationTime(location.timestampMs)}' : ''}',
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                widget.user.opensConversation
-                    ? 'Encrypted with ECDH + AES-GCM'
-                    : "Waiting for this user's public key",
-                style: TextStyle(
-                    color: widget.user.opensConversation
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.error),
               ),
             ),
             const SizedBox(height: 12),
@@ -556,18 +512,20 @@ class _ConversationScreenState extends State<ConversationScreen> {
             const SizedBox(height: 12),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: canSendVoice ? (_) => _startVoicePress() : null,
-              onTapUp:
-                  canSendVoice ? (_) => _finishVoicePress(send: true) : null,
-              onTapCancel:
-                  canSendVoice ? () => _finishVoicePress(send: false) : null,
+              onTapDown: canSendVoiceMessage ? (_) => _startVoicePress() : null,
+              onTapUp: canSendVoiceMessage
+                  ? (_) => _finishVoicePress(send: true)
+                  : null,
+              onTapCancel: canSendVoiceMessage
+                  ? () => _finishVoicePress(send: false)
+                  : null,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: recording
                       ? Theme.of(context).colorScheme.error
-                      : canSendVoice
+                      : canSendVoiceMessage
                           ? Theme.of(context).colorScheme.primary
                           : Theme.of(context)
                               .colorScheme
@@ -577,12 +535,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 child: Text(
                   recording
                       ? 'Recording'
-                      : canSendVoice
-                          ? 'Hold to Talk'
-                          : 'Connect to send voice',
+                      : widget.user.isPublicChannel
+                          ? 'Use call button to join talkgroup'
+                          : canSendVoiceMessage
+                              ? 'Hold to Talk'
+                              : 'Connect to send voice',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: recording || canSendVoice
+                    color: recording || canSendVoiceMessage
                         ? Theme.of(context).colorScheme.onPrimary
                         : Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
@@ -607,16 +567,6 @@ String _formatLocationTime(int timestampMs) {
       '${twoDigits(value.hour)}:${twoDigits(value.minute)}:${twoDigits(value.second)}';
 }
 
-String _formatBitRate(double bitsPerSecond) {
-  if (bitsPerSecond >= 1000000) {
-    return '${(bitsPerSecond / 1000000).toStringAsFixed(2)} Mbps';
-  }
-  if (bitsPerSecond >= 1000) {
-    return '${(bitsPerSecond / 1000).toStringAsFixed(1)} kbps';
-  }
-  return '${bitsPerSecond.toStringAsFixed(0)} bps';
-}
-
 class _GemmaTranslationBar extends StatelessWidget {
   const _GemmaTranslationBar({
     required this.translator,
@@ -637,7 +587,7 @@ class _GemmaTranslationBar extends StatelessWidget {
     final ready = translator.isInstalled;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -645,32 +595,26 @@ class _GemmaTranslationBar extends StatelessWidget {
               children: <Widget>[
                 Icon(
                   Icons.translate,
+                  size: 20,
                   color: Theme.of(context).colorScheme.primary,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        ready
-                            ? 'Gemma 4 offline voice translation'
-                            : downloading
-                                ? 'Downloading Gemma 4 · ${translator.downloadProgress}%'
-                                : 'Offline voice translation · 2.6 GB download',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      if (ready)
-                        Text(
-                          'Source detected once · transcript saved on message',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                    ],
+                  child: Text(
+                    ready
+                        ? 'Translate voice'
+                        : downloading
+                            ? 'Gemma 4 · ${translator.downloadProgress}%'
+                            : 'Offline translation · 2.6 GB',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
                 if (ready)
                   DropdownButton<String>(
                     value: language,
+                    isDense: true,
                     onChanged: onLanguageChanged,
                     items: <DropdownMenuItem<String>>[
                       for (final item in languages)
@@ -683,6 +627,9 @@ class _GemmaTranslationBar extends StatelessWidget {
                 else if (!downloading)
                   FilledButton.tonal(
                     onPressed: translator.install,
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
                     child: const Text('Install'),
                   ),
               ],

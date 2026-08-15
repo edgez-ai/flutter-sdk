@@ -37,6 +37,7 @@ enum EdgezMeshEventType {
   speedTestFrame,
   usbLinkStats,
   voiceAudio,
+  openManetComms,
   otaProgress,
   log;
 
@@ -592,12 +593,15 @@ class EdgezMeshNode {
   }
 
   bool get opensConversation {
+    if (isPublicChannel) return true;
     final normalized = deviceType.trim().toLowerCase();
     return normalized.isEmpty ||
         normalized == 'unspecified' ||
         normalized == 'user' ||
         normalized == 'device_type_user';
   }
+
+  bool get isPublicChannel => EdgezPublicChannels.isChannelNodeNum(nodeNum);
 
   bool get hasLocation => latitude != null && longitude != null;
 
@@ -648,6 +652,59 @@ class EdgezMeshNode {
       geoIndex: map['geoIndex'] as int? ?? 0,
       sleeping: map['sleeping'] == true,
     );
+  }
+}
+
+/// Five OpenMANET-compatible public channels represented as synthetic users.
+///
+/// The node/user ID is the OpenMANET RTP talkgroup port. Using the port as the
+/// canonical ID avoids maintaining a separate channel mapping in the SDK,
+/// firmware, and UI.
+class EdgezPublicChannels {
+  const EdgezPublicChannels._();
+
+  static const List<int> talkgroupPorts = <int>[
+    38801,
+    38803,
+    38805,
+    38807,
+    38809,
+  ];
+  static const int count = 5;
+
+  static bool isChannelNodeNum(int nodeNum) => talkgroupPorts.contains(nodeNum);
+
+  static int indexForNodeNum(int nodeNum) {
+    final index = talkgroupPorts.indexOf(nodeNum);
+    return index < 0 ? 0 : index + 1;
+  }
+
+  static String username(int channel) => 'channel$channel';
+
+  static EdgezMeshNode node(int channel) {
+    if (channel < 1 || channel > count) {
+      throw RangeError.range(channel, 1, count, 'channel');
+    }
+    final name = username(channel);
+    final talkgroupPort = talkgroupPorts[channel - 1];
+    return EdgezMeshNode(
+      nodeNum: talkgroupPort,
+      userUuid: talkgroupPort.toString(),
+      displayName: name,
+      route: 'PUBLIC',
+      lastSeenMs: 0,
+      marker: 'cyan',
+      deviceType: 'PublicChannel',
+    );
+  }
+
+  static List<EdgezMeshNode> get nodes => List<EdgezMeshNode>.unmodifiable(
+        List<EdgezMeshNode>.generate(count, (index) => node(index + 1)),
+      );
+
+  static EdgezMeshNode? nodeForNodeNum(int nodeNum) {
+    final channel = indexForNodeNum(nodeNum);
+    return channel == 0 ? null : node(channel);
   }
 }
 
@@ -797,6 +854,7 @@ class EdgezMeshEvent {
     this.usbTimeouts = 0,
     this.usbRttMs = 0,
     this.receivedAtUs = 0,
+    this.talkgroupPort = 0,
     this.log = '',
   });
 
@@ -815,6 +873,7 @@ class EdgezMeshEvent {
   final int usbTimeouts;
   final int usbRttMs;
   final int receivedAtUs;
+  final int talkgroupPort;
   final String log;
 
   double get progress => totalBytes <= 0 ? 0 : sentBytes / totalBytes;
@@ -850,6 +909,7 @@ class EdgezMeshEvent {
       usbTimeouts: map['timeouts'] as int? ?? 0,
       usbRttMs: map['rttMs'] as int? ?? 0,
       receivedAtUs: (map['receivedAtUs'] as num?)?.toInt() ?? 0,
+      talkgroupPort: map['talkgroupPort'] as int? ?? 0,
       log: map['log'] as String? ?? '',
     );
   }

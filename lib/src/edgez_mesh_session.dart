@@ -141,6 +141,9 @@ class EdgezMeshState {
     return List<EdgezMeshNode>.unmodifiable(sorted);
   }
 
+  EdgezMeshNode? nodeByNum(int nodeNum) =>
+      nodes[nodeNum] ?? EdgezPublicChannels.nodeForNodeNum(nodeNum);
+
   List<EdgezBleDevice> get sortedBleDevices {
     final sorted = bleDevices.values.toList()
       ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
@@ -440,12 +443,32 @@ class EdgezMeshSession extends ChangeNotifier {
     if (!_state.voiceCall.isIdle) {
       throw StateError('A voice call is already in progress');
     }
-    final peer = _state.nodes[peerNodeNum];
+    final peer = _state.nodeByNum(peerNodeNum);
     if (peer == null || !peer.opensConversation) {
       throw StateError('Voice-call peer is unavailable');
     }
     if (!await sdk.requestMicrophonePermission()) {
       throw StateError('Microphone permission denied');
+    }
+    if (peer.isPublicChannel) {
+      final channelCall = EdgezVoiceCallState(
+        peerNodeNum: peerNodeNum,
+        callId: peerNodeNum,
+        phase: EdgezVoiceCallPhase.active,
+      );
+      _setState(
+        _state.copyWith(
+          voiceCall: channelCall,
+          statusLine: 'Joined ${peer.resolvedDisplayName}',
+        ),
+      );
+      try {
+        await sdk.startOpenManetComms(peerNodeNum);
+      } catch (_) {
+        _setState(_state.copyWith(voiceCall: const EdgezVoiceCallState()));
+        rethrow;
+      }
+      return;
     }
     final callId = Random.secure().nextInt(0x7fffffff) |
         (Random.secure().nextInt(0x7fffffff) << 31);
@@ -496,7 +519,10 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> endVoiceCall() async {
     Future<void>? endFrame;
-    if (!_state.voiceCall.isIdle) {
+    final peerNodeNum = _state.voiceCall.peerNodeNum;
+    final isOpenManet = peerNodeNum != null &&
+        EdgezPublicChannels.isChannelNodeNum(peerNodeNum);
+    if (!_state.voiceCall.isIdle && !isOpenManet) {
       endFrame = _sendVoiceCallPacket(_callEnd);
     }
     await _resetVoiceCall();
@@ -505,10 +531,27 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<void> setOpenManetTransmit(bool enabled) async {
+    final peerNodeNum = _state.voiceCall.peerNodeNum;
+    if (!_state.voiceCall.isActive ||
+        peerNodeNum == null ||
+        !EdgezPublicChannels.isChannelNodeNum(peerNodeNum)) {
+      throw StateError('No OpenMANET talkgroup is active');
+    }
+    await sdk.setOpenManetTransmit(enabled);
+  }
+
   Future<void> _resetVoiceCall({String statusLine = 'Voice call ended'}) async {
+    final peerNodeNum = _state.voiceCall.peerNodeNum;
+    final isOpenManet = peerNodeNum != null &&
+        EdgezPublicChannels.isChannelNodeNum(peerNodeNum);
     _voiceCallTimeout?.cancel();
     _pendingVoiceAudio = null;
-    await sdk.stopLiveVoiceAudio();
+    if (isOpenManet) {
+      await sdk.stopOpenManetComms();
+    } else {
+      await sdk.stopLiveVoiceAudio();
+    }
     _setState(
       _state.copyWith(
         voiceCall: const EdgezVoiceCallState(),
@@ -535,7 +578,7 @@ class EdgezMeshSession extends ChangeNotifier {
     final call = _state.voiceCall;
     final config = _lastMeshConfig;
     final peer =
-        call.peerNodeNum == null ? null : _state.nodes[call.peerNodeNum!];
+        call.peerNodeNum == null ? null : _state.nodeByNum(call.peerNodeNum!);
     final fromNode = _state.status?.macAddress ?? 0;
     if (config == null || peer == null || fromNode == 0) {
       throw StateError('Voice-call mesh identity is unavailable');
@@ -831,7 +874,7 @@ class EdgezMeshSession extends ChangeNotifier {
     required String text,
     int maxHop = 0,
   }) async {
-    final node = _state.nodes[toNode];
+    final node = _state.nodeByNum(toNode);
     if (!(node?.opensConversation ?? false)) {
       _setState(
         _state.copyWith(
@@ -913,7 +956,7 @@ class EdgezMeshSession extends ChangeNotifier {
     required int codec,
     int maxHop = 0,
   }) async {
-    final node = _state.nodes[toNode];
+    final node = _state.nodeByNum(toNode);
     if (!(node?.opensConversation ?? false)) {
       _setState(
         _state.copyWith(
@@ -985,7 +1028,7 @@ class EdgezMeshSession extends ChangeNotifier {
     int hop = 0,
     void Function(int sentBytes, int totalBytes)? onProgress,
   }) async {
-    final node = _state.nodes[toNode];
+    final node = _state.nodeByNum(toNode);
     final fromNode = _state.status?.macAddress ?? 0;
     if (!(node?.opensConversation ?? false) || fromNode == 0) {
       throw StateError('Save settings and wait for a reachable user node');
@@ -1127,6 +1170,7 @@ class EdgezMeshSession extends ChangeNotifier {
           _stopLocationTracking();
           if (!_state.voiceCall.isIdle) {
             unawaited(sdk.stopLiveVoiceAudio());
+            unawaited(sdk.stopOpenManetComms());
           }
         }
         _setState(
@@ -1284,6 +1328,16 @@ class EdgezMeshSession extends ChangeNotifier {
       case EdgezMeshEventType.voiceAudio:
         if (_state.voiceCall.isActive && event.packet.isNotEmpty) {
           _queueVoiceAudio(event.packet);
+        }
+      case EdgezMeshEventType.openManetComms:
+        if (EdgezPublicChannels.isChannelNodeNum(event.talkgroupPort)) {
+          final channel =
+              EdgezPublicChannels.nodeForNodeNum(event.talkgroupPort)!;
+          _setState(
+            _state.copyWith(
+              statusLine: 'Receiving ${channel.resolvedDisplayName}',
+            ),
+          );
         }
       case EdgezMeshEventType.otaProgress:
         _setState(
@@ -1721,13 +1775,21 @@ class EdgezMeshSession extends ChangeNotifier {
     if (config == null || fromNode == 0) return;
 
     final sender = _state.nodes[fromNode];
+    final publicChannel = EdgezPublicChannels.nodeForNodeNum(toNode);
     final now = DateTime.now().millisecondsSinceEpoch;
     final messageUuid = _formatUuid(
         message.messageIdHigh.toInt(), message.messageIdLow.toInt());
     String? text;
     String status = '';
     _CompletedVoiceMessage? completedVoice;
-    if (sender == null) {
+    if (publicChannel != null && message.mime == proto.Mime.MIME_TEXT) {
+      try {
+        text = sdk.decodePublicChannelText(message.payload);
+      } catch (error) {
+        status = error.toString();
+        text = 'Unable to decode channel message';
+      }
+    } else if (sender == null) {
       text = 'Unable to decrypt message';
       status = 'Sender public key is missing';
     } else if (message.mime == proto.Mime.MIME_TEXT) {
@@ -1778,8 +1840,9 @@ class EdgezMeshSession extends ChangeNotifier {
         deviceType: 'User',
       ),
     );
+    final conversationNode = publicChannel?.nodeNum ?? fromNode;
     final incomingMessage = EdgezConversationMessage(
-      nodeNum: fromNode,
+      nodeNum: conversationNode,
       text: text,
       mine: false,
       timestampMs: now,
@@ -1794,10 +1857,14 @@ class EdgezMeshSession extends ChangeNotifier {
       nodes: nodes,
       statusLine: 'Conversation message received',
     );
-    _dispatchIncomingMessage(incomingMessage, nodes[fromNode]!);
+    _dispatchIncomingMessage(
+      incomingMessage,
+      publicChannel ?? nodes[fromNode]!,
+    );
 
     final localNode = _state.status?.macAddress ?? 0;
-    if (localNode != 0 &&
+    if (publicChannel == null &&
+        localNode != 0 &&
         (message.messageIdHigh.toInt() != 0 ||
             message.messageIdLow.toInt() != 0)) {
       unawaited(

@@ -119,6 +119,9 @@ private const val SERVICE_DISCOVERY_TIMEOUT_MS = 5_000L
 private const val MAX_SERVICE_DISCOVERY_ATTEMPTS = 2
 private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 2)
 private val EDGEZ_SPEED_PROTOCOL_MAGIC = byteArrayOf('S'.code.toByte(), 'T'.code.toByte(), 2)
+private val OPENMANET_COMMS_MAGIC = byteArrayOf('O'.code.toByte(), 'M'.code.toByte(), 'C'.code.toByte(), 1)
+private const val OPENMANET_COMMS_TX_HEADER_SIZE = 6
+private const val OPENMANET_COMMS_RX_HEADER_SIZE = 12
 private const val EDGEZ_USB_NONCE_SIZE = 16
 private const val EDGEZ_VOICE_NONCE_SIZE = 12
 private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
@@ -191,6 +194,8 @@ class EdgezFlutterSdkPlugin :
     private var voiceRecordingCodec: Int = VOICE_CODEC_AMR_NB
     private var voiceRecordingStartedAtMs: Long = 0
     private var liveVoiceAudio: EdgezLiveVoiceAudio? = null
+    private var openManetAudio: EdgezOpenManetAudio? = null
+    @Volatile private var openManetTalkgroupPort: Int? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
@@ -356,6 +361,24 @@ class EdgezFlutterSdkPlugin :
                 )
             },
         )
+        openManetAudio = EdgezOpenManetAudio(
+            context,
+            onOpusFrame = { opus ->
+                val port = openManetTalkgroupPort ?: return@EdgezOpenManetAudio
+                val packet = ByteBuffer.allocate(OPENMANET_COMMS_TX_HEADER_SIZE + opus.size)
+                    .order(ByteOrder.BIG_ENDIAN)
+                    .put(OPENMANET_COMMS_MAGIC)
+                    .putShort(port.toShort())
+                    .put(opus)
+                    .array()
+                sendVoicePacket(packet).onFailure { error ->
+                    emit(mapOf("type" to "log", "log" to "OpenMANET TX failed: ${error.message}"))
+                }
+            },
+            onError = { error ->
+                emit(mapOf("type" to "log", "log" to "OpenMANET audio failed: ${error.message}"))
+            },
+        )
         val bondFilter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
         if (Build.VERSION.SDK_INT >= 33) {
             context.registerReceiver(bondStateReceiver, bondFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -382,6 +405,9 @@ class EdgezFlutterSdkPlugin :
         discardVoiceRecording()
         liveVoiceAudio?.stop()
         liveVoiceAudio = null
+        openManetAudio?.stop()
+        openManetAudio = null
+        openManetTalkgroupPort = null
         voicePlayer?.release()
         voicePlayer = null
         methods.setMethodCallHandler(null)
@@ -1428,6 +1454,35 @@ class EdgezFlutterSdkPlugin :
             }
             "stopLiveVoiceAudio" -> {
                 liveVoiceAudio?.stop()
+                result.success(null)
+            }
+            "startOpenManetComms" -> {
+                val port = call.argument<Int>("talkgroupPort") ?: 0
+                if (port !in listOf(38801, 38803, 38805, 38807, 38809)) {
+                    result.error("talkgroup_invalid", "Unsupported OpenMANET talkgroup port", null)
+                    return
+                }
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    result.error("microphone_permission_denied", "Microphone permission denied", null)
+                    return
+                }
+                openManetTalkgroupPort = port
+                result.success(null)
+            }
+            "setOpenManetTransmit" -> {
+                if (openManetTalkgroupPort == null) {
+                    result.error("talkgroup_inactive", "Join an OpenMANET talkgroup first", null)
+                    return
+                }
+                val enabled = call.argument<Boolean>("enabled") == true
+                if (enabled) openManetAudio?.start() else openManetAudio?.stopCapture()
+                result.success(null)
+            }
+            "stopOpenManetComms" -> {
+                openManetTalkgroupPort = null
+                openManetAudio?.stop()
                 result.success(null)
             }
             "playLiveVoiceAudio" -> {
@@ -2590,6 +2645,8 @@ class EdgezFlutterSdkPlugin :
         otaAbortRequested.set(true)
         EdgezBleForegroundService.stop(context)
         liveVoiceAudio?.stop()
+        openManetAudio?.stop()
+        openManetTalkgroupPort = null
         pendingBondDevice = null
         rxCharacteristic = null
         txCharacteristic = null
@@ -3527,6 +3584,19 @@ class EdgezFlutterSdkPlugin :
             hasVoiceEnvelope -> bytes.copyOfRange(EDGEZ_VOICE_PROTOCOL_MAGIC.size, bytes.size)
             hasSpeedEnvelope -> bytes.copyOfRange(EDGEZ_SPEED_PROTOCOL_MAGIC.size, bytes.size)
             else -> bytes
+        }
+        if (payload.size > OPENMANET_COMMS_RX_HEADER_SIZE &&
+            payload.copyOfRange(0, OPENMANET_COMMS_MAGIC.size)
+                .contentEquals(OPENMANET_COMMS_MAGIC)
+        ) {
+            val port = ByteBuffer.wrap(payload, OPENMANET_COMMS_MAGIC.size, 2)
+                .order(ByteOrder.BIG_ENDIAN)
+                .short.toInt() and 0xffff
+            emit(mapOf("type" to "openManetComms", "talkgroupPort" to port))
+            if (port == openManetTalkgroupPort) {
+                openManetAudio?.play(payload.copyOfRange(OPENMANET_COMMS_RX_HEADER_SIZE, payload.size))
+            }
+            return
         }
         if (payload.size > 9 &&
             payload[6] == 'E'.code.toByte() &&

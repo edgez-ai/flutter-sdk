@@ -37,6 +37,36 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  test('OpenMANET channels use talkgroup ports as canonical user IDs',
+      () async {
+    expect(
+      EdgezPublicChannels.nodes.map((node) => node.nodeNum),
+      <int>[38801, 38803, 38805, 38807, 38809],
+    );
+    expect(
+      EdgezPublicChannels.nodes.map((node) => node.userUuid),
+      <String>['38801', '38803', '38805', '38807', '38809'],
+    );
+    expect(
+      EdgezPublicChannels.nodes.map((node) => node.displayName),
+      <String>['channel1', 'channel2', 'channel3', 'channel4', 'channel5'],
+    );
+
+    await sdk.startOpenManetComms(38805);
+    expect(calls.single.method, 'startOpenManetComms');
+    expect(
+      (calls.single.arguments as Map<Object?, Object?>)['talkgroupPort'],
+      38805,
+    );
+    await sdk.setOpenManetTransmit(true);
+    expect(calls.last.method, 'setOpenManetTransmit');
+    expect(
+      (calls.last.arguments as Map<Object?, Object?>)['enabled'],
+      isTrue,
+    );
+    expect(() => sdk.startOpenManetComms(3), throwsArgumentError);
+  });
+
   test('initialization uses the latest HaLow init fields', () async {
     const config = EdgezMeshConfig(
       identity: identity,

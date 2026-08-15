@@ -24,6 +24,11 @@ void main() {
 
     await store.saveSelectedDevice(device);
     await store.setAutoConnect(true);
+    await store.setMeshRadio(
+      country: 'EU',
+      bandwidthMhz: 2,
+      frequencyKhz: 866000,
+    );
 
     final restored = await EdgezBleConfigurationStore().load();
     expect(restored.deviceId, device.id);
@@ -32,6 +37,9 @@ void main() {
     expect(restored.shareLocation, isFalse);
     expect(restored.selectedDevice?.label, device.label);
     expect(restored.preferredTransport, EdgezPreferredTransport.ble);
+    expect(restored.meshCountry, 'EU');
+    expect(restored.meshBandwidthMhz, 2);
+    expect(restored.meshFrequencyKhz, 866000);
 
     await store.setShareLocation(true);
     expect((await store.load()).shareLocation, isTrue);

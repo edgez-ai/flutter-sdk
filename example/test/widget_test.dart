@@ -298,14 +298,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(selectedSpeedHop, 2);
 
-    expect(find.text('Latest sensor location'), findsOneWidget);
-    expect(find.text('59.329323, 18.068581'), findsOneWidget);
-    expect(
-      find.text(
-        'Speed: 842.3 kbps · Packet loss: 1.25%',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Location'), findsOneWidget);
+    expect(find.textContaining('59.329323, 18.068581'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('conversation-link-stats')),
+        findsNothing);
     expect(tester.takeException(), isNull);
   });
 

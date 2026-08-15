@@ -439,6 +439,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       bleAutoConnect = bleConfiguration.autoConnect;
       shareLocation = bleConfiguration.shareLocation;
       deviceLogLevel = bleConfiguration.logLevel;
+      meshCountry = bleConfiguration.meshCountry;
+      meshBandwidthMhz = bleConfiguration.meshBandwidthMhz;
+      meshFrequencyKhz = bleConfiguration.meshFrequencyKhz;
     });
     await session.configureLogLevel(bleConfiguration.logLevel);
     if (bleConfiguration.preferredTransport == EdgezPreferredTransport.ble &&
@@ -839,6 +842,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
 
   Future<void> _saveAppSettings() async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
+    await _persistMeshRadioSettings();
     final identity = await identityStore.updateName(userName);
     final location = shareLocation && !deviceGpsEnabled
         ? await _getBestKnownLocation()
@@ -882,6 +886,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       await session.setDeviceGpsEnabled(deviceGpsEnabled);
     }
   }
+
+  Future<void> _persistMeshRadioSettings() =>
+      bleConfigurationStore.setMeshRadio(
+        country: meshCountry,
+        bandwidthMhz: meshBandwidthMhz,
+        frequencyKhz: meshFrequencyKhz,
+      );
 
   void _setDefaultVoiceTargetLanguage(String language) {
     if (!supportedVoiceTranslationLanguages.contains(language)) return;
@@ -1289,10 +1300,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       builder: (context, _) {
         final meshState = session.state;
         final callPeerNodeNum = meshState.voiceCall.peerNodeNum;
-        final callPeer =
-            callPeerNodeNum == null ? null : meshState.nodes[callPeerNodeNum];
-        final selected =
-            selectedNodeNum == null ? null : meshState.nodes[selectedNodeNum!];
+        final callPeer = callPeerNodeNum == null
+            ? null
+            : meshState.nodeByNum(callPeerNodeNum);
+        final selected = selectedNodeNum == null
+            ? null
+            : meshState.nodeByNum(selectedNodeNum!);
         final body = switch (destination) {
           AppDestination.dashboard => selected == null
               ? DashboardScreen(
@@ -1352,7 +1365,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   ? NodesScreen(
                       activeConnection: meshState.connection,
                       status: meshState.status,
-                      users: meshState.sortedNodes,
+                      users: <EdgezMeshNode>[
+                        ...EdgezPublicChannels.nodes,
+                        ...meshState.sortedNodes,
+                      ],
                       sensorSamples: meshState.sensorSamples,
                       dashboardDisplays: dashboardDisplays,
                       onOpenTopology: () => setState(() => showTopology = true),
@@ -1523,27 +1539,36 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       _setDefaultVoiceTargetLanguage,
                   onDeviceModeChanged: (value) =>
                       setState(() => deviceModeEnabled = value),
-                  onMeshCountryChanged: (value) => setState(() {
-                    meshCountry = value;
-                    final bandwidths = halowBandwidthOptions(value);
-                    if (!bandwidths.contains(meshBandwidthMhz)) {
-                      meshBandwidthMhz = bandwidths.first;
-                    }
-                    final frequencies =
-                        halowFrequenciesKhz(value, meshBandwidthMhz);
-                    if (!frequencies.contains(meshFrequencyKhz)) {
-                      meshFrequencyKhz = frequencies.first;
-                    }
-                  }),
-                  onMeshBandwidthChanged: (value) => setState(() {
-                    meshBandwidthMhz = value;
-                    final frequencies = halowFrequenciesKhz(meshCountry, value);
-                    if (!frequencies.contains(meshFrequencyKhz)) {
-                      meshFrequencyKhz = frequencies.first;
-                    }
-                  }),
-                  onMeshFrequencyChanged: (value) =>
-                      setState(() => meshFrequencyKhz = value),
+                  onMeshCountryChanged: (value) {
+                    setState(() {
+                      meshCountry = value;
+                      final bandwidths = halowBandwidthOptions(value);
+                      if (!bandwidths.contains(meshBandwidthMhz)) {
+                        meshBandwidthMhz = bandwidths.first;
+                      }
+                      final frequencies =
+                          halowFrequenciesKhz(value, meshBandwidthMhz);
+                      if (!frequencies.contains(meshFrequencyKhz)) {
+                        meshFrequencyKhz = frequencies.first;
+                      }
+                    });
+                    unawaited(_persistMeshRadioSettings());
+                  },
+                  onMeshBandwidthChanged: (value) {
+                    setState(() {
+                      meshBandwidthMhz = value;
+                      final frequencies =
+                          halowFrequenciesKhz(meshCountry, value);
+                      if (!frequencies.contains(meshFrequencyKhz)) {
+                        meshFrequencyKhz = frequencies.first;
+                      }
+                    });
+                    unawaited(_persistMeshRadioSettings());
+                  },
+                  onMeshFrequencyChanged: (value) {
+                    setState(() => meshFrequencyKhz = value);
+                    unawaited(_persistMeshRadioSettings());
+                  },
                   onMeshIdChanged: (value) => setState(() => meshId = value),
                   onPassphraseChanged: (value) =>
                       setState(() => passphrase = value),
@@ -1612,6 +1637,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   peer: callPeer,
                   onAnswer: _answerCall,
                   onEnd: _endCall,
+                  onTalkStart: () => session.setOpenManetTransmit(true),
+                  onTalkEnd: () => session.setOpenManetTransmit(false),
                 )
               : provisionMode
                   ? ProvisioningScreen(

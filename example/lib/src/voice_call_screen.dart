@@ -10,12 +10,16 @@ class VoiceCallScreen extends StatefulWidget {
     required this.peer,
     required this.onAnswer,
     required this.onEnd,
+    this.onTalkStart,
+    this.onTalkEnd,
   });
 
   final EdgezVoiceCallState call;
   final EdgezMeshNode? peer;
   final Future<void> Function() onAnswer;
   final Future<void> Function() onEnd;
+  final Future<void> Function()? onTalkStart;
+  final Future<void> Function()? onTalkEnd;
 
   @override
   State<VoiceCallScreen> createState() => _VoiceCallScreenState();
@@ -25,6 +29,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   Timer? timer;
   DateTime? connectedAt;
   bool actionInProgress = false;
+  bool transmitting = false;
 
   @override
   void initState() {
@@ -71,6 +76,24 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     }
   }
 
+  Future<void> _setTalking(bool enabled) async {
+    if (transmitting == enabled) return;
+    setState(() => transmitting = enabled);
+    try {
+      if (enabled) {
+        await widget.onTalkStart?.call();
+      } else {
+        await widget.onTalkEnd?.call();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => transmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Talkgroup audio failed: $error')),
+      );
+    }
+  }
+
   String get _status {
     switch (widget.call.phase) {
       case EdgezVoiceCallPhase.incoming:
@@ -92,6 +115,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   @override
   Widget build(BuildContext context) {
     final peerName = widget.peer?.resolvedDisplayName ?? 'Mesh user';
+    final isOpenManet = widget.peer?.isPublicChannel == true;
     final isIncoming = widget.call.phase == EdgezVoiceCallPhase.incoming;
     return PopScope(
       canPop: false,
@@ -102,9 +126,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
             padding: const EdgeInsets.fromLTRB(24, 56, 24, 40),
             child: Column(
               children: <Widget>[
-                const Text(
-                  'EdgeZ Voice',
-                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                Text(
+                  isOpenManet ? 'OpenMANET Comms' : 'EdgeZ Voice',
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
                 ),
                 const Spacer(),
                 Container(
@@ -121,8 +145,11 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                       ),
                     ],
                   ),
-                  child:
-                      const Icon(Icons.person, color: Colors.white, size: 72),
+                  child: Icon(
+                    isOpenManet ? Icons.campaign : Icons.person,
+                    color: Colors.white,
+                    size: 72,
+                  ),
                 ),
                 const SizedBox(height: 28),
                 Text(
@@ -138,6 +165,36 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                   _status,
                   style: const TextStyle(color: Colors.white70, fontSize: 18),
                 ),
+                if (isOpenManet) ...<Widget>[
+                  const SizedBox(height: 28),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (_) => unawaited(_setTalking(true)),
+                    onTapUp: (_) => unawaited(_setTalking(false)),
+                    onTapCancel: () => unawaited(_setTalking(false)),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 18,
+                      ),
+                      decoration: BoxDecoration(
+                        color: transmitting
+                            ? Colors.orange.shade700
+                            : Colors.teal.shade500,
+                        borderRadius: BorderRadius.circular(40),
+                      ),
+                      child: Text(
+                        transmitting ? 'Transmitting…' : 'Hold to Talk',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const Spacer(flex: 2),
                 if (actionInProgress)
                   const Padding(

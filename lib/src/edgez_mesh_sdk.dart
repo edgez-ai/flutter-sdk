@@ -392,6 +392,31 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('stopLiveVoiceAudio');
   }
 
+  Future<void> startOpenManetComms(int talkgroupPort) {
+    if (!EdgezPublicChannels.isChannelNodeNum(talkgroupPort)) {
+      throw ArgumentError.value(
+        talkgroupPort,
+        'talkgroupPort',
+        'Unsupported OpenMANET talkgroup port',
+      );
+    }
+    return _transport.invokeMethod<void>(
+      'startOpenManetComms',
+      {'talkgroupPort': talkgroupPort},
+    );
+  }
+
+  Future<void> stopOpenManetComms() {
+    return _transport.invokeMethod<void>('stopOpenManetComms');
+  }
+
+  Future<void> setOpenManetTransmit(bool enabled) {
+    return _transport.invokeMethod<void>(
+      'setOpenManetTransmit',
+      {'enabled': enabled},
+    );
+  }
+
   Future<void> playLiveVoiceAudio(List<int> audio) {
     return _transport.invokeMethod<void>(
       'playLiveVoiceAudio',
@@ -671,23 +696,27 @@ class EdgezMeshSdk {
     void Function(int packetBytes, int sequence)? onPacketSent,
   }) async {
     final messageId = _newMessageId();
-    final encrypted = await _encryptConversationPayload(
-      identity: config.identity,
-      recipient: toNode,
-      fromNode: fromNode,
-      plaintext: utf8.encode(text),
-    );
+    final isPublicChannel = toNode.isPublicChannel;
+    final payload = isPublicChannel
+        ? <int>[0x45, 0x5a, 0x43, 0x01, ...utf8.encode(text)]
+        : await _encryptedTextPayload(
+            config: config,
+            toNode: toNode,
+            fromNode: fromNode,
+            text: text,
+          );
     final packet = proto.NetworkPacket(
       from: Int64(fromNode),
       to: Int64(toNode.nodeNum),
-      operation: proto.Operation.REQUEST,
+      operation:
+          isPublicChannel ? proto.Operation.BROADCAST : proto.Operation.REQUEST,
       interface: proto.Interface.HALOW,
       msg: proto.MessageBody(
         messageIdHigh: Int64(messageId.$1),
         messageIdLow: Int64(messageId.$2),
         sequence: 1,
         mime: proto.Mime.MIME_TEXT,
-        payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
+        payload: payload,
       ),
     );
     final packetBytes = Uint8List.fromList(packet.writeToBuffer());
@@ -701,6 +730,32 @@ class EdgezMeshSdk {
     });
     onPacketSent?.call(packetBytes.length, 1);
     return _formatUuid(messageId.$1, messageId.$2);
+  }
+
+  Future<List<int>> _encryptedTextPayload({
+    required EdgezMeshConfig config,
+    required EdgezMeshNode toNode,
+    required int fromNode,
+    required String text,
+  }) async {
+    final encrypted = await _encryptConversationPayload(
+      identity: config.identity,
+      recipient: toNode,
+      fromNode: fromNode,
+      plaintext: utf8.encode(text),
+    );
+    return _conversationPayload(encrypted.nonce, encrypted.ciphertext);
+  }
+
+  String decodePublicChannelText(List<int> payload) {
+    if (payload.length < 4 ||
+        payload[0] != 0x45 ||
+        payload[1] != 0x5a ||
+        payload[2] != 0x43 ||
+        payload[3] != 0x01) {
+      throw const FormatException('Public channel payload is malformed');
+    }
+    return utf8.decode(payload.sublist(4));
   }
 
   Future<String> sendSpeedTest({
