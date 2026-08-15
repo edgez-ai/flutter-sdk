@@ -162,19 +162,16 @@ class GemmaVoiceTranslator extends ChangeNotifier {
       tokenBuffer: 32,
       supportAudio: true,
       maxOutputTokens: 64,
-      systemInstruction: 'Detect the language spoken in the audio and '
-          'transcribe it exactly without translating it. Return only JSON: '
-          '{"language":"English","transcript":"speech"}. Use the '
-          'language name in English. Add natural punctuation when the spoken '
-          'language supports it, so the transcript is easy to read aloud. '
-          'Never add instructions, labels, or words that were not spoken.',
+      systemInstruction: 'Detect the spoken language and transcribe without '
+          'translation. Return only {"language":"English",'
+          '"transcript":"speech"}. Use natural punctuation. Never add '
+          'unspoken text.',
     );
     late _DetectedTranscript detected;
     try {
       await chat.addQueryChunk(
         Message.withAudio(
-          text: 'Detect the spoken language and transcribe this audio using '
-              'the required JSON format.',
+          text: 'Transcribe this audio.',
           audioBytes: wav,
           isUser: true,
         ),
@@ -293,11 +290,10 @@ class GemmaVoiceTranslator extends ChangeNotifier {
     }
     await _installModel(foreground: download);
     _model = await FlutterGemma.getActiveModel(
-      // Gemma 4 E2B is close to the memory limit on mid-range Android
-      // devices such as the Samsung A23. A 1024-token context is LiteRT-LM's
-      // supported minimum and avoids the much larger 2048-token KV cache.
-      // CPU also avoids keeping a second GPU-side copy of model buffers.
-      maxTokens: 1024,
+      // Keep transcription and translation on the same context size. Audio
+      // embeddings share this buffer with the prompt, so 2048 also leaves room
+      // for longer voice messages and their detected-language JSON response.
+      maxTokens: 2048,
       preferredBackend: PreferredBackend.cpu,
       supportAudio: supportAudio,
       enableSpeculativeDecoding: false,
