@@ -129,15 +129,26 @@ minute; firmware only returns the matching `PONG`.
   or store that per-conversation result in the global metrics database.
 
 Speed-test frame version 3 has a 26-byte header and does not duplicate routing
-metadata. The existing route TTL byte is interpreted as the speed-test path
+metadata. Types 1 through 3 are START, DATA, and END. Type 4 carries a compact
+missing-chunk bitmap (`chunkIndex` is the bitmap's base chunk), and type 5
+acknowledges that the repaired transfer is complete. The sender regenerates
+only the selected deterministic DATA chunks and retains transfer metadata for
+two minutes or until the completion acknowledgement arrives.
+
+Missing-chunk repair is an opt-in compatibility mode. Normal voice calls and
+speed measurements are best-effort: sequence gaps are reported as packet loss
+and are not retransmitted.
+
+The existing route TTL byte is interpreted as the speed-test path
 selector: `0` uses normal routing (learned route first, then direct-target
 fallback), `1` addresses the target directly, `2` requires one intermediate
 peer, and `3` prefers a three-hop route with a two-hop fallback. Forced routes
 never select the ingress/source as the next hop. These TTL semantics apply only
 to speed tests and do not change routing for protobuf or voice traffic.
 
-When a forced route needs a random intermediate, the transfer ID pins that
-choice for the whole transfer. A receiver does not publish a result until it
+When a forced route needs a random intermediate, the transfer ID pins every
+selected next hop for the whole transfer and its repair window. A receiver
+does not publish a result until it
 has seen END and every expected DATA chunk. If chunks were lost, it publishes
 only after 30 seconds without additional speed-test traffic; END alone is not a
 completion signal because it may overtake DATA on a multi-hop path.
@@ -146,11 +157,17 @@ Global moving speed and loss telemetry is independent of speed-test results. It
 counts all control, conversation, binary, recorded/live voice, and speed-test
 traffic and is the only metric series persisted for the 30-minute debug chart.
 
-Firmware uses two common 1 MiB PSRAM-backed data queues between mobile and
-HaLow: one mobile-to-HaLow TX queue and one HaLow-to-mobile RX queue. Compact
-voice, binary/global-buffer, and speed-test frames share these queues. Protobuf
-control/conversation traffic remains on its separate higher-priority path and
-is processed before queued data traffic.
+Firmware uses a bounded 16-frame best-effort realtime TX queue and a 1 MiB
+PSRAM-backed HaLow-to-mobile RX queue. Realtime TX never blocks its producer:
+when congested, it drops the oldest voice/speed frame and keeps the newest.
+Each frame gets one BATMAN submission attempt. The queue soft limit adapts
+between 4 and 16 frames using BATMAN-IV effective TQ, selected-route hop count,
+and route age. Topology `Peer` entries expose `route_tq` and `route_hops` so the
+mobile SDK can reduce its speed drain batch, add pacing, and coalesce voice
+more aggressively on a weak or multi-hop path. Any routed application traffic
+also opens a five-second foreground window: proactive mesh scans, periodic
+topology radio broadcasts, and nonessential vendor-IE refreshes wait until
+that window is idle.
 
 Encryption, message IDs, routing, and peer delivery acknowledgements are above
 the transport layer and must behave identically on BLE and USB.

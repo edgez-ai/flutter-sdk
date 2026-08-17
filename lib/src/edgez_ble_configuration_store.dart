@@ -14,7 +14,7 @@ class EdgezBleConfiguration {
     this.usbVendorId = 0,
     this.usbProductId = 0,
     this.usbDeviceName = '',
-    this.logLevel = EdgezDeviceLogLevel.warning,
+    this.logLevel = EdgezDeviceLogLevel.none,
     this.meshCountry = 'US',
     this.meshBandwidthMhz = 1,
     this.meshFrequencyKhz = 902500,
@@ -76,7 +76,7 @@ class EdgezBleConfigurationStore {
       usbDeviceName: preferences.getString(_keyUsbDeviceName) ?? '',
       logLevel: EdgezDeviceLogLevel.values.firstWhere(
         (level) => level.wireValue == preferences.getInt(_keyLogLevel),
-        orElse: () => EdgezDeviceLogLevel.warning,
+        orElse: () => EdgezDeviceLogLevel.none,
       ),
       meshCountry: preferences.getString(_keyMeshCountry) ?? 'US',
       meshBandwidthMhz: preferences.getInt(_keyMeshBandwidthMhz) ?? 1,

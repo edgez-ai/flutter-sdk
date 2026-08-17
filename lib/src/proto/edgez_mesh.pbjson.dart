@@ -491,13 +491,16 @@ const Peer$json = {
       '6': '.ai.edgez.halow.SensorData',
       '10': 'sensorData'
     },
+    {'1': 'route_tq', '3': 4, '4': 1, '5': 13, '10': 'routeTq'},
+    {'1': 'route_hops', '3': 5, '4': 1, '5': 13, '10': 'routeHops'},
   ],
 };
 
 /// Descriptor for `Peer`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List peerDescriptor = $convert.base64Decode(
     'CgRQZWVyEg4KAmlkGAEgASgEUgJpZBISCgRyc3NpGAIgASgRUgRyc3NpEjsKC3NlbnNvcl9kYX'
-    'RhGAMgAygLMhouYWkuZWRnZXouaGFsb3cuU2Vuc29yRGF0YVIKc2Vuc29yRGF0YQ==');
+    'RhGAMgAygLMhouYWkuZWRnZXouaGFsb3cuU2Vuc29yRGF0YVIKc2Vuc29yRGF0YRIZCghyb3V0'
+    'ZV90cRgEIAEoDVIHcm91dGVUcRIdCgpyb3V0ZV9ob3BzGAUgASgNUglyb3V0ZUhvcHM=');
 
 @$core.Deprecated('Use beaconDescriptor instead')
 const Beacon$json = {

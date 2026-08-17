@@ -799,11 +799,15 @@ class Peer extends $pb.GeneratedMessage {
     $fixnum.Int64? id,
     $core.int? rssi,
     $core.Iterable<SensorData>? sensorData,
+    $core.int? routeTq,
+    $core.int? routeHops,
   }) {
     final result = create();
     if (id != null) result.id = id;
     if (rssi != null) result.rssi = rssi;
     if (sensorData != null) result.sensorData.addAll(sensorData);
+    if (routeTq != null) result.routeTq = routeTq;
+    if (routeHops != null) result.routeHops = routeHops;
     return result;
   }
 
@@ -825,6 +829,8 @@ class Peer extends $pb.GeneratedMessage {
     ..aI(2, _omitFieldNames ? '' : 'rssi', fieldType: $pb.PbFieldType.OS3)
     ..pPM<SensorData>(3, _omitFieldNames ? '' : 'sensorData',
         subBuilder: SensorData.create)
+    ..aI(4, _omitFieldNames ? '' : 'routeTq', fieldType: $pb.PbFieldType.OU3)
+    ..aI(5, _omitFieldNames ? '' : 'routeHops', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -866,6 +872,24 @@ class Peer extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(3)
   $pb.PbList<SensorData> get sensorData => $_getList(2);
+
+  @$pb.TagNumber(4)
+  $core.int get routeTq => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set routeTq($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasRouteTq() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearRouteTq() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get routeHops => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set routeHops($core.int value) => $_setUnsignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasRouteHops() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearRouteHops() => $_clearField(5);
 }
 
 class Beacon extends $pb.GeneratedMessage {

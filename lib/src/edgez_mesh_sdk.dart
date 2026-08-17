@@ -17,7 +17,7 @@ abstract interface class EdgezPlatformTransport {
   Future<T?> invokeMethod<T>(String method, [Object? arguments]);
 }
 
-enum EdgezSpeedTestFrameType { start, data, end }
+enum EdgezSpeedTestFrameType { start, data, end, repairRequest, complete }
 
 class EdgezSpeedTestFrame {
   const EdgezSpeedTestFrame._({
@@ -73,6 +73,36 @@ class EdgezSpeedTestFrame {
         data: Uint8List(0),
       );
 
+  factory EdgezSpeedTestFrame.repairRequest({
+    required int transferId,
+    required int totalBytes,
+    required int totalChunks,
+    required int baseChunk,
+    required Uint8List missingBitmap,
+  }) =>
+      EdgezSpeedTestFrame._(
+        type: EdgezSpeedTestFrameType.repairRequest,
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+        chunkIndex: baseChunk,
+        data: missingBitmap,
+      );
+
+  factory EdgezSpeedTestFrame.complete({
+    required int transferId,
+    required int totalBytes,
+    required int totalChunks,
+  }) =>
+      EdgezSpeedTestFrame._(
+        type: EdgezSpeedTestFrameType.complete,
+        transferId: transferId,
+        totalBytes: totalBytes,
+        totalChunks: totalChunks,
+        chunkIndex: totalChunks,
+        data: Uint8List(0),
+      );
+
   static const _headerBytes = 26;
   static const _magic = <int>[0x45, 0x5a, 0x53, 0x54];
   final EdgezSpeedTestFrameType type;
@@ -101,7 +131,7 @@ class EdgezSpeedTestFrame {
     for (var i = 0; i < _magic.length; i++) {
       if (payload[i] != _magic[i]) return null;
     }
-    if (payload[4] != 3 || payload[5] < 1 || payload[5] > 3) {
+    if (payload[4] != 3 || payload[5] < 1 || payload[5] > 5) {
       return null;
     }
     final raw = Uint8List.fromList(payload);
@@ -765,6 +795,10 @@ class EdgezMeshSdk {
     int hop = 0,
     void Function(int sentBytes, int totalBytes)? onProgress,
     void Function(int packetBytes, int sequence)? onPacketSent,
+    void Function(int transferId, int totalBytes, int totalChunks)?
+        onTransferStarted,
+    int drainBatchChunks = _speedTestDrainBatchChunks,
+    Duration pacingDelay = Duration.zero,
   }) async {
     if (totalBytes <= 0) {
       throw ArgumentError.value(totalBytes, 'totalBytes', 'Must be positive');
@@ -772,10 +806,15 @@ class EdgezMeshSdk {
     if (hop < 0 || hop > 3) {
       throw ArgumentError.value(hop, 'hop', 'Must be between 0 and 3');
     }
+    if (drainBatchChunks <= 0) {
+      throw ArgumentError.value(
+          drainBatchChunks, 'drainBatchChunks', 'Must be positive');
+    }
     final transferId =
         DateTime.now().microsecondsSinceEpoch & 0x7fffffffffffffff;
     const chunkBytes = _speedTestChunkBytes;
     final totalChunks = (totalBytes / chunkBytes).ceil();
+    onTransferStarted?.call(transferId, totalBytes, totalChunks);
 
     Future<void> sendFrame(
       EdgezSpeedTestFrame frame,
@@ -820,8 +859,11 @@ class EdgezMeshSdk {
         index + 2,
         // Bound the native BLE queue. A successful method-channel call only
         // means that Android queued the frame, not that the GATT write drained.
-        waitForDrain: (index + 1) % _speedTestDrainBatchChunks == 0,
+        waitForDrain: (index + 1) % drainBatchChunks == 0,
       );
+      if (pacingDelay > Duration.zero) {
+        await Future<void>.delayed(pacingDelay);
+      }
       sentBytes += length;
       final now = DateTime.now();
       if (sentBytes == totalBytes ||
@@ -840,6 +882,83 @@ class EdgezMeshSdk {
       waitForDrain: true,
     );
     return transferId.toRadixString(16).padLeft(16, '0');
+  }
+
+  Future<void> sendSpeedTestRepairRequest({
+    required int toNode,
+    required int hop,
+    required EdgezSpeedTestFrame frame,
+    required int sequence,
+  }) {
+    if (frame.type != EdgezSpeedTestFrameType.repairRequest) {
+      throw ArgumentError.value(
+          frame.type, 'frame', 'Must be a repair request');
+    }
+    return _transport.invokeMethod<void>('sendSpeedTestFrame', {
+      'to': toNode,
+      'maxHop': hop,
+      'sequence': sequence,
+      'payload': frame.encode(),
+      'waitForDrainMs': _speedTestDrainTimeoutMs,
+    });
+  }
+
+  Future<void> resendSpeedTestChunks({
+    required int toNode,
+    required int hop,
+    required EdgezSpeedTestFrame request,
+  }) async {
+    if (request.type != EdgezSpeedTestFrameType.repairRequest) return;
+    var sent = 0;
+    for (var byteIndex = 0; byteIndex < request.data.length; byteIndex++) {
+      final bits = request.data[byteIndex];
+      if (bits == 0) continue;
+      for (var bit = 0; bit < 8; bit++) {
+        if ((bits & (1 << bit)) == 0) continue;
+        final chunkIndex = request.chunkIndex + byteIndex * 8 + bit;
+        if (chunkIndex >= request.totalChunks) continue;
+        final offset = chunkIndex * _speedTestChunkBytes;
+        final length = min(_speedTestChunkBytes, request.totalBytes - offset);
+        if (length <= 0) continue;
+        final data = Uint8List(length);
+        for (var dataOffset = 0; dataOffset < length; dataOffset++) {
+          data[dataOffset] = (chunkIndex + dataOffset) & 0xff;
+        }
+        final frame = EdgezSpeedTestFrame.data(
+          transferId: request.transferId,
+          totalBytes: request.totalBytes,
+          totalChunks: request.totalChunks,
+          chunkIndex: chunkIndex,
+          data: data,
+        );
+        sent++;
+        await _transport.invokeMethod<void>('sendSpeedTestFrame', {
+          'to': toNode,
+          'maxHop': hop,
+          'sequence': chunkIndex + 2,
+          'payload': frame.encode(),
+          if (sent % _speedTestDrainBatchChunks == 0)
+            'waitForDrainMs': _speedTestDrainTimeoutMs,
+        });
+      }
+    }
+  }
+
+  Future<void> sendSpeedTestComplete({
+    required int toNode,
+    required int hop,
+    required EdgezSpeedTestFrame frame,
+  }) {
+    if (frame.type != EdgezSpeedTestFrameType.complete) {
+      throw ArgumentError.value(frame.type, 'frame', 'Must be complete');
+    }
+    return _transport.invokeMethod<void>('sendSpeedTestFrame', {
+      'to': toNode,
+      'maxHop': hop,
+      'sequence': frame.totalChunks + 3,
+      'payload': frame.encode(),
+      'waitForDrainMs': _speedTestDrainTimeoutMs,
+    });
   }
 
   Future<String> decryptTextMessage({

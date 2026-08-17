@@ -35,6 +35,7 @@ void main() {
     expect(restored.deviceName, device.name);
     expect(restored.autoConnect, isTrue);
     expect(restored.shareLocation, isFalse);
+    expect(restored.logLevel, EdgezDeviceLogLevel.none);
     expect(restored.selectedDevice?.label, device.label);
     expect(restored.preferredTransport, EdgezPreferredTransport.ble);
     expect(restored.meshCountry, 'EU');
@@ -1344,6 +1345,37 @@ void main() {
       );
     });
 
+    test('speed repair resends only chunks selected by the missing bitmap',
+        () async {
+      final request = EdgezSpeedTestFrame.repairRequest(
+        transferId: 77,
+        totalBytes: 4 * 448,
+        totalChunks: 4,
+        baseChunk: 0,
+        missingBitmap: Uint8List.fromList(<int>[0x05]),
+      );
+
+      await sdk.resendSpeedTestChunks(
+        toNode: 0x200,
+        hop: 2,
+        request: request,
+      );
+
+      final calls = ble.callsFor('sendSpeedTestFrame').toList(growable: false);
+      final frames = calls
+          .map((call) => EdgezSpeedTestFrame.tryDecode(
+                call.argumentMap['payload']! as List<int>,
+              ))
+          .whereType<EdgezSpeedTestFrame>()
+          .toList(growable: false);
+      expect(frames.map((frame) => frame.chunkIndex), <int>[0, 2]);
+      expect(
+          frames.every((frame) => frame.type == EdgezSpeedTestFrameType.data),
+          isTrue);
+      expect(calls.every((call) => call.argumentMap['maxHop'] == 2), isTrue);
+      expect(frames[1].data.take(3), <int>[2, 3, 4]);
+    });
+
     test('receiver waits for END before publishing a complete speed test',
         () async {
       final session = EdgezMeshSession(sdk: sdk);
@@ -1380,6 +1412,95 @@ void main() {
       );
       await ble.flushEvents();
       expect(session.state.linkStats[fromNode]?.packetLossPercent, 0);
+      session.dispose();
+    });
+
+    test('receiver requests missing speed chunks after END', () async {
+      final session = EdgezMeshSession(
+        sdk: sdk,
+        speedTestInactivityTimeout: const Duration(seconds: 5),
+        speedTestReliableDelivery: true,
+      );
+      const fromNode = 0x100;
+      const transferId = 78;
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.start(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+        ),
+      );
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.data(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+          chunkIndex: 1,
+          data: Uint8List.fromList(<int>[1, 2, 3]),
+        ),
+      );
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.end(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+        ),
+      );
+      await ble.flushEvents();
+
+      final repair = ble
+          .callsFor('sendSpeedTestFrame')
+          .map((call) => EdgezSpeedTestFrame.tryDecode(
+                call.argumentMap['payload']! as List<int>,
+              ))
+          .whereType<EdgezSpeedTestFrame>()
+          .singleWhere(
+            (frame) => frame.type == EdgezSpeedTestFrameType.repairRequest,
+          );
+      expect(repair.chunkIndex, 0);
+      expect(repair.data, <int>[0x05]);
+      session.dispose();
+    });
+
+    test('best-effort receiver reports loss without requesting repair',
+        () async {
+      final session = EdgezMeshSession(
+        sdk: sdk,
+        speedTestInactivityTimeout: const Duration(milliseconds: 10),
+      );
+      const fromNode = 0x100;
+      const transferId = 79;
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.start(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+        ),
+      );
+      ble.emitSpeedTestFrame(
+        fromNode: fromNode,
+        frame: EdgezSpeedTestFrame.end(
+          transferId: transferId,
+          totalBytes: 9,
+          totalChunks: 3,
+        ),
+      );
+      await ble.flushEvents();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final sentTypes = ble
+          .callsFor('sendSpeedTestFrame')
+          .map((call) => EdgezSpeedTestFrame.tryDecode(
+                call.argumentMap['payload']! as List<int>,
+              ))
+          .whereType<EdgezSpeedTestFrame>()
+          .map((frame) => frame.type);
+      expect(sentTypes, isNot(contains(EdgezSpeedTestFrameType.repairRequest)));
+      expect(session.state.linkStats[fromNode]?.packetLossPercent, 100);
       session.dispose();
     });
 

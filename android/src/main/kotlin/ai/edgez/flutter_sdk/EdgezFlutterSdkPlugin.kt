@@ -243,7 +243,9 @@ class EdgezFlutterSdkPlugin :
     private var usbHeartbeatTimeouts = 0
     private var usbAwaitingPongSequence = 0
     private var usbAwaitingPongNonce: ByteArray? = null
-    @Volatile private var preferredDeviceLogLevel: Int = 2
+    // Firmware logs use the realtime FFF8 characteristic. Default to NONE;
+    // the app can explicitly select warning/debug when diagnostics are needed.
+    @Volatile private var preferredDeviceLogLevel: Int = 0
     private var usbPingSentAtMs = 0L
     private var usbLastRttMs = 0L
     private var usbProtocolReady = false

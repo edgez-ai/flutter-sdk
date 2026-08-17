@@ -237,6 +237,7 @@ class EdgezMeshSession extends ChangeNotifier {
     this.onIncomingCall,
     this.deviceLogStore,
     this.speedTestInactivityTimeout = const Duration(seconds: 30),
+    this.speedTestReliableDelivery = false,
   }) : sdk = sdk ?? EdgezMeshSdk() {
     _subscription = this.sdk.events.listen(_handleEvent);
   }
@@ -246,9 +247,12 @@ class EdgezMeshSession extends ChangeNotifier {
   final EdgezIncomingCallCallback? onIncomingCall;
   final EdgezDeviceLogStore? deviceLogStore;
   final Duration speedTestInactivityTimeout;
+  final bool speedTestReliableDelivery;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
-  EdgezDeviceLogLevel _appLogLevel = EdgezDeviceLogLevel.warning;
+  // Device logs share the BLE realtime characteristic with voice and speed
+  // traffic. Keep streaming opt-in so an idle connection stays idle.
+  EdgezDeviceLogLevel _appLogLevel = EdgezDeviceLogLevel.none;
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
   Timer? _deviceStatusTimeout;
@@ -268,6 +272,9 @@ class EdgezMeshSession extends ChangeNotifier {
       <String, _PendingVoiceMessage>{};
   final Map<String, _PendingSpeedTest> _pendingSpeedTests =
       <String, _PendingSpeedTest>{};
+  final Map<String, _OutgoingSpeedTest> _outgoingSpeedTests =
+      <String, _OutgoingSpeedTest>{};
+  final Map<int, _BatmanPathMetric> _batmanPaths = <int, _BatmanPathMetric>{};
   final _TransportTrafficMeter _trafficMeter = _TransportTrafficMeter();
   int? _transportMonotonicToEpochOffsetUs;
   static const Set<String> _knownMarkerIds = <String>{
@@ -613,6 +620,16 @@ class EdgezMeshSession extends ChangeNotifier {
         final audio = _pendingVoiceAudio!;
         _pendingVoiceAudio = null;
         await _sendVoiceCallPacket(_callAudio, audio);
+        final peerNode = _state.voiceCall.peerNodeNum;
+        if (peerNode != null) {
+          final pacing = _realtimePathProfile(
+            peerNode,
+            0,
+          ).voicePacingDelay;
+          if (pacing > Duration.zero) {
+            await Future<void>.delayed(pacing);
+          }
+        }
       }
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Voice audio send failed: $error'));
@@ -1037,6 +1054,8 @@ class EdgezMeshSession extends ChangeNotifier {
       throw ArgumentError.value(hop, 'hop', 'Must be between 0 and 3');
     }
     _setState(_state.copyWith(statusLine: 'Sending link measurement'));
+    final pathProfile = _realtimePathProfile(toNode, hop);
+    String? outgoingKey;
     try {
       _recordAppDiagnostic(
         EdgezDeviceLogLevel.debug,
@@ -1047,7 +1066,22 @@ class EdgezMeshSession extends ChangeNotifier {
         fromNode: fromNode,
         totalBytes: totalBytes,
         hop: hop,
+        drainBatchChunks: pathProfile.speedDrainBatchChunks,
+        pacingDelay: pathProfile.speedPacingDelay,
         onProgress: onProgress,
+        onTransferStarted: (transferId, bytes, chunks) {
+          if (!speedTestReliableDelivery) return;
+          outgoingKey = '$toNode:$transferId';
+          final outgoing = _OutgoingSpeedTest(
+            totalBytes: bytes,
+            totalChunks: chunks,
+            hop: hop,
+          );
+          outgoing.expiry = Timer(const Duration(minutes: 2), () {
+            _outgoingSpeedTests.remove(outgoingKey)?.expiry?.cancel();
+          });
+          _outgoingSpeedTests[outgoingKey!] = outgoing;
+        },
         onPacketSent: (packetBytes, sequence) => _recordTransportTraffic(
           byteCount: packetBytes,
           streamKey: 'speed-tx:$fromNode:$toNode',
@@ -1057,6 +1091,7 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       _setState(_state.copyWith(statusLine: 'Link measurement sent'));
     } catch (error) {
+      _outgoingSpeedTests.remove(outgoingKey)?.expiry?.cancel();
       _recordAppDiagnostic(
         EdgezDeviceLogLevel.error,
         'Speed test send failed to=0x${toNode.toRadixString(16)} error=$error',
@@ -1541,6 +1576,13 @@ class EdgezMeshSession extends ChangeNotifier {
     for (final peer in packet.report.peers) {
       final peerNode = peer.id.toInt();
       if (peerNode == 0 || (localNode != 0 && peerNode == localNode)) continue;
+      if (reporter == localNode && peer.routeTq > 0 && peer.routeHops > 0) {
+        _batmanPaths[peerNode] = _BatmanPathMetric(
+          tq: peer.routeTq,
+          hops: peer.routeHops,
+          updatedAtMs: now,
+        );
+      }
       final sensorData = _sensorData(peer.sensorData);
       if (sensorData != null) {
         sensorSamples[peerNode] = <EdgezSensorSample>[
@@ -1566,6 +1608,8 @@ class EdgezMeshSession extends ChangeNotifier {
         peerNodeNum: peerNode,
         encodedRssi: peer.rssi > 0 ? peer.rssi : 1000,
         lastSeenMs: now,
+        routeTq: peer.routeTq,
+        routeHops: peer.routeHops,
       );
       latestByPair[link.undirectedKey] = link;
     }
@@ -1902,10 +1946,42 @@ class EdgezMeshSession extends ChangeNotifier {
       );
     }
     final key = '$fromNode:${frame.transferId}';
+    if (frame.type == EdgezSpeedTestFrameType.repairRequest) {
+      if (!speedTestReliableDelivery) return;
+      final outgoing = _outgoingSpeedTests[key];
+      if (outgoing == null ||
+          outgoing.totalBytes != frame.totalBytes ||
+          outgoing.totalChunks != frame.totalChunks) {
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.warning,
+          'Speed repair ignored from=0x${fromNode.toRadixString(16)} transfer=${frame.transferId}',
+        );
+        return;
+      }
+      outgoing.repairPipeline = outgoing.repairPipeline.then((_) async {
+        await sdk.resendSpeedTestChunks(
+          toNode: fromNode,
+          hop: outgoing.hop,
+          request: frame,
+        );
+      }).catchError((Object error) {
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.warning,
+          'Speed repair send failed transfer=${frame.transferId}: $error',
+        );
+      });
+      return;
+    }
+    if (frame.type == EdgezSpeedTestFrameType.complete) {
+      if (!speedTestReliableDelivery) return;
+      _outgoingSpeedTests.remove(key)?.expiry?.cancel();
+      return;
+    }
     late final _PendingSpeedTest pending;
     if (frame.type == EdgezSpeedTestFrameType.start) {
       _pendingSpeedTests.remove(key)?.timer?.cancel();
       pending = _PendingSpeedTest(
+        transferId: frame.transferId,
         totalBytes: frame.totalBytes,
         totalChunks: frame.totalChunks,
       );
@@ -1937,6 +2013,7 @@ class EdgezMeshSession extends ChangeNotifier {
     }
     if (frame.type == EdgezSpeedTestFrameType.end) {
       pending.endReceived = true;
+      pending.repairDeadline = DateTime.now().add(speedTestInactivityTimeout);
     }
     pending.timer?.cancel();
     if (pending.endReceived && pending.complete) {
@@ -1944,12 +2021,21 @@ class EdgezMeshSession extends ChangeNotifier {
       return;
     }
     if (pending.endReceived) {
-      // END may overtake DATA on a forced multi-hop route. Keep the transfer
-      // alive while delayed chunks arrive, then publish the incomplete result.
-      pending.timer = Timer(
-        speedTestInactivityTimeout,
-        () => _finishSpeedTest(key, fromNode),
-      );
+      if (speedTestReliableDelivery) {
+        _scheduleSpeedRepair(key, fromNode, pending);
+      } else {
+        // Best-effort measurements publish the loss they observed. Allow a
+        // short reordering window after END, but never request retransmission.
+        const maximumBestEffortReorderWindow = Duration(seconds: 2);
+        final reorderWindow =
+            speedTestInactivityTimeout < maximumBestEffortReorderWindow
+                ? speedTestInactivityTimeout
+                : maximumBestEffortReorderWindow;
+        pending.timer = Timer(
+          reorderWindow,
+          () => _finishSpeedTest(key, fromNode),
+        );
+      }
     } else {
       // START can precede DATA by minutes while the radio queue drains. A
       // pre-END timeout is cleanup only and must never create a false 0/100
@@ -1965,11 +2051,138 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  void _scheduleSpeedRepair(
+    String key,
+    int fromNode,
+    _PendingSpeedTest pending,
+  ) {
+    pending.timer?.cancel();
+    final deadline = pending.repairDeadline ??
+        DateTime.now().add(speedTestInactivityTimeout);
+    pending.repairDeadline = deadline;
+    final remaining = deadline.difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      _finishSpeedTest(key, fromNode);
+      return;
+    }
+    pending.repairAttempts++;
+    unawaited(_sendSpeedRepairRequests(fromNode, pending));
+    const retryInterval = Duration(seconds: 3);
+    final delay = remaining < retryInterval ? remaining : retryInterval;
+    pending.timer = Timer(delay, () {
+      if (pending.complete) {
+        _finishSpeedTest(key, fromNode);
+      } else {
+        _scheduleSpeedRepair(key, fromNode, pending);
+      }
+    });
+  }
+
+  Future<void> _sendSpeedRepairRequests(
+    int fromNode,
+    _PendingSpeedTest pending,
+  ) async {
+    const chunksPerBitmap = 448 * 8;
+    final hop = _lastMeshConfig?.maxHop ?? 0;
+    try {
+      var segment = 0;
+      for (var base = 0; base < pending.totalChunks; base += chunksPerBitmap) {
+        final covered = min(chunksPerBitmap, pending.totalChunks - base);
+        final bitmap = Uint8List((covered + 7) ~/ 8);
+        var missing = false;
+        for (var offset = 0; offset < covered; offset++) {
+          if (pending.chunks.contains(base + offset)) continue;
+          bitmap[offset ~/ 8] |= 1 << (offset & 7);
+          missing = true;
+        }
+        if (!missing) continue;
+        await sdk.sendSpeedTestRepairRequest(
+          toNode: fromNode,
+          hop: hop,
+          sequence:
+              pending.totalChunks + 3 + pending.repairAttempts * 16 + segment,
+          frame: EdgezSpeedTestFrame.repairRequest(
+            transferId: pending.transferId,
+            totalBytes: pending.totalBytes,
+            totalChunks: pending.totalChunks,
+            baseChunk: base,
+            missingBitmap: bitmap,
+          ),
+        );
+        segment++;
+      }
+    } catch (error) {
+      _recordAppDiagnostic(
+        EdgezDeviceLogLevel.warning,
+        'Speed repair request failed transfer=${pending.transferId}: $error',
+      );
+    }
+  }
+
   void _finishSpeedTest(String key, int fromNode) {
     final pending = _pendingSpeedTests.remove(key);
     if (pending == null) return;
     pending.timer?.cancel();
+    if (speedTestReliableDelivery && pending.complete) {
+      unawaited(
+        sdk
+            .sendSpeedTestComplete(
+          toNode: fromNode,
+          hop: _lastMeshConfig?.maxHop ?? 0,
+          frame: EdgezSpeedTestFrame.complete(
+            transferId: pending.transferId,
+            totalBytes: pending.totalBytes,
+            totalChunks: pending.totalChunks,
+          ),
+        )
+            .catchError((Object error) {
+          _recordAppDiagnostic(
+            EdgezDeviceLogLevel.warning,
+            'Speed completion ACK failed transfer=${pending.transferId}: $error',
+          );
+        }),
+      );
+    }
     _publishLinkStats(fromNode, pending, finalResult: true);
+  }
+
+  _RealtimePathProfile _realtimePathProfile(
+    int targetNode,
+    int requestedHops,
+  ) {
+    final localNode = _state.status?.macAddress ?? 0;
+    final selected = localNode == 0 ? null : _batmanPaths[targetNode];
+    final age = selected == null
+        ? const Duration(days: 1)
+        : Duration(
+            milliseconds:
+                DateTime.now().millisecondsSinceEpoch - selected.updatedAtMs,
+          );
+    final hops = requestedHops > 0 ? requestedHops : (selected?.hops ?? 0);
+    final tq = age <= const Duration(seconds: 15) ? (selected?.tq ?? 0) : 0;
+
+    if (tq >= 208 && hops <= 1) {
+      return const _RealtimePathProfile(6, Duration.zero, Duration.zero);
+    }
+    if (tq >= 160 && hops <= 2) {
+      return const _RealtimePathProfile(
+        4,
+        Duration(milliseconds: 2),
+        Duration(milliseconds: 5),
+      );
+    }
+    if (tq >= 112 || (tq == 0 && hops <= 1)) {
+      return const _RealtimePathProfile(
+        2,
+        Duration(milliseconds: 6),
+        Duration(milliseconds: 15),
+      );
+    }
+    return const _RealtimePathProfile(
+      1,
+      Duration(milliseconds: 12),
+      Duration(milliseconds: 30),
+    );
   }
 
   void _recordTransportTraffic({
@@ -2632,6 +2845,11 @@ class EdgezMeshSession extends ChangeNotifier {
       pending.timer?.cancel();
     }
     _pendingSpeedTests.clear();
+    for (final outgoing in _outgoingSpeedTests.values) {
+      outgoing.expiry?.cancel();
+    }
+    _outgoingSpeedTests.clear();
+    _batmanPaths.clear();
     _trafficMeter.clear();
     _subscription.cancel();
     super.dispose();
@@ -2765,10 +2983,12 @@ class _PendingVoiceMessage {
 
 class _PendingSpeedTest {
   _PendingSpeedTest({
+    required this.transferId,
     required this.totalBytes,
     required this.totalChunks,
   });
 
+  final int transferId;
   final int totalBytes;
   final int totalChunks;
   final Set<int> chunks = <int>{};
@@ -2778,6 +2998,8 @@ class _PendingSpeedTest {
   int lastPublishedMs = 0;
   int highestChunkIndex = -1;
   bool endReceived = false;
+  int repairAttempts = 0;
+  DateTime? repairDeadline;
   Timer? timer;
 
   int get receivedChunks => chunks.length;
@@ -2804,6 +3026,44 @@ class _PendingSpeedTest {
     highestChunkIndex = max(highestChunkIndex, index);
     receivedBytes += byteCount;
   }
+}
+
+class _OutgoingSpeedTest {
+  _OutgoingSpeedTest({
+    required this.totalBytes,
+    required this.totalChunks,
+    required this.hop,
+  });
+
+  final int totalBytes;
+  final int totalChunks;
+  final int hop;
+  Timer? expiry;
+  Future<void> repairPipeline = Future<void>.value();
+}
+
+class _RealtimePathProfile {
+  const _RealtimePathProfile(
+    this.speedDrainBatchChunks,
+    this.speedPacingDelay,
+    this.voicePacingDelay,
+  );
+
+  final int speedDrainBatchChunks;
+  final Duration speedPacingDelay;
+  final Duration voicePacingDelay;
+}
+
+class _BatmanPathMetric {
+  const _BatmanPathMetric({
+    required this.tq,
+    required this.hops,
+    required this.updatedAtMs,
+  });
+
+  final int tq;
+  final int hops;
+  final int updatedAtMs;
 }
 
 class _DecodedVoiceCallPacket {

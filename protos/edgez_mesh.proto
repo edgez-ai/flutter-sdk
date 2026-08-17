@@ -175,6 +175,8 @@ message Peer {
   uint64 id = 1;
   sint32 rssi = 2;
   repeated SensorData sensor_data = 3;
+  uint32 route_tq = 4;
+  uint32 route_hops = 5;
 }
 
 message Beacon {

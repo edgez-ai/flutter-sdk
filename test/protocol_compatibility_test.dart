@@ -261,7 +261,7 @@ void main() {
       interface: Interface.HALOW,
       report: Report(
         peers: <Peer>[
-          Peer(id: Int64(0x200), rssi: 934),
+          Peer(id: Int64(0x200), rssi: 934, routeTq: 197, routeHops: 2),
           Peer(id: Int64(0x300), rssi: 1000),
         ],
       ),
@@ -278,6 +278,10 @@ void main() {
           .rssiDbm,
       -66,
     );
+    final routed = session.state.topologyLinks
+        .firstWhere((link) => link.peerNodeNum == 0x200);
+    expect(routed.routeTq, 197);
+    expect(routed.routeHops, 2);
     expect(
       session.state.topologyLinks
           .firstWhere((link) => link.peerNodeNum == 0x300)

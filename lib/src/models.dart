@@ -118,12 +118,16 @@ class EdgezTopologyLink {
     required this.peerNodeNum,
     required this.encodedRssi,
     required this.lastSeenMs,
+    this.routeTq = 0,
+    this.routeHops = 0,
   });
 
   final int reporterNodeNum;
   final int peerNodeNum;
   final int encodedRssi;
   final int lastSeenMs;
+  final int routeTq;
+  final int routeHops;
 
   int? get rssiDbm => encodedRssi == 1000 ? null : encodedRssi - 1000;
 
