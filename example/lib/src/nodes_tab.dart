@@ -14,6 +14,7 @@ class NodesScreen extends StatelessWidget {
     required this.onOpenTopology,
     required this.onRemoveNode,
     required this.onToggleDashboard,
+    required this.onTogglePublicChannel,
     required this.onOpenNode,
     super.key,
   });
@@ -26,6 +27,8 @@ class NodesScreen extends StatelessWidget {
   final VoidCallback onOpenTopology;
   final ValueChanged<EdgezMeshNode> onRemoveNode;
   final ValueChanged<EdgezMeshNode> onToggleDashboard;
+  final void Function(EdgezMeshNode channel, bool enabled)
+      onTogglePublicChannel;
   final ValueChanged<EdgezMeshNode> onOpenNode;
 
   @override
@@ -61,6 +64,8 @@ class NodesScreen extends StatelessWidget {
             NodeCard(
               user: channel,
               latestSensor: null,
+              onEnabledChanged: (enabled) =>
+                  onTogglePublicChannel(channel, enabled),
               onTap: () => onOpenNode(channel),
             ),
             const SizedBox(height: 12),
@@ -110,6 +115,7 @@ class NodeCard extends StatelessWidget {
     required this.onTap,
     this.showOnDashboard,
     this.onToggleDashboard,
+    this.onEnabledChanged,
     super.key,
   });
 
@@ -118,6 +124,7 @@ class NodeCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool? showOnDashboard;
   final VoidCallback? onToggleDashboard;
+  final ValueChanged<bool>? onEnabledChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -166,6 +173,11 @@ class NodeCard extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: <Widget>[
+                      if (onEnabledChanged != null)
+                        Switch(
+                          value: user.enabled,
+                          onChanged: onEnabledChanged,
+                        ),
                       if (onToggleDashboard != null)
                         IconButton(
                           tooltip: showOnDashboard == true

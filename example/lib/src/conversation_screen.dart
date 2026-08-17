@@ -510,46 +510,100 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: canSendVoiceMessage ? (_) => _startVoicePress() : null,
-              onTapUp: canSendVoiceMessage
-                  ? (_) => _finishVoicePress(send: true)
-                  : null,
-              onTapCancel: canSendVoiceMessage
-                  ? () => _finishVoicePress(send: false)
-                  : null,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: recording
-                      ? Theme.of(context).colorScheme.error
-                      : canSendVoiceMessage
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+            if (widget.user.isPublicChannel)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: canSendVoice && widget.callState.isIdle
+                    ? () => unawaited(widget.onStartCall())
+                    : null,
+                child: Container(
+                  width: 168,
+                  height: 168,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: canSendVoice && widget.callState.isIdle
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    shape: BoxShape.circle,
+                    boxShadow: canSendVoice && widget.callState.isIdle
+                        ? <BoxShadow>[
+                            BoxShadow(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withValues(alpha: 0.28),
+                              blurRadius: 18,
+                              spreadRadius: 2,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        Icons.mic_none,
+                        size: 48,
+                        color: canSendVoice && widget.callState.isIdle
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Connect to talk',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: canSendVoice && widget.callState.isIdle
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Text(
-                  recording
-                      ? 'Recording'
-                      : widget.user.isPublicChannel
-                          ? 'Use call button to join talkgroup'
-                          : canSendVoiceMessage
-                              ? 'Hold to Talk'
-                              : 'Connect to send voice',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: recording || canSendVoiceMessage
-                        ? Theme.of(context).colorScheme.onPrimary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
+              )
+            else
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown:
+                    canSendVoiceMessage ? (_) => _startVoicePress() : null,
+                onTapUp: canSendVoiceMessage
+                    ? (_) => _finishVoicePress(send: true)
+                    : null,
+                onTapCancel: canSendVoiceMessage
+                    ? () => _finishVoicePress(send: false)
+                    : null,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: recording
+                        ? Theme.of(context).colorScheme.error
+                        : canSendVoiceMessage
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    recording
+                        ? 'Recording'
+                        : canSendVoiceMessage
+                            ? 'Hold to Talk'
+                            : 'Connect to send voice',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: recording || canSendVoiceMessage
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),

@@ -27,6 +27,7 @@ class ExampleDatabase {
             geo_fence_name TEXT NOT NULL,
             geo_index INTEGER NOT NULL,
             sleeping INTEGER NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
             dashboard_show_on INTEGER NOT NULL DEFAULT 0,
             dashboard_widget TEXT NOT NULL DEFAULT 'tempHumidity',
             dashboard_range TEXT NOT NULL DEFAULT 'latest'
@@ -101,6 +102,10 @@ class ExampleDatabase {
     if (!columnNames.contains('public_key')) {
       await db.execute(
           "ALTER TABLE nodes ADD COLUMN public_key BLOB NOT NULL DEFAULT X''");
+    }
+    if (!columnNames.contains('enabled')) {
+      await db.execute(
+          'ALTER TABLE nodes ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1');
     }
     final messageColumns =
         await db.rawQuery('PRAGMA table_info(conversation_messages)');
@@ -230,6 +235,7 @@ class ExampleDatabase {
           geoFenceName: row['geo_fence_name'] as String,
           geoIndex: row['geo_index'] as int,
           sleeping: (row['sleeping'] as int) != 0,
+          enabled: (row['enabled'] as int? ?? 1) != 0,
         ),
     };
   }
@@ -458,6 +464,7 @@ class ExampleDatabase {
         'geo_fence_name': node.geoFenceName,
         'geo_index': node.geoIndex,
         'sleeping': node.sleeping ? 1 : 0,
+        'enabled': node.enabled ? 1 : 0,
         'dashboard_show_on': savedDisplay.showOnDashboard ? 1 : 0,
         'dashboard_widget': savedDisplay.widget.name,
         'dashboard_range': savedDisplay.range.name,

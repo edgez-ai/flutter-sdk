@@ -537,6 +537,9 @@ class EdgezMeshSdk {
         sdkCompatibility: _releaseCredential.compatibility,
         sdkReleaseId: _releaseCredential.releaseId,
         sdkReleaseSignature: releaseSignature,
+        publicChannelMask:
+            EdgezPublicChannels.maskForPorts(config.enabledPublicChannels),
+        hasPublicChannelMask_19: true,
       ),
     );
     return _transport.invokeMethod<void>('initializeMesh', {
@@ -544,6 +547,24 @@ class EdgezMeshSdk {
       'sdkCompatibility': _releaseCredential.compatibility,
       'sdkReleaseId': _releaseCredential.releaseId,
       'sdkReleaseSignatureBytes': releaseSignature.length,
+      'packet': Uint8List.fromList(packet.writeToBuffer()),
+    });
+  }
+
+  Future<void> updatePublicChannels(Iterable<int> enabledPorts) {
+    final packet = proto.NetworkPacket(
+      operation: proto.Operation.REQUEST,
+      interface: proto.Interface.HALOW,
+      init: proto.HaLowInitConfig(
+        sdkCompatibility: _releaseCredential.compatibility,
+        sdkReleaseId: _releaseCredential.releaseId,
+        sdkReleaseSignature: _releaseCredential.signature,
+        publicChannelMask: EdgezPublicChannels.maskForPorts(enabledPorts),
+        hasPublicChannelMask_19: true,
+      ),
+    );
+    return _transport.invokeMethod<void>('sendPacket', {
+      'label': 'Public channel subscriptions',
       'packet': Uint8List.fromList(packet.writeToBuffer()),
     });
   }

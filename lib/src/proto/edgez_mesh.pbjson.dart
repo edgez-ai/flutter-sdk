@@ -590,6 +590,18 @@ const HaLowInterfaceStatus$json = {
       '10': 'licenseStatus'
     },
     {'1': 'firmware_version', '3': 13, '4': 1, '5': 9, '10': 'firmwareVersion'},
+    {
+      '1': 'public_channel_mask',
+      '3': 14,
+      '4': 1,
+      '5': 13,
+      '9': 0,
+      '10': 'publicChannelMask',
+      '17': true
+    },
+  ],
+  '8': [
+    {'1': '_public_channel_mask'},
   ],
 };
 
@@ -603,7 +615,8 @@ final $typed_data.Uint8List haLowInterfaceStatusDescriptor = $convert.base64Deco
     'NoSWQSFwoHaXBfYWRkchgJIAEoCVIGaXBBZGRyEhgKB2dhdGV3YXkYCiABKAlSB2dhdGV3YXkS'
     'HwoLbWFjX2FkZHJlc3MYCyABKARSCm1hY0FkZHJlc3MSRAoObGljZW5zZV9zdGF0dXMYDCABKA'
     '4yHS5haS5lZGdlei5oYWxvdy5MaWNlbnNlU3RhdHVzUg1saWNlbnNlU3RhdHVzEikKEGZpcm13'
-    'YXJlX3ZlcnNpb24YDSABKAlSD2Zpcm13YXJlVmVyc2lvbg==');
+    'YXJlX3ZlcnNpb24YDSABKAlSD2Zpcm13YXJlVmVyc2lvbhIzChNwdWJsaWNfY2hhbm5lbF9tYX'
+    'NrGA4gASgNSABSEXB1YmxpY0NoYW5uZWxNYXNriAEBQhYKFF9wdWJsaWNfY2hhbm5lbF9tYXNr');
 
 @$core.Deprecated('Use haLowInitConfigDescriptor instead')
 const HaLowInitConfig$json = {
@@ -650,6 +663,20 @@ const HaLowInitConfig$json = {
       '5': 12,
       '10': 'sdkReleaseSignature'
     },
+    {
+      '1': 'public_channel_mask',
+      '3': 18,
+      '4': 1,
+      '5': 13,
+      '10': 'publicChannelMask'
+    },
+    {
+      '1': 'has_public_channel_mask',
+      '3': 19,
+      '4': 1,
+      '5': 8,
+      '10': 'hasPublicChannelMask'
+    },
   ],
 };
 
@@ -666,7 +693,8 @@ final $typed_data.Uint8List haLowInitConfigDescriptor = $convert.base64Decode(
     'cXVlbmN5X2toehgOIAEoDVIQbWVzaEZyZXF1ZW5jeUtoehIrChFzZGtfY29tcGF0aWJpbGl0eR'
     'gPIAEoCVIQc2RrQ29tcGF0aWJpbGl0eRIkCg5zZGtfcmVsZWFzZV9pZBgQIAEoCVIMc2RrUmVs'
     'ZWFzZUlkEjIKFXNka19yZWxlYXNlX3NpZ25hdHVyZRgRIAEoDFITc2RrUmVsZWFzZVNpZ25hdH'
-    'VyZQ==');
+    'VyZRIuChNwdWJsaWNfY2hhbm5lbF9tYXNrGBIgASgNUhFwdWJsaWNDaGFubmVsTWFzaxI1Chdo'
+    'YXNfcHVibGljX2NoYW5uZWxfbWFzaxgTIAEoCFIUaGFzUHVibGljQ2hhbm5lbE1hc2s=');
 
 @$core.Deprecated('Use deviceSettingsDescriptor instead')
 const DeviceSettings$json = {

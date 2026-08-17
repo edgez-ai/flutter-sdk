@@ -98,6 +98,8 @@ void main() {
     expect(packet.init.sdkCompatibility, '^0.5.0');
     expect(packet.init.sdkReleaseId, 'edgez_flutter_sdk@test');
     expect(packet.init.sdkReleaseSignature, hasLength(64));
+    expect(packet.init.hasPublicChannelMask_19, isTrue);
+    expect(packet.init.publicChannelMask, EdgezPublicChannels.allMask);
   });
 
   test('authorization init carries credentials without a mesh profile',

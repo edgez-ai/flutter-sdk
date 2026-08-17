@@ -610,6 +610,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         ..write(node.geoIndex)
         ..write('|')
         ..write(node.sleeping)
+        ..write('|')
+        ..write(node.enabled)
         ..write(';');
     }
     final conversations = state.conversations.entries.toList()
@@ -861,6 +863,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         maxHop: parsedMaxHop,
         meshBandwidthMhz: meshBandwidthMhz,
         meshFrequencyKhz: meshFrequencyKhz,
+        enabledPublicChannels: session.enabledPublicChannels,
         beacon: EdgezBeaconConfig(
           intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 10,
           marker: userMarker.name,
@@ -1236,6 +1239,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         current.copyWith(showOnDashboard: !current.showOnDashboard)));
   }
 
+  void _togglePublicChannel(EdgezMeshNode channel, bool enabled) {
+    unawaited(session.setPublicChannelEnabled(channel.nodeNum, enabled));
+  }
+
   void _removeNode(EdgezMeshNode node) {
     session.removeNode(node.nodeNum);
     if (persistenceEnabled) {
@@ -1369,7 +1376,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       activeConnection: meshState.connection,
                       status: meshState.status,
                       users: <EdgezMeshNode>[
-                        ...EdgezPublicChannels.nodes,
                         ...meshState.sortedNodes,
                       ],
                       sensorSamples: meshState.sensorSamples,
@@ -1377,6 +1383,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       onOpenTopology: () => setState(() => showTopology = true),
                       onRemoveNode: _removeNode,
                       onToggleDashboard: _toggleDashboard,
+                      onTogglePublicChannel: _togglePublicChannel,
                       onOpenNode: _openNode,
                     )
                   : selected.opensConversation

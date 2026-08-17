@@ -207,6 +207,7 @@ message HaLowInterfaceStatus {
   uint64 mac_address = 11;
   LicenseStatus license_status = 12;
   string firmware_version = 13;
+  optional uint32 public_channel_mask = 14; // bits 0..4 correspond to channels 1..5
 }
 
 message HaLowInitConfig {
@@ -227,6 +228,8 @@ message HaLowInitConfig {
   string sdk_compatibility = 15;
   string sdk_release_id = 16;
   bytes sdk_release_signature = 17;
+  uint32 public_channel_mask = 18; // bits 0..4 correspond to channels 1..5
+  bool has_public_channel_mask = 19;
 }
 
 message DeviceSettings {

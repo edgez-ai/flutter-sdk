@@ -1086,6 +1086,7 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     $fixnum.Int64? macAddress,
     LicenseStatus? licenseStatus,
     $core.String? firmwareVersion,
+    $core.int? publicChannelMask,
   }) {
     final result = create();
     if (supported != null) result.supported = supported;
@@ -1101,6 +1102,7 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     if (macAddress != null) result.macAddress = macAddress;
     if (licenseStatus != null) result.licenseStatus = licenseStatus;
     if (firmwareVersion != null) result.firmwareVersion = firmwareVersion;
+    if (publicChannelMask != null) result.publicChannelMask = publicChannelMask;
     return result;
   }
 
@@ -1133,6 +1135,8 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
     ..aE<LicenseStatus>(12, _omitFieldNames ? '' : 'licenseStatus',
         enumValues: LicenseStatus.values)
     ..aOS(13, _omitFieldNames ? '' : 'firmwareVersion')
+    ..aI(14, _omitFieldNames ? '' : 'publicChannelMask',
+        fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1272,6 +1276,15 @@ class HaLowInterfaceStatus extends $pb.GeneratedMessage {
   $core.bool hasFirmwareVersion() => $_has(12);
   @$pb.TagNumber(13)
   void clearFirmwareVersion() => $_clearField(13);
+
+  @$pb.TagNumber(14)
+  $core.int get publicChannelMask => $_getIZ(13);
+  @$pb.TagNumber(14)
+  set publicChannelMask($core.int value) => $_setUnsignedInt32(13, value);
+  @$pb.TagNumber(14)
+  $core.bool hasPublicChannelMask() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearPublicChannelMask() => $_clearField(14);
 }
 
 class HaLowInitConfig extends $pb.GeneratedMessage {
@@ -1293,6 +1306,8 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
     $core.String? sdkCompatibility,
     $core.String? sdkReleaseId,
     $core.List<$core.int>? sdkReleaseSignature,
+    $core.int? publicChannelMask,
+    $core.bool? hasPublicChannelMask_19,
   }) {
     final result = create();
     if (countryCode != null) result.countryCode = countryCode;
@@ -1313,6 +1328,9 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
     if (sdkReleaseId != null) result.sdkReleaseId = sdkReleaseId;
     if (sdkReleaseSignature != null)
       result.sdkReleaseSignature = sdkReleaseSignature;
+    if (publicChannelMask != null) result.publicChannelMask = publicChannelMask;
+    if (hasPublicChannelMask_19 != null)
+      result.hasPublicChannelMask_19 = hasPublicChannelMask_19;
     return result;
   }
 
@@ -1354,6 +1372,9 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
     ..aOS(16, _omitFieldNames ? '' : 'sdkReleaseId')
     ..a<$core.List<$core.int>>(
         17, _omitFieldNames ? '' : 'sdkReleaseSignature', $pb.PbFieldType.OY)
+    ..aI(18, _omitFieldNames ? '' : 'publicChannelMask',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aOB(19, _omitFieldNames ? '' : 'hasPublicChannelMask')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1529,6 +1550,24 @@ class HaLowInitConfig extends $pb.GeneratedMessage {
   $core.bool hasSdkReleaseSignature() => $_has(16);
   @$pb.TagNumber(17)
   void clearSdkReleaseSignature() => $_clearField(17);
+
+  @$pb.TagNumber(18)
+  $core.int get publicChannelMask => $_getIZ(17);
+  @$pb.TagNumber(18)
+  set publicChannelMask($core.int value) => $_setUnsignedInt32(17, value);
+  @$pb.TagNumber(18)
+  $core.bool hasPublicChannelMask() => $_has(17);
+  @$pb.TagNumber(18)
+  void clearPublicChannelMask() => $_clearField(18);
+
+  @$pb.TagNumber(19)
+  $core.bool get hasPublicChannelMask_19 => $_getBF(18);
+  @$pb.TagNumber(19)
+  set hasPublicChannelMask_19($core.bool value) => $_setBool(18, value);
+  @$pb.TagNumber(19)
+  $core.bool hasHasPublicChannelMask_19() => $_has(18);
+  @$pb.TagNumber(19)
+  void clearHasPublicChannelMask_19() => $_clearField(19);
 }
 
 class DeviceSettings extends $pb.GeneratedMessage {

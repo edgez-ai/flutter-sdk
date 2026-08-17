@@ -244,6 +244,13 @@ class EdgezMeshConfig {
     this.maxHop = 4,
     this.meshBandwidthMhz = 0,
     this.meshFrequencyKhz = 0,
+    this.enabledPublicChannels = const <int>{
+      38801,
+      38803,
+      38805,
+      38807,
+      38809,
+    },
     this.beacon = const EdgezBeaconConfig(),
   });
 
@@ -253,6 +260,7 @@ class EdgezMeshConfig {
   final int maxHop;
   final int meshBandwidthMhz;
   final int meshFrequencyKhz;
+  final Set<int> enabledPublicChannels;
   final EdgezUserIdentity identity;
   final EdgezBeaconConfig beacon;
 
@@ -263,9 +271,25 @@ class EdgezMeshConfig {
         'maxHop': maxHop,
         'meshBandwidthMhz': meshBandwidthMhz,
         'meshFrequencyKhz': meshFrequencyKhz,
+        'enabledPublicChannels': enabledPublicChannels.toList(growable: false),
         'identity': identity.toMap(),
         'beacon': beacon.toMap(),
       };
+
+  EdgezMeshConfig copyWith({Set<int>? enabledPublicChannels}) {
+    return EdgezMeshConfig(
+      identity: identity,
+      countryCode: countryCode,
+      meshId: meshId,
+      passphrase: passphrase,
+      maxHop: maxHop,
+      meshBandwidthMhz: meshBandwidthMhz,
+      meshFrequencyKhz: meshFrequencyKhz,
+      enabledPublicChannels:
+          enabledPublicChannels ?? this.enabledPublicChannels,
+      beacon: beacon,
+    );
+  }
 }
 
 class EdgezBeaconConfig {
@@ -514,6 +538,8 @@ class EdgezMeshStatus {
     required this.macAddress,
     this.licenseStatus = EdgezLicenseStatus.unspecified,
     this.firmwareVersion = '',
+    this.publicChannelMask = EdgezPublicChannels.allMask,
+    this.supportsPublicChannelMask = false,
   });
 
   final bool supported;
@@ -528,6 +554,11 @@ class EdgezMeshStatus {
   final int macAddress;
   final EdgezLicenseStatus licenseStatus;
   final String firmwareVersion;
+  final int publicChannelMask;
+  final bool supportsPublicChannelMask;
+
+  Set<int> get enabledPublicChannels =>
+      EdgezPublicChannels.portsForMask(publicChannelMask);
 
   bool get licensed => licenseStatus.isAuthorized;
 
@@ -552,6 +583,9 @@ class EdgezMeshStatus {
                 : null),
       ),
       firmwareVersion: map['firmwareVersion'] as String? ?? '',
+      publicChannelMask:
+          map['publicChannelMask'] as int? ?? EdgezPublicChannels.allMask,
+      supportsPublicChannelMask: map['supportsPublicChannelMask'] == true,
     );
   }
 }
@@ -571,6 +605,7 @@ class EdgezMeshNode {
     this.geoFenceName = '',
     this.geoIndex = 0,
     this.sleeping = false,
+    this.enabled = true,
   });
 
   final int nodeNum;
@@ -586,6 +621,7 @@ class EdgezMeshNode {
   final String geoFenceName;
   final int geoIndex;
   final bool sleeping;
+  final bool enabled;
 
   String get nodeId {
     final mac = nodeNum & 0xffffffffffff;
@@ -612,6 +648,25 @@ class EdgezMeshNode {
   String get resolvedDisplayName =>
       displayName.isNotEmpty ? displayName : nodeId;
 
+  EdgezMeshNode copyWith({bool? enabled}) {
+    return EdgezMeshNode(
+      nodeNum: nodeNum,
+      userUuid: userUuid,
+      displayName: displayName,
+      route: route,
+      lastSeenMs: lastSeenMs,
+      marker: marker,
+      publicKey: publicKey,
+      latitude: latitude,
+      longitude: longitude,
+      deviceType: deviceType,
+      geoFenceName: geoFenceName,
+      geoIndex: geoIndex,
+      sleeping: sleeping,
+      enabled: enabled ?? this.enabled,
+    );
+  }
+
   EdgezMeshNode mergeDiscovery(EdgezMeshNode? previous) {
     return EdgezMeshNode(
       nodeNum: nodeNum,
@@ -635,6 +690,7 @@ class EdgezMeshNode {
           geoFenceName.isNotEmpty ? geoFenceName : previous?.geoFenceName ?? '',
       geoIndex: geoIndex != 0 ? geoIndex : previous?.geoIndex ?? 0,
       sleeping: sleeping,
+      enabled: previous?.enabled ?? enabled,
     );
   }
 
@@ -655,6 +711,7 @@ class EdgezMeshNode {
       geoFenceName: map['geoFenceName'] as String? ?? '',
       geoIndex: map['geoIndex'] as int? ?? 0,
       sleeping: map['sleeping'] == true,
+      enabled: map['enabled'] != false,
     );
   }
 }
@@ -675,6 +732,7 @@ class EdgezPublicChannels {
     38809,
   ];
   static const int count = 5;
+  static const int allMask = (1 << count) - 1;
 
   static bool isChannelNodeNum(int nodeNum) => talkgroupPorts.contains(nodeNum);
 
@@ -685,7 +743,21 @@ class EdgezPublicChannels {
 
   static String username(int channel) => 'channel$channel';
 
-  static EdgezMeshNode node(int channel) {
+  static int maskForPorts(Iterable<int> ports) {
+    var mask = 0;
+    for (final port in ports) {
+      final index = talkgroupPorts.indexOf(port);
+      if (index >= 0) mask |= 1 << index;
+    }
+    return mask;
+  }
+
+  static Set<int> portsForMask(int mask) => <int>{
+        for (var index = 0; index < talkgroupPorts.length; index++)
+          if ((mask & (1 << index)) != 0) talkgroupPorts[index],
+      };
+
+  static EdgezMeshNode node(int channel, {bool enabled = true}) {
     if (channel < 1 || channel > count) {
       throw RangeError.range(channel, 1, count, 'channel');
     }
@@ -699,6 +771,7 @@ class EdgezPublicChannels {
       lastSeenMs: 0,
       marker: 'cyan',
       deviceType: 'PublicChannel',
+      enabled: enabled,
     );
   }
 

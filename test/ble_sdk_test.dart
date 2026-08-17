@@ -1097,7 +1097,8 @@ void main() {
       );
       await ble.flushEvents();
 
-      expect(session.state.nodes, isEmpty);
+      expect(session.state.nodes.values.where((node) => !node.isPublicChannel),
+          isEmpty);
       session.dispose();
     });
 

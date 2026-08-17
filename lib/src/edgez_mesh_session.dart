@@ -85,11 +85,14 @@ class EdgezMeshState {
         linkStats = Map<int, EdgezLinkStats>.unmodifiable(linkStats);
 
   factory EdgezMeshState.initial() {
+    final publicChannels = <int, EdgezMeshNode>{
+      for (final node in EdgezPublicChannels.nodes) node.nodeNum: node,
+    };
     return EdgezMeshState(
       connection: EdgezConnectionType.none,
       status: null,
       bleDevices: const <String, EdgezBleDevice>{},
-      nodes: const <int, EdgezMeshNode>{},
+      nodes: publicChannels,
       sensorSamples: const <int, List<EdgezSensorSample>>{},
       topologyLinks: const <EdgezTopologyLink>[],
       conversations: const <int, List<EdgezConversationMessage>>{},
@@ -263,6 +266,7 @@ class EdgezMeshSession extends ChangeNotifier {
   var _initInFlight = false;
   var _initRetryRequested = false;
   var _locationUpdateInFlight = false;
+  var _publicChannelSyncInFlight = false;
   String? _lastInitKey;
   var _voiceCallSequence = 1;
   Future<void> _voiceFramePipeline = Future<void>.value();
@@ -339,9 +343,14 @@ class EdgezMeshSession extends ChangeNotifier {
     Map<int, List<EdgezSensorSample>> sensorSamples =
         const <int, List<EdgezSensorSample>>{},
   }) {
+    final mergedNodes = <int, EdgezMeshNode>{
+      for (final channel in EdgezPublicChannels.nodes)
+        channel.nodeNum: channel,
+      ...nodes,
+    };
     _setState(
       _state.copyWith(
-        nodes: nodes,
+        nodes: mergedNodes,
         sensorSamples: sensorSamples,
         conversations: conversations,
         statusLine: nodes.isEmpty
@@ -349,6 +358,49 @@ class EdgezMeshSession extends ChangeNotifier {
             : 'Loaded ${nodes.length} saved node(s)',
       ),
     );
+    if (_bleReady) unawaited(_syncPublicChannelsIfNeeded(_state.status));
+  }
+
+  Set<int> get enabledPublicChannels => <int>{
+        for (final port in EdgezPublicChannels.talkgroupPorts)
+          if (_state.nodes[port]?.enabled ?? true) port,
+      };
+
+  Future<void> setPublicChannelEnabled(int port, bool enabled) async {
+    if (!EdgezPublicChannels.isChannelNodeNum(port)) {
+      throw ArgumentError.value(port, 'port', 'Unsupported public channel');
+    }
+    final nodes = Map<int, EdgezMeshNode>.of(_state.nodes);
+    final current = nodes[port] ?? EdgezPublicChannels.nodeForNodeNum(port)!;
+    nodes[port] = current.copyWith(enabled: enabled);
+    _setState(_state.copyWith(
+      nodes: nodes,
+      statusLine: '${current.resolvedDisplayName} ${enabled ? 'enabled' : 'disabled'}',
+    ));
+    if (_lastMeshConfig != null) {
+      _lastMeshConfig = _lastMeshConfig!
+          .copyWith(enabledPublicChannels: enabledPublicChannels);
+    }
+    if (_bleReady && _state.connection != EdgezConnectionType.none) {
+      await _syncPublicChannelsIfNeeded(_state.status, force: true);
+    }
+  }
+
+  Future<void> _syncPublicChannelsIfNeeded(EdgezMeshStatus? status,
+      {bool force = false}) async {
+    if (_publicChannelSyncInFlight || !_bleReady ||
+        _state.connection == EdgezConnectionType.none) return;
+    final desired = EdgezPublicChannels.maskForPorts(enabledPublicChannels);
+    if (!force &&
+        (status == null ||
+            !status.supportsPublicChannelMask ||
+            status.publicChannelMask == desired)) return;
+    _publicChannelSyncInFlight = true;
+    try {
+      await sdk.updatePublicChannels(enabledPublicChannels);
+    } finally {
+      _publicChannelSyncInFlight = false;
+    }
   }
 
   /// Stores a voice transcript on its conversation message so later
@@ -774,6 +826,7 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> initializeMesh(EdgezMeshConfig config) async {
+    config = config.copyWith(enabledPublicChannels: enabledPublicChannels);
     _lastMeshConfig = config;
     if (!config.beacon.shareLocation) _stopLocationTracking();
     await _sendInitIfReady(force: true);
@@ -1492,6 +1545,8 @@ class EdgezMeshSession extends ChangeNotifier {
           packet.status.licenseStatus.value,
         ),
         firmwareVersion: packet.status.firmwareVersion,
+        publicChannelMask: packet.status.publicChannelMask,
+        supportsPublicChannelMask: packet.status.hasPublicChannelMask(),
       );
       _setState(
         _state.copyWith(
@@ -1501,6 +1556,7 @@ class EdgezMeshSession extends ChangeNotifier {
         ),
       );
       _updateLocationTrackingForStatus(status);
+      unawaited(_syncPublicChannelsIfNeeded(status));
     }
 
     if (packet.hasDeviceSettings()) {
