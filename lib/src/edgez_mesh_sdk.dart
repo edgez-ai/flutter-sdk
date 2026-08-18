@@ -203,7 +203,7 @@ class EdgezMeshSdk {
   // speed-frame header must fit inside that field as well.
   static const _speedTestDrainBatchChunks = 6;
   static const _speedTestDrainTimeoutMs = 10000;
-  static const _speedTestProgressInterval = Duration(seconds: 10);
+  static const _speedTestProgressInterval = Duration(seconds: 1);
   final Map<String, Future<SecretKey>> _conversationKeyCache =
       <String, Future<SecretKey>>{};
 
@@ -1019,6 +1019,7 @@ class EdgezMeshSdk {
     }
     final messageId = _newMessageId();
     final groupId = _newSignedInt64();
+    final isPublicChannel = toNode.isPublicChannel;
     final totalChunks = (bytes.length / _voiceChunkAudioBytes).ceil();
     for (var index = 0; index < totalChunks; index++) {
       final start = index * _voiceChunkAudioBytes;
@@ -1031,23 +1032,34 @@ class EdgezMeshSdk {
         codec: codec,
         audio: bytes.sublist(start, end),
       );
-      final encrypted = await _encryptConversationPayload(
-        identity: config.identity,
-        recipient: toNode,
-        fromNode: fromNode,
-        plaintext: voiceChunk,
-      );
+      late final List<int> payload;
+      if (isPublicChannel) {
+        payload = voiceChunk;
+      } else {
+        final encrypted = await _encryptConversationPayload(
+          identity: config.identity,
+          recipient: toNode,
+          fromNode: fromNode,
+          plaintext: voiceChunk,
+        );
+        payload = _conversationPayload(
+          encrypted.nonce,
+          encrypted.ciphertext,
+        );
+      }
       final packet = proto.NetworkPacket(
         from: Int64(fromNode),
         to: Int64(toNode.nodeNum),
-        operation: proto.Operation.REQUEST,
+        operation: isPublicChannel
+            ? proto.Operation.BROADCAST
+            : proto.Operation.REQUEST,
         interface: proto.Interface.HALOW,
         msg: proto.MessageBody(
           messageIdHigh: Int64(messageId.$1),
           messageIdLow: Int64(messageId.$2),
           sequence: index + 1,
           mime: proto.Mime.MIME_VOICE,
-          payload: _conversationPayload(encrypted.nonce, encrypted.ciphertext),
+          payload: payload,
         ),
       );
       final packetBytes = Uint8List.fromList(packet.writeToBuffer());
@@ -1086,6 +1098,16 @@ class EdgezMeshSdk {
     final chunk = _decodeVoiceChunk(plaintext);
     if (chunk == null) {
       throw StateError('Voice chunk is malformed');
+    }
+    return chunk;
+  }
+
+  /// Decodes an unencrypted recorded-voice chunk carried by a public channel.
+  /// Live PTT audio uses the separate OpenMANET RTP/Opus transport.
+  EdgezVoiceChunk decodePublicChannelVoiceChunk(List<int> payload) {
+    final chunk = _decodeVoiceChunk(payload);
+    if (chunk == null) {
+      throw const FormatException('Public channel voice chunk is malformed');
     }
     return chunk;
   }

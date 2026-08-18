@@ -919,7 +919,10 @@ void main() {
       ble.emitPacket(moved);
       await ble.flushEvents();
 
-      expect(session.state.nodes, hasLength(1));
+      expect(
+        session.state.nodes.values.where((node) => !node.isPublicChannel),
+        hasLength(1),
+      );
       expect(session.state.nodes.containsKey(0x111111111111), isFalse);
       final node = session.state.nodes[0x222222222222];
       expect(node, isNotNull);
@@ -1298,7 +1301,7 @@ void main() {
       expect(drainCalls.first.argumentMap['sequence'], 7);
       expect(drainCalls.last.argumentMap['sequence'], frames.length);
       expect(drainCalls.last.argumentMap['waitForDrainMs'], 10000);
-      // A transfer completing inside ten seconds publishes only its final
+      // A transfer completing inside one second publishes only its final
       // progress value instead of rebuilding UI state for every data frame.
       expect(progressUpdates, <(int, int)>[
         (EdgezMeshSdk.speedTestBytes, EdgezMeshSdk.speedTestBytes),
@@ -1580,9 +1583,9 @@ void main() {
       );
       await ble.flushEvents();
 
-      // Rolling presentation updates are throttled to ten seconds so they do
-      // not contend with BLE packet processing. Final results remain prompt.
-      expect(session.state.linkStats[fromNode], isNull);
+      // Rolling presentation updates are available once per second without
+      // rebuilding state for every received radio frame.
+      expect(session.state.linkStats[fromNode], isNotNull);
       expect(session.state.conversations[fromNode], isNull);
 
       emit(

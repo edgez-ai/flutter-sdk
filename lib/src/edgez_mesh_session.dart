@@ -344,8 +344,7 @@ class EdgezMeshSession extends ChangeNotifier {
         const <int, List<EdgezSensorSample>>{},
   }) {
     final mergedNodes = <int, EdgezMeshNode>{
-      for (final channel in EdgezPublicChannels.nodes)
-        channel.nodeNum: channel,
+      for (final channel in EdgezPublicChannels.nodes) channel.nodeNum: channel,
       ...nodes,
     };
     _setState(
@@ -375,7 +374,8 @@ class EdgezMeshSession extends ChangeNotifier {
     nodes[port] = current.copyWith(enabled: enabled);
     _setState(_state.copyWith(
       nodes: nodes,
-      statusLine: '${current.resolvedDisplayName} ${enabled ? 'enabled' : 'disabled'}',
+      statusLine:
+          '${current.resolvedDisplayName} ${enabled ? 'enabled' : 'disabled'}',
     ));
     if (_lastMeshConfig != null) {
       _lastMeshConfig = _lastMeshConfig!
@@ -388,7 +388,8 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> _syncPublicChannelsIfNeeded(EdgezMeshStatus? status,
       {bool force = false}) async {
-    if (_publicChannelSyncInFlight || !_bleReady ||
+    if (_publicChannelSyncInFlight ||
+        !_bleReady ||
         _state.connection == EdgezConnectionType.none) return;
     final desired = EdgezPublicChannels.maskForPorts(enabledPublicChannels);
     if (!force &&
@@ -1889,6 +1890,20 @@ class EdgezMeshSession extends ChangeNotifier {
         status = error.toString();
         text = 'Unable to decode channel message';
       }
+    } else if (publicChannel != null && message.mime == proto.Mime.MIME_VOICE) {
+      EdgezVoiceChunk? chunk;
+      try {
+        chunk = sdk.decodePublicChannelVoiceChunk(message.payload);
+      } catch (error) {
+        status = error.toString();
+      }
+      if (chunk == null) {
+        text = 'Unable to decode channel voice message';
+      } else {
+        completedVoice = _storeVoiceChunk(fromNode, chunk);
+        if (completedVoice == null) return;
+        text = 'Voice message';
+      }
     } else if (sender == null) {
       text = 'Unable to decrypt message';
       status = 'Sender public key is missing';
@@ -3038,6 +3053,8 @@ class _PendingVoiceMessage {
 }
 
 class _PendingSpeedTest {
+  static const int _publishIntervalMs = 1000;
+
   _PendingSpeedTest({
     required this.transferId,
     required this.totalBytes,
@@ -3060,10 +3077,11 @@ class _PendingSpeedTest {
 
   int get receivedChunks => chunks.length;
   bool get complete => receivedChunks >= totalChunks;
-  // Link statistics are presentation data; updating them more frequently
-  // competes with BLE event processing during the measurement itself.
+  // Keep the result display responsive without rebuilding it for every radio
+  // frame. One update per second is cheap compared with the transport work.
   bool get shouldPublish =>
-      lastDataUs != null && lastDataUs! ~/ 1000 - lastPublishedMs >= 10000;
+      lastDataUs != null &&
+      lastDataUs! ~/ 1000 - lastPublishedMs >= _publishIntervalMs;
   int get elapsedMicroseconds {
     final first = firstDataUs;
     final last = lastDataUs;

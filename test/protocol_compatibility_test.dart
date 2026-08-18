@@ -67,6 +67,47 @@ void main() {
     expect(() => sdk.startOpenManetComms(3), throwsArgumentError);
   });
 
+  test('public channels carry text and recorded voice as conversations',
+      () async {
+    final publicChannel = EdgezPublicChannels.node(3);
+    const config = EdgezMeshConfig(identity: identity);
+
+    await sdk.sendTextMessage(
+      config: config,
+      toNode: publicChannel,
+      fromNode: 0x112233445566,
+      text: 'channel text',
+    );
+    var packet = _packetFrom(calls.single);
+    expect(packet.to.toInt(), 38805);
+    expect(packet.operation, Operation.BROADCAST);
+    expect(packet.msg.mime, Mime.MIME_TEXT);
+    expect(sdk.decodePublicChannelText(packet.msg.payload), 'channel text');
+
+    calls.clear();
+    final audio = List<int>.generate(350, (index) => index & 0xff);
+    await sdk.sendVoiceMessage(
+      config: config,
+      toNode: publicChannel,
+      fromNode: 0x112233445566,
+      bytes: audio,
+      durationMs: 1200,
+      codec: 1,
+    );
+    expect(calls, hasLength(2));
+    final decoded = <int>[];
+    for (final call in calls) {
+      packet = _packetFrom(call);
+      expect(packet.to.toInt(), 38805);
+      expect(packet.operation, Operation.BROADCAST);
+      expect(packet.msg.mime, Mime.MIME_VOICE);
+      decoded.addAll(
+        sdk.decodePublicChannelVoiceChunk(packet.msg.payload).audio,
+      );
+    }
+    expect(decoded, audio);
+  });
+
   test('initialization uses the latest HaLow init fields', () async {
     const config = EdgezMeshConfig(
       identity: identity,

@@ -226,7 +226,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
         widget.user.opensConversation &&
         controller.text.trim().isNotEmpty;
     final canSendVoice = widget.activeConnection != EdgezConnectionType.none;
-    final canSendVoiceMessage = canSendVoice && !widget.user.isPublicChannel;
+    final canSendVoiceMessage =
+        canSendVoice && widget.user.opensConversation && widget.user.enabled;
     final canSpeedTest = canSendVoice &&
         widget.user.opensConversation &&
         !widget.user.isPublicChannel;
@@ -510,7 +511,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            if (widget.user.isPublicChannel)
+            if (widget.user.isPublicChannel) ...<Widget>[
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: canSendVoice && widget.callState.isIdle
@@ -563,47 +564,47 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     ],
                   ),
                 ),
-              )
-            else
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown:
-                    canSendVoiceMessage ? (_) => _startVoicePress() : null,
-                onTapUp: canSendVoiceMessage
-                    ? (_) => _finishVoicePress(send: true)
-                    : null,
-                onTapCancel: canSendVoiceMessage
-                    ? () => _finishVoicePress(send: false)
-                    : null,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: recording
-                        ? Theme.of(context).colorScheme.error
-                        : canSendVoiceMessage
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    recording
-                        ? 'Recording'
-                        : canSendVoiceMessage
-                            ? 'Hold to Talk'
-                            : 'Connect to send voice',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: recording || canSendVoiceMessage
-                          ? Theme.of(context).colorScheme.onPrimary
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: canSendVoiceMessage ? (_) => _startVoicePress() : null,
+              onTapUp: canSendVoiceMessage
+                  ? (_) => _finishVoicePress(send: true)
+                  : null,
+              onTapCancel: canSendVoiceMessage
+                  ? () => _finishVoicePress(send: false)
+                  : null,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: recording
+                      ? Theme.of(context).colorScheme.error
+                      : canSendVoiceMessage
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  recording
+                      ? 'Recording'
+                      : canSendVoiceMessage
+                          ? 'Hold to Talk'
+                          : 'Connect to send voice',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: recording || canSendVoiceMessage
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
+            ),
           ],
         ),
       ),
