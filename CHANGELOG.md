@@ -1,3 +1,14 @@
+## 0.3.0
+
+- Added OpenMANET public text, recorded-voice, and push-to-talk channels with
+  configurable channel subscriptions.
+- Added BATMAN routing-table inspection and route-quality-aware pacing for
+  realtime voice and speed tests.
+- Added optional missing-chunk repair for reliable speed tests.
+- Added Android voice-message decoding to 16 kHz mono WAV for on-device
+  transcription and translation.
+- Improved BLE reconnect and HaLow initialization recovery.
+
 ## 0.2.1
 
 - Fixed Organic Maps region downloads crashing in minified Android release
