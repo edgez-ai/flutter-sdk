@@ -408,6 +408,72 @@ void main() {
       );
       expect(ble.callsFor('sendPacket'), hasLength(1));
 
+      // Android can rebuild the writable GATT channel without exposing the
+      // brief disconnected state to Dart. A new ready event must resend INIT
+      // even though the mesh configuration is unchanged.
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+      expect(ble.callsFor('initializeMesh'), hasLength(2));
+
+      session.dispose();
+    });
+
+    test('session retries INIT while BLE status says HaLow is not booted',
+        () async {
+      final session = EdgezMeshSession(
+        sdk: sdk,
+        halowBootRetryDelay: const Duration(milliseconds: 10),
+      );
+      final identity = await _newIdentity('Retry user', 11, 21);
+      await session.initializeMesh(EdgezMeshConfig(
+        identity: identity,
+        meshId: 'retry-mesh',
+        passphrase: 'retry-secret',
+      ));
+      await session.connectBle('11:22:33:44:55:66');
+      ble.emitConnection(EdgezConnectionType.ble);
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+      expect(ble.callsFor('initializeMesh'), hasLength(1));
+
+      ble.emitPacket(NetworkPacket(
+        status: HaLowInterfaceStatus(
+          supported: true,
+          stackInitialized: false,
+        ),
+      ));
+      await ble.flushEvents();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await ble.flushEvents();
+      await ble.flushEvents();
+
+      expect(ble.callsFor('initializeMesh'), hasLength(2));
+      session.dispose();
+    });
+
+    test('session reconnects BLE when the device status times out', () async {
+      final session = EdgezMeshSession(
+        sdk: sdk,
+        deviceStatusTimeout: const Duration(milliseconds: 10),
+      );
+      final identity = await _newIdentity('Reconnect user', 12, 22);
+      await session.initializeMesh(EdgezMeshConfig(
+        identity: identity,
+        meshId: 'reconnect-mesh',
+        passphrase: 'reconnect-secret',
+      ));
+      await session.connectBle('11:22:33:44:55:66');
+      ble.emitConnection(EdgezConnectionType.ble);
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await ble.flushEvents();
+
+      expect(ble.callsFor('disconnect'), hasLength(1));
+      expect(ble.callsFor('connectBle'), hasLength(2));
       session.dispose();
     });
 

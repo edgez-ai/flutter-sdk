@@ -251,6 +251,8 @@ class EdgezMeshSession extends ChangeNotifier {
     this.deviceLogStore,
     this.speedTestInactivityTimeout = const Duration(seconds: 30),
     this.speedTestReliableDelivery = false,
+    this.deviceStatusTimeout = const Duration(seconds: 8),
+    this.halowBootRetryDelay = const Duration(seconds: 3),
   }) : sdk = sdk ?? EdgezMeshSdk() {
     _subscription = this.sdk.events.listen(_handleEvent);
   }
@@ -261,6 +263,8 @@ class EdgezMeshSession extends ChangeNotifier {
   final EdgezDeviceLogStore? deviceLogStore;
   final Duration speedTestInactivityTimeout;
   final bool speedTestReliableDelivery;
+  final Duration deviceStatusTimeout;
+  final Duration halowBootRetryDelay;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
   // Device logs share the BLE realtime characteristic with voice and speed
@@ -269,6 +273,7 @@ class EdgezMeshSession extends ChangeNotifier {
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
   Timer? _deviceStatusTimeout;
+  Timer? _halowBootRetryTimer;
   Timer? _routingTableTimeout;
   Timer? _locationUpdateTimer;
   Duration? _locationUpdateInterval;
@@ -276,6 +281,9 @@ class EdgezMeshSession extends ChangeNotifier {
   var _provisioning = false;
   var _initInFlight = false;
   var _initRetryRequested = false;
+  var _bleRecoveryInFlight = false;
+  var _bleStatusReconnectAttempts = 0;
+  String? _lastBleDeviceId;
   var _locationUpdateInFlight = false;
   var _publicChannelSyncInFlight = false;
   String? _lastInitKey;
@@ -707,6 +715,10 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> connectBle(String deviceId) async {
     _deviceStatusTimeout?.cancel();
+    _halowBootRetryTimer?.cancel();
+    _halowBootRetryTimer = null;
+    _lastBleDeviceId = deviceId;
+    _bleStatusReconnectAttempts = 0;
     // SDK release authorization lives in firmware RAM. A reconnect may follow
     // a device reset, so the init/auth packet must be sent again even when the
     // saved mesh configuration itself has not changed.
@@ -1301,6 +1313,8 @@ class EdgezMeshSession extends ChangeNotifier {
       case EdgezMeshEventType.connection:
         _deviceStatusTimeout?.cancel();
         if (event.connection == EdgezConnectionType.none) {
+          _halowBootRetryTimer?.cancel();
+          _halowBootRetryTimer = null;
           _bleReady = false;
           _lastInitKey = null;
           _stopLocationTracking();
@@ -1356,6 +1370,7 @@ class EdgezMeshSession extends ChangeNotifier {
               ? 'USB protocol ready; initializing mesh'
               : 'BLE control channel ready; requesting device status',
           bleReady: true,
+          clearStatus: true,
         ));
         _recordAppDiagnostic(
           EdgezDeviceLogLevel.debug,
@@ -1369,7 +1384,10 @@ class EdgezMeshSession extends ChangeNotifier {
           if (_state.connection == EdgezConnectionType.usb) {
             unawaited(_authorizeAndInitializeUsb());
           } else {
-            unawaited(_sendInitIfReady());
+            // A fast native reconnect does not always expose the intermediate
+            // disconnected event to Dart. Always resend the idempotent INIT
+            // when a fresh BLE control channel becomes writable.
+            unawaited(_sendInitIfReady(force: true));
           }
         }
       case EdgezMeshEventType.status:
@@ -1385,6 +1403,7 @@ class EdgezMeshSession extends ChangeNotifier {
           ),
         );
         _updateLocationTrackingForStatus(event.status);
+        _recoverHalowBootFromStatus(event.status);
       case EdgezMeshEventType.node:
         final node = event.node;
         if (node == null) return;
@@ -1605,6 +1624,7 @@ class EdgezMeshSession extends ChangeNotifier {
       );
       _updateLocationTrackingForStatus(status);
       unawaited(_syncPublicChannelsIfNeeded(status));
+      _recoverHalowBootFromStatus(status);
     }
 
     if (packet.hasDeviceSettings()) {
@@ -2691,18 +2711,95 @@ class EdgezMeshSession extends ChangeNotifier {
   void _startDeviceStatusTimeout() {
     _deviceStatusTimeout?.cancel();
     if (_state.status != null) return;
-    _deviceStatusTimeout = Timer(const Duration(seconds: 8), () {
+    _deviceStatusTimeout = Timer(deviceStatusTimeout, () {
       if (_state.connection != EdgezConnectionType.none &&
           _bleReady &&
           _state.status == null) {
         _setState(
           _state.copyWith(
-            statusLine: 'No device status received after 8 seconds. '
-                'The transport connected, but the device did not respond.',
+            statusLine: 'No device status received. '
+                'Reconnecting the BLE control channel.',
           ),
         );
+        if (_state.connection == EdgezConnectionType.ble) {
+          unawaited(_reconnectBleAfterStatusTimeout());
+        }
       }
     });
+  }
+
+  void _recoverHalowBootFromStatus(EdgezMeshStatus? status) {
+    if (status == null || status.stackInitialized) {
+      _halowBootRetryTimer?.cancel();
+      _halowBootRetryTimer = null;
+      if (status?.stackInitialized == true) {
+        _bleStatusReconnectAttempts = 0;
+      }
+      return;
+    }
+    if (_state.connection != EdgezConnectionType.ble ||
+        !_bleReady ||
+        _provisioning ||
+        _lastMeshConfig == null ||
+        _halowBootRetryTimer != null) {
+      return;
+    }
+    // Let an INIT already being processed finish. If the next status still
+    // reports an uninitialized stack, resend INIT; the firmware command is
+    // intentionally idempotent.
+    _halowBootRetryTimer = Timer(halowBootRetryDelay, () {
+      _halowBootRetryTimer = null;
+      final current = _state.status;
+      if (_state.connection == EdgezConnectionType.ble &&
+          _bleReady &&
+          current != null &&
+          !current.stackInitialized) {
+        _recordAppDiagnostic(
+          EdgezDeviceLogLevel.warning,
+          'HaLow remains uninitialized; retrying INIT over BLE',
+        );
+        unawaited(_sendInitIfReady(force: true));
+      }
+    });
+  }
+
+  Future<void> _reconnectBleAfterStatusTimeout() async {
+    final deviceId = _lastBleDeviceId;
+    if (deviceId == null ||
+        deviceId.isEmpty ||
+        _bleRecoveryInFlight ||
+        _state.connection != EdgezConnectionType.ble) {
+      return;
+    }
+    if (_bleStatusReconnectAttempts >= 3) {
+      _setState(_state.copyWith(
+        statusLine: 'BLE connected but the device did not respond after '
+            '3 reconnect attempts.',
+      ));
+      return;
+    }
+    _bleRecoveryInFlight = true;
+    _bleStatusReconnectAttempts++;
+    _lastInitKey = null;
+    _bleReady = false;
+    try {
+      await sdk.disconnect();
+      _setState(_state.copyWith(
+        bleConnecting: true,
+        bleReady: false,
+        clearStatus: true,
+        statusLine: 'Reconnecting BLE after missing device status '
+            '($_bleStatusReconnectAttempts/3)',
+      ));
+      await sdk.connectBle(deviceId);
+    } catch (error) {
+      _setState(_state.copyWith(
+        bleConnecting: false,
+        statusLine: 'BLE recovery reconnect failed: $error',
+      ));
+    } finally {
+      _bleRecoveryInFlight = false;
+    }
   }
 
   List<int> _encodeVoiceCallPacket({
@@ -2999,6 +3096,7 @@ class EdgezMeshSession extends ChangeNotifier {
   @override
   void dispose() {
     _deviceStatusTimeout?.cancel();
+    _halowBootRetryTimer?.cancel();
     _routingTableTimeout?.cancel();
     _stopLocationTracking();
     _voiceCallTimeout?.cancel();
