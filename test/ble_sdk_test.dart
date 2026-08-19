@@ -1097,7 +1097,7 @@ void main() {
 
       await session.endVoiceCall();
       expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.idle);
-      expect(ble.callsFor('stopLiveVoiceAudio'), hasLength(1));
+      expect(ble.callsFor('stopOpenManetComms'), hasLength(1));
       await ble.flushEvents();
       expect(ble.callsFor('sendVoiceCallFrame'), hasLength(2));
 

@@ -589,7 +589,7 @@ class EdgezMeshSession extends ChangeNotifier {
       ),
     );
     try {
-      await sdk.startLiveVoiceAudio();
+      await sdk.startOpenManetComms(_state.voiceCall.peerNodeNum!);
     } catch (_) {
       await _resetVoiceCall();
       rethrow;
@@ -599,9 +599,9 @@ class EdgezMeshSession extends ChangeNotifier {
   Future<void> endVoiceCall() async {
     Future<void>? endFrame;
     final peerNodeNum = _state.voiceCall.peerNodeNum;
-    final isOpenManet = peerNodeNum != null &&
+    final isChannel = peerNodeNum != null &&
         EdgezPublicChannels.isChannelNodeNum(peerNodeNum);
-    if (!_state.voiceCall.isIdle && !isOpenManet) {
+    if (!_state.voiceCall.isIdle && !isChannel) {
       endFrame = _sendVoiceCallPacket(_callEnd);
     }
     await _resetVoiceCall();
@@ -612,25 +612,18 @@ class EdgezMeshSession extends ChangeNotifier {
 
   Future<void> setOpenManetTransmit(bool enabled) async {
     final peerNodeNum = _state.voiceCall.peerNodeNum;
-    if (!_state.voiceCall.isActive ||
-        peerNodeNum == null ||
-        !EdgezPublicChannels.isChannelNodeNum(peerNodeNum)) {
-      throw StateError('No OpenMANET talkgroup is active');
+    if (!_state.voiceCall.isActive || peerNodeNum == null) {
+      throw StateError('No realtime voice session is active');
     }
     await sdk.setOpenManetTransmit(enabled);
   }
 
   Future<void> _resetVoiceCall({String statusLine = 'Voice call ended'}) async {
     final peerNodeNum = _state.voiceCall.peerNodeNum;
-    final isOpenManet = peerNodeNum != null &&
-        EdgezPublicChannels.isChannelNodeNum(peerNodeNum);
+    final isOpenManet = peerNodeNum != null;
     _voiceCallTimeout?.cancel();
     _pendingVoiceAudio = null;
-    if (isOpenManet) {
-      await sdk.stopOpenManetComms();
-    } else {
-      await sdk.stopLiveVoiceAudio();
-    }
+    if (isOpenManet) await sdk.stopOpenManetComms();
     _setState(
       _state.copyWith(
         voiceCall: const EdgezVoiceCallState(),
@@ -2893,7 +2886,7 @@ class EdgezMeshSession extends ChangeNotifier {
               ),
             );
             try {
-              await sdk.startLiveVoiceAudio();
+              await sdk.startOpenManetComms(fromNode);
             } catch (_) {
               await _resetVoiceCall();
               rethrow;
