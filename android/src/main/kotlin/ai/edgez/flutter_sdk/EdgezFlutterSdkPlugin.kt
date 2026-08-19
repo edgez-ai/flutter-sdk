@@ -128,6 +128,7 @@ private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
 private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
 private const val EDGEZ_SPEED_TX_QUEUE_DEPTH = 8
 private const val EDGEZ_NO_RESPONSE_PUMP_DELAY_MS = 2L
+private const val EDGEZ_SPEED_BLE_MAX_BITS_PER_SECOND = 200_000L
 private val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
@@ -2310,16 +2311,36 @@ class EdgezFlutterSdkPlugin :
         packet.put(maxHop.coerceIn(0, 255).toByte())
         packet.putInt(sequence)
         packet.put(payload)
+        val encodedBytes = EDGEZ_SPEED_PROTOCOL_MAGIC.size + packet.capacity()
+        // Pace write-without-response from bytes accepted by Android, since
+        // this GATT mode has no remote callback. Ceiling division makes 200
+        // kbps a hard cap even for a single full-size speed frame.
+        val capSpacingMs =
+            (encodedBytes * 8_000L + EDGEZ_SPEED_BLE_MAX_BITS_PER_SECOND - 1L) /
+                EDGEZ_SPEED_BLE_MAX_BITS_PER_SECOND
+        val effectiveSpacingMs = maxOf(
+            capSpacingMs,
+            when (maxHop) {
+                0, 1 -> 10L
+                2 -> 15L
+                else -> 20L
+            },
+        )
+        if (sequence == 2) {
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to
+                        "BLE speed pacing cap=200kbps frame=$encodedBytes bytes spacing=${effectiveSpacingMs}ms",
+                ),
+            )
+        }
         return sendRealtimePacket(
             protocolMagic = EDGEZ_SPEED_PROTOCOL_MAGIC,
             packet = packet.array(),
             dropStale = false,
             preferWriteWithoutResponse = true,
-            spacingAfterMs = when (maxHop) {
-                0, 1 -> 10L
-                2 -> 15L
-                else -> 20L
-            },
+            spacingAfterMs = effectiveSpacingMs,
         )
     }
 

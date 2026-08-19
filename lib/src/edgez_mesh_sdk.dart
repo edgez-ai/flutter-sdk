@@ -192,10 +192,10 @@ class EdgezMeshSdk {
   static const _conversationDrainTimeoutMs = 3000;
   static const _voiceCallDrainTimeoutMs = 1500;
   static const speedTestBytes = 2 * 1024 * 1024;
-  // 448 data bytes + the 26-byte speed header exactly fills the firmware's
-  // 512-byte HaLow vendor payload after its 38-byte route prefix. This avoids
-  // leaving radio airtime unused without triggering link-layer fragmentation.
-  static const _speedTestChunkBytes = 448;
+  // 424 data bytes + 26-byte speed header + 38-byte EdgeZ route prefix +
+  // 14-byte inner Ethernet header + 10-byte BATMAN unicast header exactly
+  // fills the 512-byte BATMAN frame without link-layer fragmentation.
+  static const _speedTestChunkBytes = 424;
   // BLE's compatibility path wraps the speed frame in NetworkPacket protobuf.
   // Leave room for that variable-length envelope so the fully encoded packet
   // remains below the shared 512-byte BLE/USB transport limit.

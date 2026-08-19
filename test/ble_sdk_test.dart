@@ -1346,6 +1346,20 @@ void main() {
         ),
         isTrue,
       );
+      // Firmware adds the EdgeZ route prefix and inner Ethernet frame before
+      // BATMAN adds its unicast header. The resulting radio frame must also
+      // remain within BATMAN's 512-byte packet limit.
+      expect(
+        calls.every(
+          (call) =>
+              38 +
+                  14 +
+                  10 +
+                  (call.argumentMap['payload']! as List<int>).length <=
+              512,
+        ),
+        isTrue,
+      );
       final drainCalls = calls
           .where((call) => call.argumentMap.containsKey('waitForDrainMs'))
           .toList(growable: false);
@@ -1405,7 +1419,7 @@ void main() {
         () async {
       final request = EdgezSpeedTestFrame.repairRequest(
         transferId: 77,
-        totalBytes: 4 * 448,
+        totalBytes: 4 * 424,
         totalChunks: 4,
         baseChunk: 0,
         missingBitmap: Uint8List.fromList(<int>[0x05]),

@@ -1380,6 +1380,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
           AppDestination.nodes => showTopology
               ? TopologyScreen(
                   users: meshState.sortedNodes,
+                  links: meshState.topologyLinks,
                   routes: meshState.routingTable,
                   loading: meshState.routingTableLoading,
                   onRefresh: session.requestRoutingTable,
@@ -1461,6 +1462,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceModeEnabled: deviceModeEnabled,
                   databaseReady: databaseReady,
                   speedMetrics: speedMetrics,
+                  liveSpeedMetric: meshState.sharedLinkStats,
                   debugLogs: meshState.debugLogs,
                   onExportLogs: () => unawaited(_exportDeviceLogs()),
                   onPruneLogs: () => unawaited(_pruneDeviceLogs()),

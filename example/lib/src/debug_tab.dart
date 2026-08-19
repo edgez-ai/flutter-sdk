@@ -18,6 +18,7 @@ class DebugScreen extends StatelessWidget {
     required this.deviceModeEnabled,
     required this.databaseReady,
     required this.speedMetrics,
+    required this.liveSpeedMetric,
     required this.debugLogs,
     required this.onExportLogs,
     required this.onPruneLogs,
@@ -34,6 +35,7 @@ class DebugScreen extends StatelessWidget {
   final bool deviceModeEnabled;
   final bool databaseReady;
   final List<ExampleSpeedMetric> speedMetrics;
+  final EdgezLinkStats? liveSpeedMetric;
   final List<String> debugLogs;
   final VoidCallback? onExportLogs;
   final VoidCallback? onPruneLogs;
@@ -42,6 +44,20 @@ class DebugScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = meshStatus;
+    final live = liveSpeedMetric;
+    final displayMetrics = <ExampleSpeedMetric>[
+      ...speedMetrics,
+      if (live != null &&
+          (speedMetrics.isEmpty ||
+              live.updatedAtMs > speedMetrics.last.timestampMs))
+        ExampleSpeedMetric(
+          timestampMs: live.updatedAtMs,
+          bitsPerSecond: live.bitsPerSecond,
+          packetLossPercent: live.packetLossPercent,
+          receivedPackets: live.receivedPackets,
+          expectedPackets: live.expectedPackets,
+        ),
+    ];
     return DefaultTabController(
       length: 2,
       child: SafeArea(
@@ -88,19 +104,19 @@ class DebugScreen extends StatelessWidget {
                       InfoCard(
                         title: 'Speed and loss · last 30 minutes',
                         children: <Widget>[
-                          if (speedMetrics.isEmpty)
+                          if (displayMetrics.isEmpty)
                             const Text(
                                 'No transport traffic in this time window.')
                           else ...<Widget>[
                             DebugValue(
                               label: 'Moving speed',
                               value: _formatBitRate(
-                                  speedMetrics.last.bitsPerSecond),
+                                  displayMetrics.last.bitsPerSecond),
                             ),
                             DebugValue(
                               label: 'Moving loss',
                               value:
-                                  '${speedMetrics.last.packetLossPercent.toStringAsFixed(2)}%',
+                                  '${displayMetrics.last.packetLossPercent.toStringAsFixed(2)}%',
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -122,7 +138,7 @@ class DebugScreen extends StatelessWidget {
                               width: double.infinity,
                               child: CustomPaint(
                                 painter: _SpeedHistoryPainter(
-                                  metrics: speedMetrics,
+                                  metrics: displayMetrics,
                                   speedColor: Colors.green.shade600,
                                   lossColor: Colors.red.shade600,
                                   gridColor: Theme.of(context).dividerColor,
@@ -133,7 +149,7 @@ class DebugScreen extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              '${speedMetrics.length} sample${speedMetrics.length == 1 ? '' : 's'}',
+                              '${displayMetrics.length} sample${displayMetrics.length == 1 ? '' : 's'}',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
