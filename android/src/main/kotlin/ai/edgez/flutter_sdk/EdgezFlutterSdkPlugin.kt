@@ -129,6 +129,10 @@ private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
 private const val EDGEZ_SPEED_TX_QUEUE_DEPTH = 8
 private const val EDGEZ_NO_RESPONSE_PUMP_DELAY_MS = 2L
 private const val EDGEZ_SPEED_BLE_MAX_BITS_PER_SECOND = 200_000L
+// A forced two-hop test retransmits every payload on the same half-duplex
+// HaLow channel. Keep its BLE ingress below half the direct-path ceiling so
+// the firmware queue and the relay do not collapse under sustained load.
+private const val EDGEZ_SPEED_TWO_HOP_BLE_MAX_BITS_PER_SECOND = 80_000L
 private val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
@@ -2313,11 +2317,17 @@ class EdgezFlutterSdkPlugin :
         packet.put(payload)
         val encodedBytes = EDGEZ_SPEED_PROTOCOL_MAGIC.size + packet.capacity()
         // Pace write-without-response from bytes accepted by Android, since
-        // this GATT mode has no remote callback. Ceiling division makes 200
-        // kbps a hard cap even for a single full-size speed frame.
-        val capSpacingMs =
-            (encodedBytes * 8_000L + EDGEZ_SPEED_BLE_MAX_BITS_PER_SECOND - 1L) /
+        // this GATT mode has no remote callback. Ceiling division makes the
+        // selected route-mode bit rate a hard cap for every full-size frame.
+        val speedCapBitsPerSecond =
+            if (maxHop == 2) {
+                EDGEZ_SPEED_TWO_HOP_BLE_MAX_BITS_PER_SECOND
+            } else {
                 EDGEZ_SPEED_BLE_MAX_BITS_PER_SECOND
+            }
+        val capSpacingMs =
+            (encodedBytes * 8_000L + speedCapBitsPerSecond - 1L) /
+                speedCapBitsPerSecond
         val effectiveSpacingMs = maxOf(
             capSpacingMs,
             when (maxHop) {
@@ -2331,7 +2341,8 @@ class EdgezFlutterSdkPlugin :
                 mapOf(
                     "type" to "log",
                     "log" to
-                        "BLE speed pacing cap=200kbps frame=$encodedBytes bytes spacing=${effectiveSpacingMs}ms",
+                        "BLE speed pacing cap=${speedCapBitsPerSecond / 1000}kbps " +
+                            "frame=$encodedBytes bytes spacing=${effectiveSpacingMs}ms hop=$maxHop",
                 ),
             )
         }
