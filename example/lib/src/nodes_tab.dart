@@ -49,7 +49,7 @@ class NodesScreen extends StatelessWidget {
               TextButton.icon(
                 onPressed: onOpenTopology,
                 icon: const Icon(Icons.account_tree_outlined),
-                label: const Text('Topology'),
+                label: const Text('Routes'),
               ),
               HaLowMeshStatusIcon(status: status),
             ],

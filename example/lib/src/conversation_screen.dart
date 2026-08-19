@@ -69,6 +69,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
   int speedTestSentBytes = 0;
   int speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
   int speedTestHop = 0;
+  int speedTestStartedAtMs = 0;
+  double speedTestSendBitsPerSecond = 0;
   late String translationLanguage;
   final Map<String, GemmaVoiceTranslation> translations =
       <String, GemmaVoiceTranslation>{};
@@ -202,6 +204,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
       speedTesting = true;
       speedTestSentBytes = 0;
       speedTestTotalBytes = EdgezMeshSdk.speedTestBytes;
+      speedTestStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      speedTestSendBitsPerSecond = 0;
       status = 'Speed test started';
     });
     try {
@@ -210,6 +214,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
         setState(() {
           speedTestSentBytes = sentBytes;
           speedTestTotalBytes = totalBytes;
+          final elapsedMs =
+              DateTime.now().millisecondsSinceEpoch - speedTestStartedAtMs;
+          if (elapsedMs > 0) {
+            speedTestSendBitsPerSecond = sentBytes * 8000 / elapsedMs;
+          }
         });
       });
       if (mounted) setState(() => status = 'Speed test sent');
@@ -348,6 +357,39 @@ class _ConversationScreenState extends State<ConversationScreen> {
                                 '${_formatCoordinate(location.data.longitude)}'
                                 '${location.timestampMs > 0 ? ' · ${_formatLocationTime(location.timestampMs)}' : ''}',
                         maxLines: 1,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.speed,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        speedTesting
+                            ? 'Sending: ${_formatBitRate(speedTestSendBitsPerSecond)}'
+                                ' · Packet loss: measuring…'
+                            : widget.linkStats == null
+                                ? 'Speed: — · Packet loss: —'
+                                : 'Speed: ${_formatBitRate(widget.linkStats!.bitsPerSecond)}'
+                                    ' · Packet loss: '
+                                    '${widget.linkStats!.packetLossPercent.toStringAsFixed(2)}%',
+                        key: const ValueKey('conversation-link-stats'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
@@ -511,62 +553,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            if (widget.user.isPublicChannel) ...<Widget>[
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: canSendVoice && widget.callState.isIdle
-                    ? () => unawaited(widget.onStartCall())
-                    : null,
-                child: Container(
-                  width: 168,
-                  height: 168,
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: canSendVoice && widget.callState.isIdle
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.surfaceContainerHighest,
-                    shape: BoxShape.circle,
-                    boxShadow: canSendVoice && widget.callState.isIdle
-                        ? <BoxShadow>[
-                            BoxShadow(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withValues(alpha: 0.28),
-                              blurRadius: 18,
-                              spreadRadius: 2,
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(
-                        Icons.mic_none,
-                        size: 48,
-                        color: canSendVoice && widget.callState.isIdle
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Connect to talk',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: canSendVoice && widget.callState.isIdle
-                              ? Theme.of(context).colorScheme.onPrimary
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: canSendVoiceMessage ? (_) => _startVoicePress() : null,
@@ -614,6 +600,16 @@ class _ConversationScreenState extends State<ConversationScreen> {
 
 String _formatCoordinate(double? value) =>
     value == null ? '—' : value.toStringAsFixed(6);
+
+String _formatBitRate(double bitsPerSecond) {
+  if (bitsPerSecond >= 1000000) {
+    return '${(bitsPerSecond / 1000000).toStringAsFixed(2)} Mbps';
+  }
+  if (bitsPerSecond >= 1000) {
+    return '${(bitsPerSecond / 1000).toStringAsFixed(1)} kbps';
+  }
+  return '${bitsPerSecond.toStringAsFixed(0)} bps';
+}
 
 String _formatLocationTime(int timestampMs) {
   final value = DateTime.fromMillisecondsSinceEpoch(timestampMs).toLocal();

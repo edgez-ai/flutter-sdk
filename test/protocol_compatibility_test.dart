@@ -335,6 +335,29 @@ void main() {
     session.dispose();
     await fakeSdk.close();
   });
+
+  test('maximum firmware routing table fits the 512-byte control packet', () {
+    final packet = NetworkPacket(
+      from: Int64(0xffffffffffff),
+      to: Int64(0xffffffffffff),
+      operation: Operation.RESPONSE,
+      interface: Interface.HALOW,
+      routingTable: RoutingTable(
+        routes: List<RouteEntry>.generate(
+          16,
+          (index) => RouteEntry(
+            destination: Int64(0xffffffffff00 + index),
+            nextHop: Int64(0xfffffffffe00 + index),
+            tq: 255,
+            hops: 255,
+            ageMs: 0xffffffff,
+          ),
+        ),
+      ),
+    );
+
+    expect(packet.writeToBuffer().length, lessThanOrEqualTo(512));
+  });
 }
 
 const _testReleaseCredential = EdgezSdkReleaseCredential(

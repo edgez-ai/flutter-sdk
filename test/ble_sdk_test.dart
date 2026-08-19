@@ -125,6 +125,18 @@ void main() {
       );
     });
 
+    test('requests the BATMAN routing table from the connected device',
+        () async {
+      await sdk.requestRoutingTable(fromNode: 0x112233445566);
+
+      final packet = ble.callsFor('sendPacket').single.packet;
+      expect(packet.from.toInt(), 0x112233445566);
+      expect(packet.operation, Operation.REQUEST);
+      expect(packet.interface, Interface.HALOW);
+      expect(packet.hasRoutingTable(), isTrue);
+      expect(packet.routingTable.routes, isEmpty);
+    });
+
     test('lists and connects an Android USB device', () async {
       ble.results['listUsbDevices'] = <Object?>[
         <Object?, Object?>{
@@ -752,6 +764,46 @@ void main() {
         session.state.nodes[0x223344556677]?.longitude,
         closeTo(18.0686, 0.001),
       );
+
+      session.dispose();
+    });
+
+    test('session keeps requested BATMAN routes separate from topology links',
+        () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(0x112233445566),
+          operation: Operation.RESPONSE,
+          interface: Interface.HALOW,
+          routingTable: RoutingTable(
+            routes: <RouteEntry>[
+              RouteEntry(
+                destination: Int64(0x223344556677),
+                nextHop: Int64(0x223344556677),
+                tq: 240,
+                hops: 1,
+                ageMs: 120,
+              ),
+              RouteEntry(
+                destination: Int64(0x334455667788),
+                nextHop: Int64(0x223344556677),
+                tq: 180,
+                hops: 2,
+                ageMs: 850,
+              ),
+            ],
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      expect(session.state.routingTable, hasLength(2));
+      expect(session.state.routingTable.first.isDirect, isTrue);
+      expect(session.state.routingTable.last.isDirect, isFalse);
+      expect(session.state.routingTable.last.nextHopNodeNum, 0x223344556677);
+      expect(session.state.topologyLinks, isEmpty);
+      expect(session.state.routingTableLoading, isFalse);
 
       session.dispose();
     });

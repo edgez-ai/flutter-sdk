@@ -377,6 +377,15 @@ const NetworkPacket$json = {
       '9': 0,
       '10': 'locationUpdate'
     },
+    {
+      '1': 'routing_table',
+      '3': 109,
+      '4': 1,
+      '5': 11,
+      '6': '.ai.edgez.halow.RoutingTable',
+      '9': 0,
+      '10': 'routingTable'
+    },
   ],
   '8': [
     {'1': 'body'},
@@ -397,7 +406,8 @@ final $typed_data.Uint8List networkPacketDescriptor = $convert.base64Decode(
     'NvbmZpZxIwCgZiZWFjb24YaiABKAsyFi5haS5lZGdlei5oYWxvdy5CZWFjb25IAFIGYmVhY29u'
     'EjAKBnJlcG9ydBhrIAEoCzIWLmFpLmVkZ2V6LmhhbG93LlJlcG9ydEgAUgZyZXBvcnQSSQoPbG'
     '9jYXRpb25fdXBkYXRlGGwgASgLMh4uYWkuZWRnZXouaGFsb3cuTG9jYXRpb25VcGRhdGVIAFIO'
-    'bG9jYXRpb25VcGRhdGVCBgoEYm9keQ==');
+    'bG9jYXRpb25VcGRhdGUSQwoNcm91dGluZ190YWJsZRhtIAEoCzIcLmFpLmVkZ2V6LmhhbG93Ll'
+    'JvdXRpbmdUYWJsZUgAUgxyb3V0aW5nVGFibGVCBgoEYm9keQ==');
 
 @$core.Deprecated('Use locationUpdateDescriptor instead')
 const LocationUpdate$json = {
@@ -501,6 +511,44 @@ final $typed_data.Uint8List peerDescriptor = $convert.base64Decode(
     'CgRQZWVyEg4KAmlkGAEgASgEUgJpZBISCgRyc3NpGAIgASgRUgRyc3NpEjsKC3NlbnNvcl9kYX'
     'RhGAMgAygLMhouYWkuZWRnZXouaGFsb3cuU2Vuc29yRGF0YVIKc2Vuc29yRGF0YRIZCghyb3V0'
     'ZV90cRgEIAEoDVIHcm91dGVUcRIdCgpyb3V0ZV9ob3BzGAUgASgNUglyb3V0ZUhvcHM=');
+
+@$core.Deprecated('Use routeEntryDescriptor instead')
+const RouteEntry$json = {
+  '1': 'RouteEntry',
+  '2': [
+    {'1': 'destination', '3': 1, '4': 1, '5': 4, '10': 'destination'},
+    {'1': 'next_hop', '3': 2, '4': 1, '5': 4, '10': 'nextHop'},
+    {'1': 'tq', '3': 3, '4': 1, '5': 13, '10': 'tq'},
+    {'1': 'hops', '3': 4, '4': 1, '5': 13, '10': 'hops'},
+    {'1': 'age_ms', '3': 5, '4': 1, '5': 13, '10': 'ageMs'},
+  ],
+};
+
+/// Descriptor for `RouteEntry`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List routeEntryDescriptor = $convert.base64Decode(
+    'CgpSb3V0ZUVudHJ5EiAKC2Rlc3RpbmF0aW9uGAEgASgEUgtkZXN0aW5hdGlvbhIZCghuZXh0X2'
+    'hvcBgCIAEoBFIHbmV4dEhvcBIOCgJ0cRgDIAEoDVICdHESEgoEaG9wcxgEIAEoDVIEaG9wcxIV'
+    'CgZhZ2VfbXMYBSABKA1SBWFnZU1z');
+
+@$core.Deprecated('Use routingTableDescriptor instead')
+const RoutingTable$json = {
+  '1': 'RoutingTable',
+  '2': [
+    {
+      '1': 'routes',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.ai.edgez.halow.RouteEntry',
+      '10': 'routes'
+    },
+  ],
+};
+
+/// Descriptor for `RoutingTable`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List routingTableDescriptor = $convert.base64Decode(
+    'CgxSb3V0aW5nVGFibGUSMgoGcm91dGVzGAEgAygLMhouYWkuZWRnZXouaGFsb3cuUm91dGVFbn'
+    'RyeVIGcm91dGVz');
 
 @$core.Deprecated('Use beaconDescriptor instead')
 const Beacon$json = {

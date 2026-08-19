@@ -127,6 +127,7 @@ private const val EDGEZ_VOICE_NONCE_SIZE = 12
 private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
 private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
 private const val EDGEZ_SPEED_TX_QUEUE_DEPTH = 8
+private const val EDGEZ_NO_RESPONSE_PUMP_DELAY_MS = 2L
 private val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
@@ -2313,11 +2314,11 @@ class EdgezFlutterSdkPlugin :
             protocolMagic = EDGEZ_SPEED_PROTOCOL_MAGIC,
             packet = packet.array(),
             dropStale = false,
+            preferWriteWithoutResponse = true,
             spacingAfterMs = when (maxHop) {
-                1 -> 2L
-                2 -> 5L
-                3 -> 10L
-                else -> 0L
+                0, 1 -> 10L
+                2 -> 15L
+                else -> 20L
             },
         )
     }
@@ -2328,6 +2329,7 @@ class EdgezFlutterSdkPlugin :
             protocolMagic = EDGEZ_VOICE_PROTOCOL_MAGIC,
             packet = packet,
             dropStale = true,
+            preferWriteWithoutResponse = true,
         )
     }
 
@@ -2336,6 +2338,7 @@ class EdgezFlutterSdkPlugin :
         protocolMagic: ByteArray,
         packet: ByteArray,
         dropStale: Boolean,
+        preferWriteWithoutResponse: Boolean = true,
         spacingAfterMs: Long = 0,
     ): Result<String> {
         val frame = protocolMagic + packet
@@ -2365,10 +2368,18 @@ class EdgezFlutterSdkPlugin :
                 }
                 if (voiceTxWriteInFlight) voiceTxQueue.pollLast() else voiceTxQueue.pollFirst()
             }
+            val supportsWriteWithoutResponse =
+                voice.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
+            val writeType =
+                if (preferWriteWithoutResponse && supportsWriteWithoutResponse) {
+                    BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                } else {
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                }
             voiceTxQueue.addLast(
                 EdgezBleWrite(
                     frame,
-                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                    writeType,
                     spacingAfterMs,
                 ),
             )
@@ -2819,6 +2830,28 @@ class EdgezFlutterSdkPlugin :
                 voiceTxWriteInFlight = false
                 dataWriteInFlight = false
             }
+            mainHandler.postDelayed({
+                if (gatt === currentGatt) writeNextDataFrame(currentGatt)
+            }, EDGEZ_NO_RESPONSE_PUMP_DELAY_MS)
+            return true
+        }
+        if (frame.writeType == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) {
+            synchronized(this) {
+                voiceTxWriteInFlight = false
+                dataWriteInFlight = false
+                voiceTxQueue.pollFirst()
+                nextVoiceTxAllowedAtMs = maxOf(
+                    nextVoiceTxAllowedAtMs,
+                    SystemClock.elapsedRealtime() +
+                        maxOf(frame.spacingAfterMs, EDGEZ_NO_RESPONSE_PUMP_DELAY_MS),
+                )
+            }
+            // No ATT acknowledgement exists for this write type. Advance from
+            // local stack acceptance; some Android stacks still emit an
+            // optional callback, which is ignored below.
+            mainHandler.post {
+                if (gatt === currentGatt) writeNextDataFrame(currentGatt)
+            }
         }
         return ok
     }
@@ -3177,6 +3210,15 @@ class EdgezFlutterSdkPlugin :
                 return
             }
             val isVoiceWrite = characteristic.uuid == voiceRxCharacteristic?.uuid
+            if (isVoiceWrite &&
+                characteristic.properties and
+                    BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
+            ) {
+                // FFF7 traffic advances from local write acceptance. Some
+                // Android stacks still emit this optional callback; it must
+                // not dequeue a later frame or re-serialize the pump.
+                return
+            }
             synchronized(this@EdgezFlutterSdkPlugin) {
                 dataWriteInFlight = false
                 if (isVoiceWrite) {

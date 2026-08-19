@@ -215,6 +215,7 @@ enum NetworkPacket_Body {
   beacon,
   report,
   locationUpdate,
+  routingTable,
   notSet
 }
 
@@ -233,6 +234,7 @@ class NetworkPacket extends $pb.GeneratedMessage {
     Beacon? beacon,
     Report? report,
     LocationUpdate? locationUpdate,
+    RoutingTable? routingTable,
   }) {
     final result = create();
     if (from != null) result.from = from;
@@ -248,6 +250,7 @@ class NetworkPacket extends $pb.GeneratedMessage {
     if (beacon != null) result.beacon = beacon;
     if (report != null) result.report = report;
     if (locationUpdate != null) result.locationUpdate = locationUpdate;
+    if (routingTable != null) result.routingTable = routingTable;
     return result;
   }
 
@@ -271,13 +274,14 @@ class NetworkPacket extends $pb.GeneratedMessage {
     106: NetworkPacket_Body.beacon,
     107: NetworkPacket_Body.report,
     108: NetworkPacket_Body.locationUpdate,
+    109: NetworkPacket_Body.routingTable,
     0: NetworkPacket_Body.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'NetworkPacket',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
       createEmptyInstance: create)
-    ..oo(0, [100, 101, 102, 103, 104, 105, 106, 107, 108])
+    ..oo(0, [100, 101, 102, 103, 104, 105, 106, 107, 108, 109])
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'from', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'to', $pb.PbFieldType.OU6,
@@ -304,6 +308,8 @@ class NetworkPacket extends $pb.GeneratedMessage {
         subBuilder: Report.create)
     ..aOM<LocationUpdate>(108, _omitFieldNames ? '' : 'locationUpdate',
         subBuilder: LocationUpdate.create)
+    ..aOM<RoutingTable>(109, _omitFieldNames ? '' : 'routingTable',
+        subBuilder: RoutingTable.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -336,6 +342,7 @@ class NetworkPacket extends $pb.GeneratedMessage {
   @$pb.TagNumber(106)
   @$pb.TagNumber(107)
   @$pb.TagNumber(108)
+  @$pb.TagNumber(109)
   NetworkPacket_Body whichBody() => _NetworkPacket_BodyByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(100)
   @$pb.TagNumber(101)
@@ -346,6 +353,7 @@ class NetworkPacket extends $pb.GeneratedMessage {
   @$pb.TagNumber(106)
   @$pb.TagNumber(107)
   @$pb.TagNumber(108)
+  @$pb.TagNumber(109)
   void clearBody() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -480,6 +488,17 @@ class NetworkPacket extends $pb.GeneratedMessage {
   void clearLocationUpdate() => $_clearField(108);
   @$pb.TagNumber(108)
   LocationUpdate ensureLocationUpdate() => $_ensure(12);
+
+  @$pb.TagNumber(109)
+  RoutingTable get routingTable => $_getN(13);
+  @$pb.TagNumber(109)
+  set routingTable(RoutingTable value) => $_setField(109, value);
+  @$pb.TagNumber(109)
+  $core.bool hasRoutingTable() => $_has(13);
+  @$pb.TagNumber(109)
+  void clearRoutingTable() => $_clearField(109);
+  @$pb.TagNumber(109)
+  RoutingTable ensureRoutingTable() => $_ensure(13);
 }
 
 /// A transient phone position update. Devices keep this in RAM and use it for
@@ -890,6 +909,162 @@ class Peer extends $pb.GeneratedMessage {
   $core.bool hasRouteHops() => $_has(4);
   @$pb.TagNumber(5)
   void clearRouteHops() => $_clearField(5);
+}
+
+class RouteEntry extends $pb.GeneratedMessage {
+  factory RouteEntry({
+    $fixnum.Int64? destination,
+    $fixnum.Int64? nextHop,
+    $core.int? tq,
+    $core.int? hops,
+    $core.int? ageMs,
+  }) {
+    final result = create();
+    if (destination != null) result.destination = destination;
+    if (nextHop != null) result.nextHop = nextHop;
+    if (tq != null) result.tq = tq;
+    if (hops != null) result.hops = hops;
+    if (ageMs != null) result.ageMs = ageMs;
+    return result;
+  }
+
+  RouteEntry._();
+
+  factory RouteEntry.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory RouteEntry.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'RouteEntry',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
+      createEmptyInstance: create)
+    ..a<$fixnum.Int64>(
+        1, _omitFieldNames ? '' : 'destination', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'nextHop', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aI(3, _omitFieldNames ? '' : 'tq', fieldType: $pb.PbFieldType.OU3)
+    ..aI(4, _omitFieldNames ? '' : 'hops', fieldType: $pb.PbFieldType.OU3)
+    ..aI(5, _omitFieldNames ? '' : 'ageMs', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RouteEntry clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RouteEntry copyWith(void Function(RouteEntry) updates) =>
+      super.copyWith((message) => updates(message as RouteEntry)) as RouteEntry;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static RouteEntry create() => RouteEntry._();
+  @$core.override
+  RouteEntry createEmptyInstance() => create();
+  static $pb.PbList<RouteEntry> createRepeated() => $pb.PbList<RouteEntry>();
+  @$core.pragma('dart2js:noInline')
+  static RouteEntry getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<RouteEntry>(create);
+  static RouteEntry? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get destination => $_getI64(0);
+  @$pb.TagNumber(1)
+  set destination($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasDestination() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearDestination() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $fixnum.Int64 get nextHop => $_getI64(1);
+  @$pb.TagNumber(2)
+  set nextHop($fixnum.Int64 value) => $_setInt64(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasNextHop() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearNextHop() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get tq => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set tq($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasTq() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearTq() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get hops => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set hops($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasHops() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearHops() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get ageMs => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set ageMs($core.int value) => $_setUnsignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasAgeMs() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearAgeMs() => $_clearField(5);
+}
+
+class RoutingTable extends $pb.GeneratedMessage {
+  factory RoutingTable({
+    $core.Iterable<RouteEntry>? routes,
+  }) {
+    final result = create();
+    if (routes != null) result.routes.addAll(routes);
+    return result;
+  }
+
+  RoutingTable._();
+
+  factory RoutingTable.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory RoutingTable.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'RoutingTable',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'ai.edgez.halow'),
+      createEmptyInstance: create)
+    ..pPM<RouteEntry>(1, _omitFieldNames ? '' : 'routes',
+        subBuilder: RouteEntry.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RoutingTable clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RoutingTable copyWith(void Function(RoutingTable) updates) =>
+      super.copyWith((message) => updates(message as RoutingTable))
+          as RoutingTable;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static RoutingTable create() => RoutingTable._();
+  @$core.override
+  RoutingTable createEmptyInstance() => create();
+  static $pb.PbList<RoutingTable> createRepeated() =>
+      $pb.PbList<RoutingTable>();
+  @$core.pragma('dart2js:noInline')
+  static RoutingTable getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<RoutingTable>(create);
+  static RoutingTable? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<RouteEntry> get routes => $_getList(0);
 }
 
 class Beacon extends $pb.GeneratedMessage {

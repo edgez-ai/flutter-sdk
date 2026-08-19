@@ -602,6 +602,19 @@ class EdgezMeshSdk {
     });
   }
 
+  Future<void> requestRoutingTable({required int fromNode}) {
+    final packet = proto.NetworkPacket(
+      from: Int64(fromNode),
+      operation: proto.Operation.REQUEST,
+      interface: proto.Interface.HALOW,
+      routingTable: proto.RoutingTable(),
+    );
+    return _transport.invokeMethod<void>('sendPacket', {
+      'label': 'BATMAN routing table request',
+      'packet': Uint8List.fromList(packet.writeToBuffer()),
+    });
+  }
+
   /// Sends a fresh phone location through the dedicated device protocol.
   Future<void> sendLocationUpdate({
     required EdgezLocation location,

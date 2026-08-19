@@ -62,6 +62,7 @@ class EdgezMeshState {
     required Map<int, EdgezMeshNode> nodes,
     required Map<int, List<EdgezSensorSample>> sensorSamples,
     required List<EdgezTopologyLink> topologyLinks,
+    required List<EdgezBatmanRoute> routingTable,
     required Map<int, List<EdgezConversationMessage>> conversations,
     required Map<int, EdgezLinkStats> linkStats,
     required this.otaInProgress,
@@ -77,10 +78,12 @@ class EdgezMeshState {
     this.bleConnecting = false,
     this.deviceSettings,
     this.selfLocation,
+    this.routingTableLoading = false,
   })  : bleDevices = Map<String, EdgezBleDevice>.unmodifiable(bleDevices),
         nodes = Map<int, EdgezMeshNode>.unmodifiable(nodes),
         sensorSamples = _freezeSensorSamples(sensorSamples),
         topologyLinks = List<EdgezTopologyLink>.unmodifiable(topologyLinks),
+        routingTable = List<EdgezBatmanRoute>.unmodifiable(routingTable),
         conversations = _freezeConversations(conversations),
         linkStats = Map<int, EdgezLinkStats>.unmodifiable(linkStats);
 
@@ -95,6 +98,7 @@ class EdgezMeshState {
       nodes: publicChannels,
       sensorSamples: const <int, List<EdgezSensorSample>>{},
       topologyLinks: const <EdgezTopologyLink>[],
+      routingTable: const <EdgezBatmanRoute>[],
       conversations: const <int, List<EdgezConversationMessage>>{},
       linkStats: const <int, EdgezLinkStats>{},
       otaInProgress: false,
@@ -115,6 +119,7 @@ class EdgezMeshState {
   final Map<int, EdgezMeshNode> nodes;
   final Map<int, List<EdgezSensorSample>> sensorSamples;
   final List<EdgezTopologyLink> topologyLinks;
+  final List<EdgezBatmanRoute> routingTable;
   final Map<int, List<EdgezConversationMessage>> conversations;
   final Map<int, EdgezLinkStats> linkStats;
   final bool otaInProgress;
@@ -132,6 +137,7 @@ class EdgezMeshState {
   final bool bleConnecting;
   final EdgezDeviceSettings? deviceSettings;
   final EdgezLocation? selfLocation;
+  final bool routingTableLoading;
 
   double get otaProgress =>
       otaTotalBytes <= 0 ? 0 : otaSentBytes / otaTotalBytes;
@@ -161,6 +167,7 @@ class EdgezMeshState {
     Map<int, EdgezMeshNode>? nodes,
     Map<int, List<EdgezSensorSample>>? sensorSamples,
     List<EdgezTopologyLink>? topologyLinks,
+    List<EdgezBatmanRoute>? routingTable,
     Map<int, List<EdgezConversationMessage>>? conversations,
     Map<int, EdgezLinkStats>? linkStats,
     bool? otaInProgress,
@@ -178,6 +185,7 @@ class EdgezMeshState {
     bool clearDeviceSettings = false,
     EdgezLocation? selfLocation,
     bool clearSelfLocation = false,
+    bool? routingTableLoading,
   }) {
     return EdgezMeshState(
       connection: connection ?? this.connection,
@@ -186,6 +194,7 @@ class EdgezMeshState {
       nodes: nodes ?? this.nodes,
       sensorSamples: sensorSamples ?? this.sensorSamples,
       topologyLinks: topologyLinks ?? this.topologyLinks,
+      routingTable: routingTable ?? this.routingTable,
       conversations: conversations ?? this.conversations,
       linkStats: linkStats ?? this.linkStats,
       otaInProgress: otaInProgress ?? this.otaInProgress,
@@ -203,6 +212,7 @@ class EdgezMeshState {
           clearDeviceSettings ? null : deviceSettings ?? this.deviceSettings,
       selfLocation:
           clearSelfLocation ? null : selfLocation ?? this.selfLocation,
+      routingTableLoading: routingTableLoading ?? this.routingTableLoading,
     );
   }
 
@@ -259,6 +269,7 @@ class EdgezMeshSession extends ChangeNotifier {
   EdgezMeshConfig? _lastMeshConfig;
   var _bleReady = false;
   Timer? _deviceStatusTimeout;
+  Timer? _routingTableTimeout;
   Timer? _locationUpdateTimer;
   Duration? _locationUpdateInterval;
   Timer? _voiceCallTimeout;
@@ -775,6 +786,7 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    _routingTableTimeout?.cancel();
     await sdk.disconnect();
     await deviceLogStore?.flush();
     _deviceStatusTimeout?.cancel();
@@ -792,6 +804,7 @@ class EdgezMeshSession extends ChangeNotifier {
         nodes: retainedState.nodes,
         sensorSamples: retainedState.sensorSamples,
         topologyLinks: retainedState.topologyLinks,
+        routingTable: retainedState.routingTable,
         conversations: retainedState.conversations,
         linkStats: retainedState.linkStats,
         sharedLinkStats: retainedState.sharedLinkStats,
@@ -804,6 +817,40 @@ class EdgezMeshSession extends ChangeNotifier {
   Future<void> setDeviceLogLevel(EdgezDeviceLogLevel level) {
     _appLogLevel = level;
     return sdk.setDeviceLogLevel(level);
+  }
+
+  Future<void> requestRoutingTable() async {
+    final fromNode = _state.status?.macAddress ?? 0;
+    if (_state.connection == EdgezConnectionType.none || fromNode == 0) {
+      throw StateError('Connect to a device before requesting routes');
+    }
+    _setState(
+      _state.copyWith(
+        routingTableLoading: true,
+        statusLine: 'Requesting BATMAN routing table',
+      ),
+    );
+    try {
+      await sdk.requestRoutingTable(fromNode: fromNode);
+      _routingTableTimeout?.cancel();
+      _routingTableTimeout = Timer(const Duration(seconds: 8), () {
+        if (!_state.routingTableLoading) return;
+        _setState(
+          _state.copyWith(
+            routingTableLoading: false,
+            statusLine: 'Routing table request timed out',
+          ),
+        );
+      });
+    } catch (error) {
+      _setState(
+        _state.copyWith(
+          routingTableLoading: false,
+          statusLine: 'Routing table request failed: $error',
+        ),
+      );
+      rethrow;
+    }
   }
 
   Future<void> configureLogLevel(EdgezDeviceLogLevel level) {
@@ -1600,6 +1647,10 @@ class EdgezMeshSession extends ChangeNotifier {
       }
     }
 
+    if (packet.hasRoutingTable()) {
+      _handleRoutingTable(packet);
+    }
+
     if (packet.hasReport()) {
       _handleTopologyReport(packet);
     }
@@ -1633,13 +1684,6 @@ class EdgezMeshSession extends ChangeNotifier {
     for (final peer in packet.report.peers) {
       final peerNode = peer.id.toInt();
       if (peerNode == 0 || (localNode != 0 && peerNode == localNode)) continue;
-      if (reporter == localNode && peer.routeTq > 0 && peer.routeHops > 0) {
-        _batmanPaths[peerNode] = _BatmanPathMetric(
-          tq: peer.routeTq,
-          hops: peer.routeHops,
-          updatedAtMs: now,
-        );
-      }
       final sensorData = _sensorData(peer.sensorData);
       if (sensorData != null) {
         sensorSamples[peerNode] = <EdgezSensorSample>[
@@ -1678,6 +1722,46 @@ class EdgezMeshSession extends ChangeNotifier {
         sensorSamples: sensorSamples,
         nodes: nodes,
         statusLine: 'Topology report received',
+      ),
+    );
+  }
+
+  void _handleRoutingTable(proto.NetworkPacket packet) {
+    if (packet.operation != proto.Operation.RESPONSE) return;
+    _routingTableTimeout?.cancel();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final routes = <EdgezBatmanRoute>[];
+    _batmanPaths.clear();
+    for (final entry in packet.routingTable.routes) {
+      final destination = entry.destination.toInt();
+      final nextHop = entry.nextHop.toInt();
+      if (destination == 0 || nextHop == 0) continue;
+      routes.add(
+        EdgezBatmanRoute(
+          destinationNodeNum: destination,
+          nextHopNodeNum: nextHop,
+          tq: entry.tq,
+          hops: entry.hops,
+          ageMs: entry.ageMs,
+        ),
+      );
+      if (entry.tq > 0 && entry.hops > 0) {
+        _batmanPaths[destination] = _BatmanPathMetric(
+          tq: entry.tq,
+          hops: entry.hops,
+          updatedAtMs: now,
+        );
+      }
+    }
+    routes.sort((left, right) {
+      final hopOrder = left.hops.compareTo(right.hops);
+      return hopOrder != 0 ? hopOrder : right.tq.compareTo(left.tq);
+    });
+    _setState(
+      _state.copyWith(
+        routingTable: routes,
+        routingTableLoading: false,
+        statusLine: 'BATMAN routing table received (${routes.length} routes)',
       ),
     );
   }
@@ -2221,6 +2305,12 @@ class EdgezMeshSession extends ChangeNotifier {
     int targetNode,
     int requestedHops,
   ) {
+    // A zero-hop request is explicitly direct. Let the bounded native BLE/USB
+    // queue provide back-pressure instead of draining every two frames; the
+    // latter serializes Flutter with the GATT callback and caps throughput.
+    if (requestedHops == 0) {
+      return const _RealtimePathProfile(6, Duration.zero, Duration.zero);
+    }
     final localNode = _state.status?.macAddress ?? 0;
     final selected = localNode == 0 ? null : _batmanPaths[targetNode];
     final age = selected == null
@@ -2909,6 +2999,7 @@ class EdgezMeshSession extends ChangeNotifier {
   @override
   void dispose() {
     _deviceStatusTimeout?.cancel();
+    _routingTableTimeout?.cancel();
     _stopLocationTracking();
     _voiceCallTimeout?.cancel();
     _pendingVoiceMessages.clear();

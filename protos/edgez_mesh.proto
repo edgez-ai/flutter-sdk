@@ -107,6 +107,7 @@ message NetworkPacket {
     Beacon beacon = 106;
     Report report = 107;
     LocationUpdate location_update = 108;
+    RoutingTable routing_table = 109;
   }
 }
 
@@ -177,6 +178,18 @@ message Peer {
   repeated SensorData sensor_data = 3;
   uint32 route_tq = 4;
   uint32 route_hops = 5;
+}
+
+message RouteEntry {
+  uint64 destination = 1;
+  uint64 next_hop = 2;
+  uint32 tq = 3;
+  uint32 hops = 4;
+  uint32 age_ms = 5;
+}
+
+message RoutingTable {
+  repeated RouteEntry routes = 1;
 }
 
 message Beacon {

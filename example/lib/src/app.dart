@@ -304,6 +304,18 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     });
   }
 
+  void _openRoutingTable() {
+    setState(() => showTopology = true);
+    unawaited(
+      session.requestRoutingTable().catchError((Object error) {
+        if (!mounted) return;
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text('Routing table request failed: $error')),
+        );
+      }),
+    );
+  }
+
   Future<void> _loadInstalledDrivers() async {
     try {
       final installed = await driverStore.load();
@@ -1368,7 +1380,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
           AppDestination.nodes => showTopology
               ? TopologyScreen(
                   users: meshState.sortedNodes,
-                  links: meshState.topologyLinks,
+                  routes: meshState.routingTable,
+                  loading: meshState.routingTableLoading,
+                  onRefresh: session.requestRoutingTable,
                   onBack: () => setState(() => showTopology = false),
                 )
               : selected == null
@@ -1380,7 +1394,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       ],
                       sensorSamples: meshState.sensorSamples,
                       dashboardDisplays: dashboardDisplays,
-                      onOpenTopology: () => setState(() => showTopology = true),
+                      onOpenTopology: _openRoutingTable,
                       onRemoveNode: _removeNode,
                       onToggleDashboard: _toggleDashboard,
                       onTogglePublicChannel: _togglePublicChannel,

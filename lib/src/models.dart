@@ -138,6 +138,24 @@ class EdgezTopologyLink {
   }
 }
 
+class EdgezBatmanRoute {
+  const EdgezBatmanRoute({
+    required this.destinationNodeNum,
+    required this.nextHopNodeNum,
+    required this.tq,
+    required this.hops,
+    required this.ageMs,
+  });
+
+  final int destinationNodeNum;
+  final int nextHopNodeNum;
+  final int tq;
+  final int hops;
+  final int ageMs;
+
+  bool get isDirect => hops <= 1 || destinationNodeNum == nextHopNodeNum;
+}
+
 class EdgezBleDevice {
   const EdgezBleDevice({
     required this.id,
