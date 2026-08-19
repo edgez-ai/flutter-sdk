@@ -128,10 +128,10 @@ private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
 private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
 private const val EDGEZ_SPEED_TX_QUEUE_DEPTH = 8
 private const val EDGEZ_NO_RESPONSE_PUMP_DELAY_MS = 2L
-private const val EDGEZ_SPEED_BLE_MAX_BITS_PER_SECOND = 200_000L
+private const val EDGEZ_SPEED_BLE_MAX_BITS_PER_SECOND = 160_000L
 // A forced two-hop test retransmits every payload on the same half-duplex
-// HaLow channel. Keep its BLE ingress below half the direct-path ceiling so
-// the firmware queue and the relay do not collapse under sustained load.
+// HaLow channel. Keep its BLE ingress below the direct-path ceiling so the
+// firmware queue and relay have additional forwarding headroom.
 private const val EDGEZ_SPEED_TWO_HOP_BLE_MAX_BITS_PER_SECOND = 80_000L
 private val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 private val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
