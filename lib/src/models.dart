@@ -448,7 +448,11 @@ class EdgezDeviceSettings {
         'userPrivateKey': userPrivateKey,
       };
 
-  EdgezDeviceSettings copyWith({bool? deviceGpsEnabled}) {
+  EdgezDeviceSettings copyWith({
+    bool? deviceGpsEnabled,
+    int? meshFrequencyKhz,
+    int? meshBandwidthMhz,
+  }) {
     return EdgezDeviceSettings(
       deviceModeEnabled: deviceModeEnabled,
       meshId: meshId,
@@ -470,8 +474,8 @@ class EdgezDeviceSettings {
       deviceType: deviceType,
       sleepModeEnabled: sleepModeEnabled,
       deviceGpsEnabled: deviceGpsEnabled ?? this.deviceGpsEnabled,
-      meshFrequencyKhz: meshFrequencyKhz,
-      meshBandwidthMhz: meshBandwidthMhz,
+      meshFrequencyKhz: meshFrequencyKhz ?? this.meshFrequencyKhz,
+      meshBandwidthMhz: meshBandwidthMhz ?? this.meshBandwidthMhz,
       userIdHigh: userIdHigh,
       userIdLow: userIdLow,
       userPublicKey: userPublicKey,

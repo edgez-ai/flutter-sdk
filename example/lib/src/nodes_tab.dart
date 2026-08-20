@@ -2,6 +2,7 @@ import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
 import 'models.dart';
+import 'settings_tab.dart' show halowFrequenciesKhz, halowFrequencyLabel;
 import 'shared_widgets.dart';
 
 class NodesScreen extends StatelessWidget {
@@ -9,10 +10,13 @@ class NodesScreen extends StatelessWidget {
     required this.activeConnection,
     required this.status,
     required this.meshCountry,
+    required this.meshBandwidthMhz,
+    required this.meshFrequencyKhz,
     required this.users,
     required this.sensorSamples,
     required this.dashboardDisplays,
     required this.onOpenTopology,
+    required this.onMeshFrequencyChanged,
     required this.onRemoveNode,
     required this.onToggleDashboard,
     required this.onTogglePublicChannel,
@@ -23,10 +27,13 @@ class NodesScreen extends StatelessWidget {
   final EdgezConnectionType activeConnection;
   final EdgezMeshStatus? status;
   final String meshCountry;
+  final int meshBandwidthMhz;
+  final int meshFrequencyKhz;
   final List<EdgezMeshNode> users;
   final Map<int, List<EdgezSensorSample>> sensorSamples;
   final Map<String, ExampleDashboardDisplay> dashboardDisplays;
   final VoidCallback onOpenTopology;
+  final ValueChanged<int> onMeshFrequencyChanged;
   final ValueChanged<EdgezMeshNode> onRemoveNode;
   final ValueChanged<EdgezMeshNode> onToggleDashboard;
   final void Function(EdgezMeshNode channel, bool enabled)
@@ -35,6 +42,11 @@ class NodesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canChangeChannel = status?.isUsable == true;
+    final meshFrequencies = halowFrequenciesKhz(
+      meshCountry,
+      meshBandwidthMhz,
+    );
     final publicChannels = users.where((user) => user.isPublicChannel).toList()
       ..sort((a, b) => a.nodeNum.compareTo(b.nodeNum));
     final discoveredUsers =
@@ -58,17 +70,54 @@ class NodesScreen extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
+          Text(
+            'Nodes',
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
           Row(
             children: <Widget>[
-              Expanded(
-                  child: Text('Nodes',
-                      style: Theme.of(context).textTheme.headlineMedium)),
               TextButton.icon(
                 onPressed: onOpenTopology,
                 icon: const Icon(Icons.account_tree_outlined),
                 label: const Text('Routes'),
               ),
-              HaLowMeshStatusIcon(status: status),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: meshFrequencies.contains(meshFrequencyKhz)
+                          ? meshFrequencyKhz
+                          : null,
+                      hint: const Text('Channel'),
+                      isDense: true,
+                      isExpanded: true,
+                      items: meshFrequencies
+                          .map(
+                            (frequencyKhz) => DropdownMenuItem<int>(
+                              value: frequencyKhz,
+                              child: Text(
+                                halowFrequencyLabel(
+                                  meshCountry,
+                                  frequencyKhz,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: canChangeChannel
+                          ? (frequencyKhz) {
+                              if (frequencyKhz != null) {
+                                onMeshFrequencyChanged(frequencyKhz);
+                              }
+                            }
+                          : null,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),

@@ -725,18 +725,17 @@ class SettingsScreen extends StatefulWidget {
                     titleFor: (value) => '$value MHz',
                     onChanged: onMeshBandwidthChanged,
                   ),
-                  DropdownSetting<int>(
-                    label: 'Frequency',
-                    value: meshFrequencyKhz,
-                    values: halowFrequenciesKhz(
-                      meshCountry,
-                      meshBandwidthMhz,
-                    ),
-                    titleFor: (value) =>
-                        halowFrequencyLabel(meshCountry, value),
-                    onChanged: onMeshFrequencyChanged,
-                  ),
                 ],
+                DropdownSetting<int>(
+                  label: 'Channel',
+                  value: meshFrequencyKhz,
+                  values: halowFrequenciesKhz(
+                    meshCountry,
+                    meshBandwidthMhz,
+                  ),
+                  titleFor: (value) => halowFrequencyLabel(meshCountry, value),
+                  onChanged: onMeshFrequencyChanged,
+                ),
                 SettingsTextField(
                   label: 'Mesh ID / SSID',
                   value: deviceModeEnabled ? deviceMeshId : meshId,

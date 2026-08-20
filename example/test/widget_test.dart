@@ -63,6 +63,8 @@ void main() {
 
   testWidgets('nodes are grouped in collapsible HaLow channel sections',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 796));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final now = DateTime.now().millisecondsSinceEpoch;
     await tester.pumpWidget(
       MaterialApp(
@@ -70,6 +72,8 @@ void main() {
           activeConnection: EdgezConnectionType.ble,
           status: null,
           meshCountry: 'US',
+          meshBandwidthMhz: 1,
+          meshFrequencyKhz: 902500,
           users: <EdgezMeshNode>[
             EdgezPublicChannels.node(1),
             EdgezMeshNode(
@@ -94,6 +98,7 @@ void main() {
           sensorSamples: const <int, List<EdgezSensorSample>>{},
           dashboardDisplays: const <String, ExampleDashboardDisplay>{},
           onOpenTopology: () {},
+          onMeshFrequencyChanged: (_) {},
           onRemoveNode: (_) {},
           onToggleDashboard: (_) {},
           onTogglePublicChannel: (_, __) {},
@@ -102,7 +107,16 @@ void main() {
       ),
     );
 
+    expect(find.byType(DropdownButton<int>), findsOneWidget);
+    expect(
+      tester
+          .widget<DropdownButton<int>>(find.byType(DropdownButton<int>))
+          .onChanged,
+      isNull,
+    );
+    expect(find.text('Channel 1 - 902.5 MHz'), findsOneWidget);
     expect(find.text('Channel 1'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     expect(find.text('Public channels'), findsOneWidget);
     expect(find.text('Talkgroup port 38801'), findsNothing);
     expect(find.text('902.500 MHz · 1 node'), findsOneWidget);
@@ -110,7 +124,7 @@ void main() {
     expect(find.text('903.000 MHz · 1 node'), findsOneWidget);
     expect(find.text('Node one'), findsNothing);
 
-    await tester.tap(find.text('Channel 1'));
+    await tester.tap(find.text('Channel 1').last);
     await tester.pumpAndSettle();
     expect(find.text('Node one'), findsOneWidget);
     expect(find.text('Node two'), findsNothing);
@@ -233,7 +247,7 @@ void main() {
     expect(find.text('SHT3x Temperature/Humidity'), findsNothing);
   });
 
-  testWidgets('settings expose HaLow channel controls', (tester) async {
+  testWidgets('settings expose HaLow network controls', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
@@ -256,7 +270,8 @@ void main() {
       scrollable: findVerticalScrollable(),
     );
     expect(find.text('Bandwidth'), findsOneWidget);
-    expect(find.text('Frequency'), findsOneWidget);
+    expect(find.text('Frequency'), findsNothing);
+    expect(find.text('Channel'), findsOneWidget);
   });
 
   testWidgets('settings opens debug as a separate page', (tester) async {

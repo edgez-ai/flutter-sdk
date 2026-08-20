@@ -54,7 +54,9 @@ const _downloadsChannel = MethodChannel(
 );
 
 class EdgezExampleApp extends StatefulWidget {
-  const EdgezExampleApp({super.key});
+  const EdgezExampleApp({this.initialConfiguration, super.key});
+
+  final EdgezBleConfiguration? initialConfiguration;
 
   @override
   State<EdgezExampleApp> createState() => _EdgezExampleAppState();
@@ -114,7 +116,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   String passphrase = 'edgez123';
   String maxHop = '4';
   int meshBandwidthMhz = 1;
+  int defaultMeshFrequencyKhz = 902500;
   int meshFrequencyKhz = 902500;
+  bool runtimeMeshFrequencyOverride = false;
   String beaconIntervalSeconds = '10';
   String userName = 'Flutter Demo';
   ExampleMarker userMarker = ExampleMarker.blue;
@@ -149,6 +153,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   @override
   void initState() {
     super.initState();
+    final initialConfiguration = widget.initialConfiguration;
+    if (initialConfiguration != null) {
+      meshCountry = initialConfiguration.meshCountry;
+      meshBandwidthMhz = initialConfiguration.meshBandwidthMhz;
+      defaultMeshFrequencyKhz = initialConfiguration.meshFrequencyKhz;
+      meshFrequencyKhz = initialConfiguration.meshFrequencyKhz;
+    }
     WidgetsBinding.instance.addObserver(this);
     deviceLogStore = EdgezDeviceLogStore();
     session = EdgezMeshSession(
@@ -166,7 +177,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     session.addListener(_handleCallNotificationState);
     session.addListener(_handleDeviceGpsState);
     unawaited(session.restoreDeviceLogs());
-    unawaited(_loadIdentityAndBleConfiguration());
+    unawaited(
+      _loadIdentityAndBleConfiguration(
+        initialConfiguration: initialConfiguration,
+      ),
+    );
     unawaited(_hydrateFromDatabase());
     unawaited(_loadInstalledDrivers());
     _listenForAppLinks();
@@ -420,9 +435,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     }
   }
 
-  Future<void> _loadIdentityAndBleConfiguration() async {
+  Future<void> _loadIdentityAndBleConfiguration({
+    EdgezBleConfiguration? initialConfiguration,
+  }) async {
     final identity = await identityStore.getOrCreate();
-    final bleConfiguration = await bleConfigurationStore.load();
+    final bleConfiguration =
+        initialConfiguration ?? await bleConfigurationStore.load();
     var attachedUsbDevices = const <EdgezUsbDevice>[];
     if (bleConfiguration.preferredTransport == EdgezPreferredTransport.usb) {
       try {
@@ -453,6 +471,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       deviceLogLevel = bleConfiguration.logLevel;
       meshCountry = bleConfiguration.meshCountry;
       meshBandwidthMhz = bleConfiguration.meshBandwidthMhz;
+      defaultMeshFrequencyKhz = bleConfiguration.meshFrequencyKhz;
       meshFrequencyKhz = bleConfiguration.meshFrequencyKhz;
     });
     await session.configureLogLevel(bleConfiguration.logLevel);
@@ -856,9 +875,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     }
   }
 
-  Future<void> _saveAppSettings() async {
+  Future<void> _saveAppSettings({
+    int? runtimeFrequencyKhz,
+    bool persistRadio = true,
+  }) async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
-    await _persistMeshRadioSettings();
+    if (persistRadio) await _persistMeshRadioSettings();
+    final selectedFrequencyKhz = runtimeFrequencyKhz ?? defaultMeshFrequencyKhz;
     final identity = await identityStore.updateName(userName);
     final location = shareLocation && !deviceGpsEnabled
         ? await _getBestKnownLocation()
@@ -876,7 +899,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         passphrase: passphrase,
         maxHop: parsedMaxHop,
         meshBandwidthMhz: meshBandwidthMhz,
-        meshFrequencyKhz: meshFrequencyKhz,
+        meshFrequencyKhz: selectedFrequencyKhz,
         enabledPublicChannels: session.enabledPublicChannels,
         beacon: EdgezBeaconConfig(
           intervalSeconds: int.tryParse(beaconIntervalSeconds) ?? 10,
@@ -897,6 +920,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         ),
       ),
     );
+    if (mounted) {
+      setState(() {
+        meshFrequencyKhz = selectedFrequencyKhz;
+        runtimeMeshFrequencyOverride = runtimeFrequencyKhz != null;
+      });
+    }
     final currentSettings = session.state.deviceSettings;
     if (currentSettings != null &&
         currentSettings.deviceGpsEnabled != deviceGpsEnabled) {
@@ -908,8 +937,70 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       bleConfigurationStore.setMeshRadio(
         country: meshCountry,
         bandwidthMhz: meshBandwidthMhz,
-        frequencyKhz: meshFrequencyKhz,
+        frequencyKhz: defaultMeshFrequencyKhz,
       );
+
+  Future<void> _selectMeshFrequency(int frequencyKhz) async {
+    setState(() => meshFrequencyKhz = frequencyKhz);
+    runtimeMeshFrequencyOverride = true;
+    if (!deviceModeEnabled) {
+      if (session.state.connection == EdgezConnectionType.none) return;
+      try {
+        await _saveAppSettings(
+          runtimeFrequencyKhz: frequencyKhz,
+          persistRadio: false,
+        );
+      } catch (error) {
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text('Unable to update device channel: $error')),
+        );
+      }
+      return;
+    }
+
+    final settings = session.state.deviceSettings;
+    if (settings == null) {
+      await session.requestDeviceSettings();
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text('Reading device settings; select the channel again'),
+        ),
+      );
+      return;
+    }
+    try {
+      await session.initializeMesh(
+        EdgezMeshConfig(
+          countryCode: meshCountry,
+          meshId: settings.meshId,
+          passphrase: settings.passphrase,
+          maxHop: settings.maxHop,
+          meshBandwidthMhz: meshBandwidthMhz,
+          meshFrequencyKhz: frequencyKhz,
+          enabledPublicChannels: session.enabledPublicChannels,
+          beacon: EdgezBeaconConfig(
+            intervalSeconds: settings.beaconIntervalSeconds,
+            marker: settings.marker,
+            shareLocation: settings.shareLocation,
+            useDeviceGps: settings.deviceGpsEnabled,
+            latitude: settings.latitude,
+            longitude: settings.longitude,
+          ),
+          identity: EdgezUserIdentity(
+            userIdHigh: settings.userIdHigh,
+            userIdLow: settings.userIdLow,
+            name: settings.userName,
+            publicKey: settings.userPublicKey,
+            privateKey: settings.userPrivateKey,
+          ),
+        ),
+      );
+    } catch (error) {
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to update device channel: $error')),
+      );
+    }
+  }
 
   void _setDefaultVoiceTargetLanguage(String language) {
     if (!supportedVoiceTranslationLanguages.contains(language)) return;
@@ -1004,7 +1095,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         deviceType: deviceType,
         sleepModeEnabled: deviceSleepModeEnabled,
         deviceGpsEnabled: deviceGpsEnabled,
-        meshFrequencyKhz: meshFrequencyKhz,
+        meshFrequencyKhz: defaultMeshFrequencyKhz,
         meshBandwidthMhz: meshBandwidthMhz,
       ),
       scripts: scripts,
@@ -1118,6 +1209,13 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     if (!mounted) return;
     setState(() {
       if (settings != null) {
+        if (settings.meshFrequencyKhz > 0 && !runtimeMeshFrequencyOverride) {
+          defaultMeshFrequencyKhz = settings.meshFrequencyKhz;
+          meshFrequencyKhz = settings.meshFrequencyKhz;
+        }
+        if (settings.meshBandwidthMhz > 0) {
+          meshBandwidthMhz = settings.meshBandwidthMhz;
+        }
         final pending = pendingDeviceGpsEnabled;
         if (pending == null || settings.deviceGpsEnabled == pending) {
           deviceGpsEnabled = settings.deviceGpsEnabled;
@@ -1133,6 +1231,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
             '${selfLocation.longitude.toStringAsFixed(6)}';
       }
     });
+    if (settings != null &&
+        settings.meshFrequencyKhz > 0 &&
+        !runtimeMeshFrequencyOverride) {
+      unawaited(_persistMeshRadioSettings());
+    }
   }
 
   Future<void> _checkForOtaUpdate() async {
@@ -1393,12 +1496,17 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       activeConnection: meshState.connection,
                       status: meshState.status,
                       meshCountry: meshCountry,
+                      meshBandwidthMhz: meshBandwidthMhz,
+                      meshFrequencyKhz: meshFrequencyKhz,
                       users: <EdgezMeshNode>[
                         ...meshState.sortedNodes,
                       ],
                       sensorSamples: meshState.sensorSamples,
                       dashboardDisplays: dashboardDisplays,
                       onOpenTopology: _openRoutingTable,
+                      onMeshFrequencyChanged: (value) {
+                        unawaited(_selectMeshFrequency(value));
+                      },
                       onRemoveNode: _removeNode,
                       onToggleDashboard: _toggleDashboard,
                       onTogglePublicChannel: _togglePublicChannel,
@@ -1509,7 +1617,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   passphrase: passphrase,
                   maxHop: maxHop,
                   meshBandwidthMhz: meshBandwidthMhz,
-                  meshFrequencyKhz: meshFrequencyKhz,
+                  meshFrequencyKhz: defaultMeshFrequencyKhz,
                   beaconIntervalSeconds: beaconIntervalSeconds,
                   userName: userName,
                   userIdentity: userIdentity,
@@ -1577,8 +1685,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       }
                       final frequencies =
                           halowFrequenciesKhz(value, meshBandwidthMhz);
+                      if (!frequencies.contains(defaultMeshFrequencyKhz)) {
+                        defaultMeshFrequencyKhz = frequencies.first;
+                      }
                       if (!frequencies.contains(meshFrequencyKhz)) {
-                        meshFrequencyKhz = frequencies.first;
+                        meshFrequencyKhz = defaultMeshFrequencyKhz;
                       }
                     });
                     unawaited(_persistMeshRadioSettings());
@@ -1588,14 +1699,17 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       meshBandwidthMhz = value;
                       final frequencies =
                           halowFrequenciesKhz(meshCountry, value);
+                      if (!frequencies.contains(defaultMeshFrequencyKhz)) {
+                        defaultMeshFrequencyKhz = frequencies.first;
+                      }
                       if (!frequencies.contains(meshFrequencyKhz)) {
-                        meshFrequencyKhz = frequencies.first;
+                        meshFrequencyKhz = defaultMeshFrequencyKhz;
                       }
                     });
                     unawaited(_persistMeshRadioSettings());
                   },
                   onMeshFrequencyChanged: (value) {
-                    setState(() => meshFrequencyKhz = value);
+                    setState(() => defaultMeshFrequencyKhz = value);
                     unawaited(_persistMeshRadioSettings());
                   },
                   onMeshIdChanged: (value) => setState(() => meshId = value),
@@ -1679,7 +1793,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       defaultMaxHop: maxHop,
                       defaultBeaconInterval: beaconIntervalSeconds,
                       defaultMeshCountry: meshCountry,
-                      defaultMeshFrequencyKhz: meshFrequencyKhz,
+                      defaultMeshFrequencyKhz: defaultMeshFrequencyKhz,
                       defaultMeshBandwidthMhz: meshBandwidthMhz,
                       onCancel: _closeProvisioning,
                       onComplete: _closeProvisioning,
