@@ -3,6 +3,7 @@ import 'package:edgez_flutter_sdk_example/src/conversation_screen.dart';
 import 'package:edgez_flutter_sdk_example/src/dashboard_tab.dart';
 import 'package:edgez_flutter_sdk_example/src/gemma_voice_translator.dart';
 import 'package:edgez_flutter_sdk_example/src/models.dart';
+import 'package:edgez_flutter_sdk_example/src/nodes_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:edgez_flutter_sdk_example/src/app.dart';
@@ -58,6 +59,65 @@ void main() {
     await tester.tap(find.text('Back'));
     await tester.pumpAndSettle();
     expect(find.text('Nodes'), findsWidgets);
+  });
+
+  testWidgets('nodes are grouped in collapsible HaLow channel sections',
+      (tester) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NodesScreen(
+          activeConnection: EdgezConnectionType.ble,
+          status: null,
+          meshCountry: 'US',
+          users: <EdgezMeshNode>[
+            EdgezPublicChannels.node(1),
+            EdgezMeshNode(
+              nodeNum: 1,
+              userUuid: 'one',
+              displayName: 'Node one',
+              route: 'BLE',
+              lastSeenMs: now,
+              marker: 'blue',
+              channelNumber: 1,
+            ),
+            EdgezMeshNode(
+              nodeNum: 2,
+              userUuid: 'two',
+              displayName: 'Node two',
+              route: 'BLE',
+              lastSeenMs: now,
+              marker: 'green',
+              channelNumber: 2,
+            ),
+          ],
+          sensorSamples: const <int, List<EdgezSensorSample>>{},
+          dashboardDisplays: const <String, ExampleDashboardDisplay>{},
+          onOpenTopology: () {},
+          onRemoveNode: (_) {},
+          onToggleDashboard: (_) {},
+          onTogglePublicChannel: (_, __) {},
+          onOpenNode: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.text('Channel 1'), findsOneWidget);
+    expect(find.text('Public channels'), findsOneWidget);
+    expect(find.text('Talkgroup port 38801'), findsNothing);
+    expect(find.text('902.500 MHz · 1 node'), findsOneWidget);
+    expect(find.text('Channel 2'), findsOneWidget);
+    expect(find.text('903.000 MHz · 1 node'), findsOneWidget);
+    expect(find.text('Node one'), findsNothing);
+
+    await tester.tap(find.text('Channel 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Node one'), findsOneWidget);
+    expect(find.text('Node two'), findsNothing);
+
+    await tester.tap(find.text('Public channels'));
+    await tester.pumpAndSettle();
+    expect(find.text('Talkgroup port 38801'), findsOneWidget);
   });
 
   testWidgets('dashboard opens the device provisioning flow', (tester) async {

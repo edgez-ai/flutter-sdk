@@ -26,6 +26,7 @@ class ExampleDatabase {
             device_type TEXT NOT NULL,
             geo_fence_name TEXT NOT NULL,
             geo_index INTEGER NOT NULL,
+            channel_number INTEGER NOT NULL DEFAULT 0,
             sleeping INTEGER NOT NULL,
             enabled INTEGER NOT NULL DEFAULT 1,
             dashboard_show_on INTEGER NOT NULL DEFAULT 0,
@@ -106,6 +107,10 @@ class ExampleDatabase {
     if (!columnNames.contains('enabled')) {
       await db.execute(
           'ALTER TABLE nodes ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1');
+    }
+    if (!columnNames.contains('channel_number')) {
+      await db.execute(
+          'ALTER TABLE nodes ADD COLUMN channel_number INTEGER NOT NULL DEFAULT 0');
     }
     final messageColumns =
         await db.rawQuery('PRAGMA table_info(conversation_messages)');
@@ -234,6 +239,7 @@ class ExampleDatabase {
           deviceType: row['device_type'] as String,
           geoFenceName: row['geo_fence_name'] as String,
           geoIndex: row['geo_index'] as int,
+          channelNumber: row['channel_number'] as int? ?? 0,
           sleeping: (row['sleeping'] as int) != 0,
           enabled: (row['enabled'] as int? ?? 1) != 0,
         ),
@@ -463,6 +469,7 @@ class ExampleDatabase {
         'device_type': node.deviceType,
         'geo_fence_name': node.geoFenceName,
         'geo_index': node.geoIndex,
+        'channel_number': node.channelNumber,
         'sleeping': node.sleeping ? 1 : 0,
         'enabled': node.enabled ? 1 : 0,
         'dashboard_show_on': savedDisplay.showOnDashboard ? 1 : 0,

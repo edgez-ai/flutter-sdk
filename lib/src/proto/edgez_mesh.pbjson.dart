@@ -576,6 +576,7 @@ const Beacon$json = {
       '6': '.ai.edgez.halow.DeviceType',
       '10': 'deviceType'
     },
+    {'1': 'channel_number', '3': 9, '4': 1, '5': 13, '10': 'channelNumber'},
     {'1': 'sleeping', '3': 10, '4': 1, '5': 8, '10': 'sleeping'},
     {
       '1': 'geo_fence',
@@ -603,10 +604,10 @@ final $typed_data.Uint8List beaconDescriptor = $convert.base64Decode(
     'X3B1YmxpY19rZXkYBCABKAxSDXVzZXJQdWJsaWNLZXkSGgoIbGF0aXR1ZGUYBSABKAJSCGxhdG'
     'l0dWRlEhwKCWxvbmdpdHVkZRgGIAEoAlIJbG9uZ2l0dWRlEjMKBm1hcmtlchgHIAEoDjIbLmFp'
     'LmVkZ2V6LmhhbG93Lk1hcmtlckNvbG9yUgZtYXJrZXISOwoLZGV2aWNlX3R5cGUYCCABKA4yGi'
-    '5haS5lZGdlei5oYWxvdy5EZXZpY2VUeXBlUgpkZXZpY2VUeXBlEhoKCHNsZWVwaW5nGAogASgI'
-    'UghzbGVlcGluZxI1CglnZW9fZmVuY2UYZCABKAsyGC5haS5lZGdlei5oYWxvdy5HZW9GZW5jZV'
-    'IIZ2VvRmVuY2USOwoLc2Vuc29yX2RhdGEYZSADKAsyGi5haS5lZGdlei5oYWxvdy5TZW5zb3JE'
-    'YXRhUgpzZW5zb3JEYXRh');
+    '5haS5lZGdlei5oYWxvdy5EZXZpY2VUeXBlUgpkZXZpY2VUeXBlEiUKDmNoYW5uZWxfbnVtYmVy'
+    'GAkgASgNUg1jaGFubmVsTnVtYmVyEhoKCHNsZWVwaW5nGAogASgIUghzbGVlcGluZxI1CglnZW'
+    '9fZmVuY2UYZCABKAsyGC5haS5lZGdlei5oYWxvdy5HZW9GZW5jZVIIZ2VvRmVuY2USOwoLc2Vu'
+    'c29yX2RhdGEYZSADKAsyGi5haS5lZGdlei5oYWxvdy5TZW5zb3JEYXRhUgpzZW5zb3JEYXRh');
 
 @$core.Deprecated('Use haLowInterfaceStatusDescriptor instead')
 const HaLowInterfaceStatus$json = {

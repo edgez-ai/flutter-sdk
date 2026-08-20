@@ -1882,6 +1882,7 @@ class EdgezMeshSession extends ChangeNotifier {
           hasGeoFence ? beacon.geoFence.name : previous?.geoFenceName ?? '',
       geoIndex:
           hasGeoFence ? beacon.geoFence.geoIndex : previous?.geoIndex ?? 0,
+      channelNumber: beacon.channelNumber,
       sleeping: beacon.sleeping,
     ).mergeDiscovery(previous);
 

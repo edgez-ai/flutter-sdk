@@ -621,6 +621,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         ..write('|')
         ..write(node.geoIndex)
         ..write('|')
+        ..write(node.channelNumber)
+        ..write('|')
         ..write(node.sleeping)
         ..write('|')
         ..write(node.enabled)
@@ -1390,6 +1392,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   ? NodesScreen(
                       activeConnection: meshState.connection,
                       status: meshState.status,
+                      meshCountry: meshCountry,
                       users: <EdgezMeshNode>[
                         ...meshState.sortedNodes,
                       ],

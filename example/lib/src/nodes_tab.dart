@@ -8,6 +8,7 @@ class NodesScreen extends StatelessWidget {
   const NodesScreen({
     required this.activeConnection,
     required this.status,
+    required this.meshCountry,
     required this.users,
     required this.sensorSamples,
     required this.dashboardDisplays,
@@ -21,6 +22,7 @@ class NodesScreen extends StatelessWidget {
 
   final EdgezConnectionType activeConnection;
   final EdgezMeshStatus? status;
+  final String meshCountry;
   final List<EdgezMeshNode> users;
   final Map<int, List<EdgezSensorSample>> sensorSamples;
   final Map<String, ExampleDashboardDisplay> dashboardDisplays;
@@ -37,6 +39,21 @@ class NodesScreen extends StatelessWidget {
       ..sort((a, b) => a.nodeNum.compareTo(b.nodeNum));
     final discoveredUsers =
         users.where((user) => !user.isPublicChannel).toList();
+    final nodesByChannel = <int, List<EdgezMeshNode>>{};
+    for (final user in discoveredUsers) {
+      (nodesByChannel[user.channelNumber] ??= <EdgezMeshNode>[]).add(user);
+    }
+    final channelNumbers = nodesByChannel.keys.toList()
+      ..sort((a, b) {
+        if (a == 0) return 1;
+        if (b == 0) return -1;
+        return a.compareTo(b);
+      });
+    for (final nodes in nodesByChannel.values) {
+      nodes.sort((a, b) => a.resolvedDisplayName
+          .toLowerCase()
+          .compareTo(b.resolvedDisplayName.toLowerCase()));
+    }
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -57,27 +74,113 @@ class NodesScreen extends StatelessWidget {
           const SizedBox(height: 6),
           Text('Interface: ${activeConnection.name.toUpperCase()}'),
           const SizedBox(height: 16),
-          Text('Public channels',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          for (final channel in publicChannels) ...<Widget>[
-            NodeCard(
-              user: channel,
-              latestSensor: null,
-              onEnabledChanged: (enabled) =>
-                  onTogglePublicChannel(channel, enabled),
-              onTap: () => onOpenNode(channel),
+          if (publicChannels.isNotEmpty)
+            _PublicChannelsSection(
+              channels: publicChannels,
+              onTogglePublicChannel: onTogglePublicChannel,
+              onOpenNode: onOpenNode,
             ),
-            const SizedBox(height: 12),
-          ],
-          const SizedBox(height: 4),
-          Text('Discovered users / nodes',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
+          if (publicChannels.isNotEmpty) const SizedBox(height: 16),
           if (discoveredUsers.isEmpty)
             const Text(
                 'No beacon or discovery packets received yet. Connect BLE and save mesh settings to join the mesh.'),
-          for (final user in discoveredUsers) ...<Widget>[
+          for (final channelNumber in channelNumbers) ...<Widget>[
+            _ChannelNodesSection(
+              channelNumber: channelNumber,
+              frequencyKhz: _frequencyKhzForChannel(meshCountry, channelNumber),
+              users: nodesByChannel[channelNumber]!,
+              sensorSamples: sensorSamples,
+              dashboardDisplays: dashboardDisplays,
+              onRemoveNode: onRemoveNode,
+              onToggleDashboard: onToggleDashboard,
+              onOpenNode: onOpenNode,
+            ),
+            const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PublicChannelsSection extends StatelessWidget {
+  const _PublicChannelsSection({
+    required this.channels,
+    required this.onTogglePublicChannel,
+    required this.onOpenNode,
+  });
+
+  final List<EdgezMeshNode> channels;
+  final void Function(EdgezMeshNode channel, bool enabled)
+      onTogglePublicChannel;
+  final ValueChanged<EdgezMeshNode> onOpenNode;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: ExpansionTile(
+          key: const PageStorageKey<String>('public-channels'),
+          initiallyExpanded: false,
+          leading: const Icon(Icons.campaign_outlined),
+          title: const Text('Public channels'),
+          subtitle: Text(
+              '${channels.length} ${channels.length == 1 ? 'channel' : 'channels'}'),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          children: <Widget>[
+            for (final channel in channels) ...<Widget>[
+              NodeCard(
+                user: channel,
+                latestSensor: null,
+                onEnabledChanged: (enabled) =>
+                    onTogglePublicChannel(channel, enabled),
+                onTap: () => onOpenNode(channel),
+              ),
+              if (channel != channels.last) const SizedBox(height: 8),
+            ],
+          ],
+        ),
+      );
+}
+
+class _ChannelNodesSection extends StatelessWidget {
+  const _ChannelNodesSection({
+    required this.channelNumber,
+    required this.frequencyKhz,
+    required this.users,
+    required this.sensorSamples,
+    required this.dashboardDisplays,
+    required this.onRemoveNode,
+    required this.onToggleDashboard,
+    required this.onOpenNode,
+  });
+
+  final int channelNumber;
+  final int? frequencyKhz;
+  final List<EdgezMeshNode> users;
+  final Map<int, List<EdgezSensorSample>> sensorSamples;
+  final Map<String, ExampleDashboardDisplay> dashboardDisplays;
+  final ValueChanged<EdgezMeshNode> onRemoveNode;
+  final ValueChanged<EdgezMeshNode> onToggleDashboard;
+  final ValueChanged<EdgezMeshNode> onOpenNode;
+
+  @override
+  Widget build(BuildContext context) {
+    final knownChannel = channelNumber > 0;
+    final frequency = frequencyKhz;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: PageStorageKey<String>('halow-channel-$channelNumber'),
+        initiallyExpanded: false,
+        leading: const Icon(Icons.cell_tower_outlined),
+        title:
+            Text(knownChannel ? 'Channel $channelNumber' : 'Unknown channel'),
+        subtitle: Text(frequency != null
+            ? '${(frequency / 1000).toStringAsFixed(3)} MHz · ${users.length} ${users.length == 1 ? 'node' : 'nodes'}'
+            : '${users.length} ${users.length == 1 ? 'node' : 'nodes'}'),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: <Widget>[
+          for (final user in users) ...<Widget>[
             Dismissible(
               key: ValueKey<int>(user.nodeNum),
               direction: DismissDirection.endToStart,
@@ -100,12 +203,24 @@ class NodesScreen extends StatelessWidget {
                 onTap: () => onOpenNode(user),
               ),
             ),
-            const SizedBox(height: 12),
+            if (user != users.last) const SizedBox(height: 8),
           ],
         ],
       ),
     );
   }
+}
+
+int? _frequencyKhzForChannel(String country, int channelNumber) {
+  if (channelNumber <= 0) return null;
+  final baseKhz = switch (country.toUpperCase()) {
+    'AU' || 'CA' || 'NZ' || 'US' => 902000,
+    'EU' || 'GB' || 'IN' => 863000,
+    'JP' => 916500,
+    'KR' => 917500,
+    _ => null,
+  };
+  return baseKhz == null ? null : baseKhz + channelNumber * 500;
 }
 
 class NodeCard extends StatelessWidget {

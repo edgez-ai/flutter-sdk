@@ -707,6 +707,7 @@ void main() {
           userName: 'Sensor mock',
           marker: MarkerColor.MARKER_ORANGE,
           deviceType: DeviceType.DEVICE_TYPE_SENSOR,
+          channelNumber: 7,
           sensorData: <SensorData>[
             SensorData(
               type: SensorType.SENSOR_TEMPERATURE,
@@ -740,6 +741,7 @@ void main() {
       expect(node!.displayName, 'Sensor mock');
       expect(node.deviceType, 'Sensor');
       expect(node.marker, 'orange');
+      expect(node.channelNumber, 7);
       final sample = session.state.sensorSamples[node.nodeNum]!.single.data;
       expect(sample.temperature, closeTo(21.5, 0.001));
       expect(sample.accelX, closeTo(9.81, 0.001));

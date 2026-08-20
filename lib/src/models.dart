@@ -622,6 +622,7 @@ class EdgezMeshNode {
     this.deviceType = '',
     this.geoFenceName = '',
     this.geoIndex = 0,
+    this.channelNumber = 0,
     this.sleeping = false,
     this.enabled = true,
   });
@@ -638,6 +639,7 @@ class EdgezMeshNode {
   final String deviceType;
   final String geoFenceName;
   final int geoIndex;
+  final int channelNumber;
   final bool sleeping;
   final bool enabled;
 
@@ -680,6 +682,7 @@ class EdgezMeshNode {
       deviceType: deviceType,
       geoFenceName: geoFenceName,
       geoIndex: geoIndex,
+      channelNumber: channelNumber,
       sleeping: sleeping,
       enabled: enabled ?? this.enabled,
     );
@@ -707,6 +710,8 @@ class EdgezMeshNode {
       geoFenceName:
           geoFenceName.isNotEmpty ? geoFenceName : previous?.geoFenceName ?? '',
       geoIndex: geoIndex != 0 ? geoIndex : previous?.geoIndex ?? 0,
+      channelNumber:
+          channelNumber != 0 ? channelNumber : previous?.channelNumber ?? 0,
       sleeping: sleeping,
       enabled: previous?.enabled ?? enabled,
     );
@@ -728,6 +733,7 @@ class EdgezMeshNode {
       deviceType: map['deviceType'] as String? ?? '',
       geoFenceName: map['geoFenceName'] as String? ?? '',
       geoIndex: map['geoIndex'] as int? ?? 0,
+      channelNumber: map['channelNumber'] as int? ?? 0,
       sleeping: map['sleeping'] == true,
       enabled: map['enabled'] != false,
     );

@@ -1077,6 +1077,7 @@ class Beacon extends $pb.GeneratedMessage {
     $core.double? longitude,
     MarkerColor? marker,
     DeviceType? deviceType,
+    $core.int? channelNumber,
     $core.bool? sleeping,
     GeoFence? geoFence,
     $core.Iterable<SensorData>? sensorData,
@@ -1090,6 +1091,7 @@ class Beacon extends $pb.GeneratedMessage {
     if (longitude != null) result.longitude = longitude;
     if (marker != null) result.marker = marker;
     if (deviceType != null) result.deviceType = deviceType;
+    if (channelNumber != null) result.channelNumber = channelNumber;
     if (sleeping != null) result.sleeping = sleeping;
     if (geoFence != null) result.geoFence = geoFence;
     if (sensorData != null) result.sensorData.addAll(sensorData);
@@ -1124,6 +1126,8 @@ class Beacon extends $pb.GeneratedMessage {
         enumValues: MarkerColor.values)
     ..aE<DeviceType>(8, _omitFieldNames ? '' : 'deviceType',
         enumValues: DeviceType.values)
+    ..aI(9, _omitFieldNames ? '' : 'channelNumber',
+        fieldType: $pb.PbFieldType.OU3)
     ..aOB(10, _omitFieldNames ? '' : 'sleeping')
     ..aOM<GeoFence>(100, _omitFieldNames ? '' : 'geoFence',
         subBuilder: GeoFence.create)
@@ -1222,28 +1226,37 @@ class Beacon extends $pb.GeneratedMessage {
   @$pb.TagNumber(8)
   void clearDeviceType() => $_clearField(8);
 
+  @$pb.TagNumber(9)
+  $core.int get channelNumber => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set channelNumber($core.int value) => $_setUnsignedInt32(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasChannelNumber() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearChannelNumber() => $_clearField(9);
+
   @$pb.TagNumber(10)
-  $core.bool get sleeping => $_getBF(8);
+  $core.bool get sleeping => $_getBF(9);
   @$pb.TagNumber(10)
-  set sleeping($core.bool value) => $_setBool(8, value);
+  set sleeping($core.bool value) => $_setBool(9, value);
   @$pb.TagNumber(10)
-  $core.bool hasSleeping() => $_has(8);
+  $core.bool hasSleeping() => $_has(9);
   @$pb.TagNumber(10)
   void clearSleeping() => $_clearField(10);
 
   @$pb.TagNumber(100)
-  GeoFence get geoFence => $_getN(9);
+  GeoFence get geoFence => $_getN(10);
   @$pb.TagNumber(100)
   set geoFence(GeoFence value) => $_setField(100, value);
   @$pb.TagNumber(100)
-  $core.bool hasGeoFence() => $_has(9);
+  $core.bool hasGeoFence() => $_has(10);
   @$pb.TagNumber(100)
   void clearGeoFence() => $_clearField(100);
   @$pb.TagNumber(100)
-  GeoFence ensureGeoFence() => $_ensure(9);
+  GeoFence ensureGeoFence() => $_ensure(10);
 
   @$pb.TagNumber(101)
-  $pb.PbList<SensorData> get sensorData => $_getList(10);
+  $pb.PbList<SensorData> get sensorData => $_getList(11);
 }
 
 class HaLowInterfaceStatus extends $pb.GeneratedMessage {

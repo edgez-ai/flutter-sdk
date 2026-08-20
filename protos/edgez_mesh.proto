@@ -201,6 +201,7 @@ message Beacon {
   float longitude = 6;
   MarkerColor marker = 7;
   DeviceType device_type = 8;
+  uint32 channel_number = 9;
   bool sleeping = 10;
   GeoFence geo_fence = 100;
   repeated SensorData sensor_data = 101;
