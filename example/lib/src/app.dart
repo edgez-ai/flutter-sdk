@@ -1663,8 +1663,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   peer: callPeer,
                   onAnswer: _answerCall,
                   onEnd: _endCall,
-                  onTalkStart: () => session.setOpenManetTransmit(true),
-                  onTalkEnd: () => session.setOpenManetTransmit(false),
+                  onTalkStart: () => session.setVoiceTransmit(true),
+                  onTalkEnd: () => session.setVoiceTransmit(false),
                 )
               : provisionMode
                   ? ProvisioningScreen(

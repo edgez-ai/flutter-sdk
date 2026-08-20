@@ -422,14 +422,21 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('stopLiveVoiceAudio');
   }
 
-  Future<void> startOpenManetComms(int target) {
-    final isChannel = EdgezPublicChannels.isChannelNodeNum(target);
-    if (!isChannel && (target <= 0xffff || target > 0xffffffffffff)) {
-      throw ArgumentError.value(target, 'target', 'Invalid voice target');
+  Future<void> stopLiveVoiceCapture() {
+    return _transport.invokeMethod<void>('stopLiveVoiceCapture');
+  }
+
+  Future<void> startOpenManetComms(int talkgroupPort) {
+    if (!EdgezPublicChannels.isChannelNodeNum(talkgroupPort)) {
+      throw ArgumentError.value(
+        talkgroupPort,
+        'talkgroupPort',
+        'Unsupported OpenMANET talkgroup port',
+      );
     }
     return _transport.invokeMethod<void>(
       'startOpenManetComms',
-      isChannel ? {'talkgroupPort': target} : {'target': target},
+      {'talkgroupPort': talkgroupPort},
     );
   }
 

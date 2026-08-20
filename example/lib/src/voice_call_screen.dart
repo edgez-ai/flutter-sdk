@@ -89,7 +89,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
       if (!mounted) return;
       setState(() => transmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Talkgroup audio failed: $error')),
+        SnackBar(content: Text('Voice transmission failed: $error')),
       );
     }
   }
@@ -165,7 +165,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                   _status,
                   style: const TextStyle(color: Colors.white70, fontSize: 18),
                 ),
-                if (isOpenManet) ...<Widget>[
+                if (widget.call.phase ==
+                    EdgezVoiceCallPhase.active) ...<Widget>[
                   const SizedBox(height: 28),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,

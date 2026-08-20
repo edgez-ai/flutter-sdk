@@ -1097,7 +1097,7 @@ void main() {
 
       await session.endVoiceCall();
       expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.idle);
-      expect(ble.callsFor('stopOpenManetComms'), hasLength(1));
+      expect(ble.callsFor('stopLiveVoiceAudio'), hasLength(1));
       await ble.flushEvents();
       expect(ble.callsFor('sendVoiceCallFrame'), hasLength(2));
 
@@ -1172,6 +1172,12 @@ void main() {
       voiceSdk.emitVoice(remoteNode, 1);
       await voiceSdk.flush();
       expect(session.state.voiceCall.phase, EdgezVoiceCallPhase.active);
+      expect(voiceSdk.startLiveVoiceAudioCalls, 0);
+
+      await session.setVoiceTransmit(true);
+      expect(voiceSdk.startLiveVoiceAudioCalls, 1);
+      await session.setVoiceTransmit(false);
+      expect(voiceSdk.stopLiveVoiceCaptureCalls, 1);
 
       voiceSdk.plaintexts[2] = _voicePacket(4, callId, 2, <int>[11]);
       voiceSdk.plaintexts[3] = _voicePacket(4, callId, 3, <int>[22]);
@@ -1874,6 +1880,8 @@ class _OrderedVoiceSdk extends EdgezMeshSdk {
   final List<int> decryptStarted = <int>[];
   final List<int> played = <int>[];
   final Completer<void> releaseFirstAudio = Completer<void>();
+  int startLiveVoiceAudioCalls = 0;
+  int stopLiveVoiceCaptureCalls = 0;
 
   @override
   Stream<EdgezMeshEvent> get events => _events.stream;
@@ -1897,7 +1905,14 @@ class _OrderedVoiceSdk extends EdgezMeshSdk {
   Future<bool> requestMicrophonePermission() async => true;
 
   @override
-  Future<void> startLiveVoiceAudio() async {}
+  Future<void> startLiveVoiceAudio() async {
+    startLiveVoiceAudioCalls++;
+  }
+
+  @override
+  Future<void> stopLiveVoiceCapture() async {
+    stopLiveVoiceCaptureCalls++;
+  }
 
   @override
   Future<void> stopLiveVoiceAudio() async {}

@@ -34,6 +34,7 @@ internal class EdgezLiveVoiceAudio(
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val executor = Executors.newSingleThreadExecutor()
     private val capturing = AtomicBoolean(false)
+    @Volatile private var captureGeneration = 0
     private var player: AudioTrack? = null
     private var playbackFramesBuffered = 0
     private var lastPlaybackFrameAtMs = 0L
@@ -47,6 +48,7 @@ internal class EdgezLiveVoiceAudio(
     fun start() {
         configureCallAudio()
         if (!capturing.compareAndSet(false, true)) return
+        val generation = ++captureGeneration
         executor.execute {
             val minimum = AudioRecord.getMinBufferSize(
                 CALL_SAMPLE_RATE,
@@ -77,9 +79,11 @@ internal class EdgezLiveVoiceAudio(
                     "Live voice AudioRecord initialization failed"
                 }
                 recorder.startRecording()
-                while (capturing.get()) {
+                while (capturing.get() && generation == captureGeneration) {
                     var offset = 0
-                    while (offset < pcm.size && capturing.get()) {
+                    while (offset < pcm.size && capturing.get() &&
+                        generation == captureGeneration
+                    ) {
                         val read = recorder.read(
                             pcm,
                             offset,
@@ -89,7 +93,9 @@ internal class EdgezLiveVoiceAudio(
                         if (read <= 0) break
                         offset += read
                     }
-                    if (offset == pcm.size && capturing.get()) {
+                    if (offset == pcm.size && capturing.get() &&
+                        generation == captureGeneration
+                    ) {
                         val decision = voiceDetector.analyze(pcm)
                         if (decision.speechStarted) {
                             preRollFrame?.let { frame -> onEncodedFrame(encodeImaAdpcm(frame)) }
@@ -116,9 +122,14 @@ internal class EdgezLiveVoiceAudio(
     }
 
     fun stop() {
-        capturing.set(false)
+        stopCapture()
         releasePlayback()
         restoreCallAudio()
+    }
+
+    fun stopCapture() {
+        captureGeneration++
+        capturing.set(false)
     }
 
     @Synchronized

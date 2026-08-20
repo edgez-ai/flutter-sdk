@@ -588,12 +588,6 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Voice call active',
       ),
     );
-    try {
-      await sdk.startOpenManetComms(_state.voiceCall.peerNodeNum!);
-    } catch (_) {
-      await _resetVoiceCall();
-      rethrow;
-    }
   }
 
   Future<void> endVoiceCall() async {
@@ -610,20 +604,31 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  Future<void> setOpenManetTransmit(bool enabled) async {
+  Future<void> setVoiceTransmit(bool enabled) async {
     final peerNodeNum = _state.voiceCall.peerNodeNum;
     if (!_state.voiceCall.isActive || peerNodeNum == null) {
       throw StateError('No realtime voice session is active');
     }
-    await sdk.setOpenManetTransmit(enabled);
+    if (EdgezPublicChannels.isChannelNodeNum(peerNodeNum)) {
+      await sdk.setOpenManetTransmit(enabled);
+    } else if (enabled) {
+      await sdk.startLiveVoiceAudio();
+    } else {
+      await sdk.stopLiveVoiceCapture();
+    }
   }
 
   Future<void> _resetVoiceCall({String statusLine = 'Voice call ended'}) async {
     final peerNodeNum = _state.voiceCall.peerNodeNum;
-    final isOpenManet = peerNodeNum != null;
+    final isChannel = peerNodeNum != null &&
+        EdgezPublicChannels.isChannelNodeNum(peerNodeNum);
     _voiceCallTimeout?.cancel();
     _pendingVoiceAudio = null;
-    if (isOpenManet) await sdk.stopOpenManetComms();
+    if (isChannel) {
+      await sdk.stopOpenManetComms();
+    } else if (peerNodeNum != null) {
+      await sdk.stopLiveVoiceAudio();
+    }
     _setState(
       _state.copyWith(
         voiceCall: const EdgezVoiceCallState(),
@@ -2885,12 +2890,6 @@ class EdgezMeshSession extends ChangeNotifier {
                 statusLine: 'Voice call active',
               ),
             );
-            try {
-              await sdk.startOpenManetComms(fromNode);
-            } catch (_) {
-              await _resetVoiceCall();
-              rethrow;
-            }
           }
         case _callEnd:
           if (call.callId == packet.callId) await _resetVoiceCall();

@@ -66,11 +66,9 @@ void main() {
     );
     expect(() => sdk.startOpenManetComms(3), throwsArgumentError);
 
-    await sdk.startOpenManetComms(0x223344556677);
-    expect(calls.last.method, 'startOpenManetComms');
     expect(
-      (calls.last.arguments as Map<Object?, Object?>)['target'],
-      0x223344556677,
+      () => sdk.startOpenManetComms(0x223344556677),
+      throwsArgumentError,
     );
   });
 
