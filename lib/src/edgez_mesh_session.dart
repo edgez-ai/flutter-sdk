@@ -1943,6 +1943,7 @@ class EdgezMeshSession extends ChangeNotifier {
       deviceType: previous?.deviceType ?? 'Unknown',
       geoFenceName: previous?.geoFenceName ?? '',
       geoIndex: previous?.geoIndex ?? 0,
+      channelNumber: previous?.channelNumber ?? 0,
       sleeping: previous?.sleeping ?? false,
     );
   }

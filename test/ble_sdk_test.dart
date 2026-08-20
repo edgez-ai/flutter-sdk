@@ -723,11 +723,11 @@ void main() {
             ),
             SensorData(
               type: SensorType.SENSOR_LATITUDE,
-              floatValue: 0,
+              floatValue: 59.3293,
             ),
             SensorData(
               type: SensorType.SENSOR_LONGITUDE,
-              floatValue: 0,
+              floatValue: 18.0686,
             ),
           ],
         ),
@@ -746,8 +746,8 @@ void main() {
       expect(sample.temperature, closeTo(21.5, 0.001));
       expect(sample.accelX, closeTo(9.81, 0.001));
       expect(sample.binaryLengthBytes, 4096);
-      expect(sample.latitude, isNull);
-      expect(sample.longitude, isNull);
+      expect(sample.latitude, closeTo(59.3293, 0.0001));
+      expect(sample.longitude, closeTo(18.0686, 0.0001));
 
       session.dispose();
     });

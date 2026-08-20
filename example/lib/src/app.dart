@@ -875,13 +875,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     }
   }
 
-  Future<void> _saveAppSettings({
-    int? runtimeFrequencyKhz,
-    bool persistRadio = true,
+  Future<void> _applyMeshSettings(
+    int selectedFrequencyKhz, {
+    required bool runtimeOverride,
   }) async {
     final parsedMaxHop = int.tryParse(maxHop) ?? 0;
-    if (persistRadio) await _persistMeshRadioSettings();
-    final selectedFrequencyKhz = runtimeFrequencyKhz ?? defaultMeshFrequencyKhz;
     final identity = await identityStore.updateName(userName);
     final location = shareLocation && !deviceGpsEnabled
         ? await _getBestKnownLocation()
@@ -923,7 +921,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     if (mounted) {
       setState(() {
         meshFrequencyKhz = selectedFrequencyKhz;
-        runtimeMeshFrequencyOverride = runtimeFrequencyKhz != null;
+        runtimeMeshFrequencyOverride = runtimeOverride;
       });
     }
     final currentSettings = session.state.deviceSettings;
@@ -931,6 +929,14 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         currentSettings.deviceGpsEnabled != deviceGpsEnabled) {
       await session.setDeviceGpsEnabled(deviceGpsEnabled);
     }
+  }
+
+  Future<void> _saveAppSettings() async {
+    await _persistMeshRadioSettings();
+    await _applyMeshSettings(
+      defaultMeshFrequencyKhz,
+      runtimeOverride: false,
+    );
   }
 
   Future<void> _persistMeshRadioSettings() =>
@@ -946,9 +952,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     if (!deviceModeEnabled) {
       if (session.state.connection == EdgezConnectionType.none) return;
       try {
-        await _saveAppSettings(
-          runtimeFrequencyKhz: frequencyKhz,
-          persistRadio: false,
+        await _applyMeshSettings(
+          frequencyKhz,
+          runtimeOverride: true,
         );
       } catch (error) {
         scaffoldMessengerKey.currentState?.showSnackBar(
