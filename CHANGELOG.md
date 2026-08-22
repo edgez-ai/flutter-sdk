@@ -1,3 +1,10 @@
+## 0.3.1
+
+- Added cross-channel discovery and channel switching support.
+- Improved voice-call handling and audio lifecycle behavior.
+- Improved node-list presentation, filtering, and example-app navigation.
+- Updated protocol compatibility tests and BLE session coverage.
+
 ## 0.3.0
 
 - Added OpenMANET public text, recorded-voice, and push-to-talk channels with
