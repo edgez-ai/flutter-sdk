@@ -242,8 +242,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
       meshBandwidthMhz = settings.meshBandwidthMhz;
     }
     _normalizeRadioSelection();
-    if (settings.userPrivateKey.length == 32 &&
-        (settings.userIdHigh != 0 || settings.userIdLow != 0)) {
+    final hasDeviceUuid = settings.userIdHigh != 0 || settings.userIdLow != 0;
+    final hasDeviceKeyPair = settings.userPrivateKey.length == 32 &&
+        settings.userPublicKey.length == 32;
+    if (hasDeviceUuid && hasDeviceKeyPair) {
       deviceIdentity = EdgezUserIdentity(
         userUuid: _uuid(settings.userIdHigh, settings.userIdLow),
         userIdHigh: settings.userIdHigh,
@@ -252,6 +254,11 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         privateKey: settings.userPrivateKey,
         publicKey: settings.userPublicKey,
       );
+    } else {
+      // An unprovisioned device has no identity of its own. Generate one here
+      // after reading the device instead of falling back to the app user's
+      // identity from the regular Settings screen.
+      deviceIdentity = EdgezIdentityStore().createIdentity(name: userName);
     }
   }
 
@@ -259,6 +266,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     final device = selectedBle;
     if (device == null) return;
     setState(() {
+      // Never carry an identity candidate between provisioning targets. The
+      // device report will restore a complete existing identity or generate a
+      // new one when the report contains no UUID.
+      deviceIdentity = EdgezIdentityStore().createIdentity(name: userName);
       waitingForSettings = true;
       requestedAuthorization = false;
       requestedSettings = false;

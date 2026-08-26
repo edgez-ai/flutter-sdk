@@ -286,6 +286,7 @@ class EdgezMeshSession extends ChangeNotifier {
   String? _lastBleDeviceId;
   var _locationUpdateInFlight = false;
   var _publicChannelSyncInFlight = false;
+  _PendingDeviceSettingsCommit? _pendingDeviceSettingsCommit;
   String? _lastInitKey;
   var _voiceCallSequence = 1;
   Future<void> _voiceFramePipeline = Future<void>.value();
@@ -954,10 +955,22 @@ class EdgezMeshSession extends ChangeNotifier {
     List<EdgezSensorScriptConfig> scripts = const <EdgezSensorScriptConfig>[],
   }) async {
     final settingsIdentity = identity ?? _lastMeshConfig?.identity;
+    final pending = _PendingDeviceSettingsCommit(settings);
+    final previous = _pendingDeviceSettingsCommit;
+    if (previous != null && !previous.completer.isCompleted) {
+      throw StateError('Another device settings save is still pending');
+    }
+    _pendingDeviceSettingsCommit = pending;
     try {
       await sdk.sendDeviceSettings(
         settings: settings,
         identity: settingsIdentity,
+      );
+      await pending.completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException(
+          'Device did not acknowledge the settings save',
+        ),
       );
       for (final script in scripts) {
         await sdk.sendSensorScript(script);
@@ -970,6 +983,10 @@ class EdgezMeshSession extends ChangeNotifier {
     } catch (error) {
       _setState(_state.copyWith(statusLine: 'Device settings failed: $error'));
       rethrow;
+    } finally {
+      if (identical(_pendingDeviceSettingsCommit, pending)) {
+        _pendingDeviceSettingsCommit = null;
+      }
     }
   }
 
@@ -1627,6 +1644,14 @@ class EdgezMeshSession extends ChangeNotifier {
 
     if (packet.hasDeviceSettings()) {
       final settings = packet.deviceSettings;
+      final pending = _pendingDeviceSettingsCommit;
+      if (pending != null &&
+          !pending.completer.isCompleted &&
+          settings.action ==
+              proto.DeviceSettingsAction.DEVICE_SETTINGS_REPORT &&
+          pending.matches(settings)) {
+        pending.completer.complete();
+      }
       _setState(_state.copyWith(
         statusLine: 'Device settings received',
         deviceSettings: EdgezDeviceSettings(
@@ -1811,7 +1836,14 @@ class EdgezMeshSession extends ChangeNotifier {
         _formatUuid(beacon.userIdHigh.toInt(), beacon.userIdLow.toInt());
     final localIdentity = _lastMeshConfig?.identity;
     final localNode = _state.status?.macAddress;
-    final isLocalIdentity = localIdentity != null &&
+    // A provisioned beacon/sensor/relay may intentionally carry the owner's
+    // identity. Only user/legacy user beacons represent the phone itself;
+    // otherwise identity-based filtering hides real hardware nodes.
+    final isUserIdentityBeacon =
+        beacon.deviceType == proto.DeviceType.DEVICE_TYPE_UNSPECIFIED ||
+            beacon.deviceType == proto.DeviceType.DEVICE_TYPE_USER;
+    final isLocalIdentity = isUserIdentityBeacon &&
+        localIdentity != null &&
         ((localIdentity.userUuid.isNotEmpty &&
                 localIdentity.userUuid == userUuid) ||
             ((localIdentity.userIdHigh != 0 || localIdentity.userIdLow != 0) &&
@@ -3203,6 +3235,34 @@ class _DecodedBeaconUserName {
 
   final String name;
   final String marker;
+}
+
+class _PendingDeviceSettingsCommit {
+  _PendingDeviceSettingsCommit(this.expected);
+
+  final EdgezDeviceSettings expected;
+  final Completer<void> completer = Completer<void>();
+
+  bool matches(proto.DeviceSettings actual) {
+    final expectedType = switch (expected.deviceType.trim().toLowerCase()) {
+      'user' => proto.DeviceType.DEVICE_TYPE_USER,
+      'gateway' => proto.DeviceType.DEVICE_TYPE_GATEWAY,
+      'beacon' => proto.DeviceType.DEVICE_TYPE_BEACON,
+      'sensor' => proto.DeviceType.DEVICE_TYPE_SENSOR,
+      'relay' => proto.DeviceType.DEVICE_TYPE_RELAY,
+      'unknown' => proto.DeviceType.DEVICE_TYPE_UNKNOWN,
+      _ => proto.DeviceType.DEVICE_TYPE_RELAY,
+    };
+    final requestedMaxHop = expected.maxHop.clamp(0, 255);
+    final normalizedMaxHop = requestedMaxHop == 0 ? 2 : requestedMaxHop;
+    return actual.meshId == expected.meshId &&
+        actual.deviceType == expectedType &&
+        actual.meshFrequencyKhz == expected.meshFrequencyKhz &&
+        actual.meshBandwidthMhz == expected.meshBandwidthMhz &&
+        actual.beaconIntervalSeconds ==
+            expected.beaconIntervalSeconds.clamp(5, 3600) &&
+        actual.maxHop == normalizedMaxHop;
+  }
 }
 
 class _PendingVoiceMessage {

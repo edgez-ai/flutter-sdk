@@ -971,9 +971,16 @@ void main() {
       expect(session.state.selfLocation!.longitude, closeTo(18.0686, 0.001));
       expect(session.state.nodes, isNot(contains(localNode)));
 
-      await session.setDeviceGpsEnabled(false);
+      final save = session.setDeviceGpsEnabled(false);
+      await Future<void>.delayed(Duration.zero);
       final settingsPacket = ble.callsFor('sendPacket').last.packet;
       expect(settingsPacket.deviceSettings.deviceGpsEnabled, isFalse);
+      final report = settingsPacket.deviceSettings.deepCopy()
+        ..action = DeviceSettingsAction.DEVICE_SETTINGS_REPORT
+        ..maxHop = 2;
+      ble.emitPacket(NetworkPacket(deviceSettings: report));
+      await ble.flushEvents();
+      await save;
 
       session.dispose();
     });
@@ -1228,6 +1235,42 @@ void main() {
 
       expect(session.state.nodes.values.where((node) => !node.isPublicChannel),
           isEmpty);
+      session.dispose();
+    });
+
+    test('session retains a hardware beacon owned by the local identity',
+        () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final identity = await _newIdentity('Local user', 10, 20);
+      await session.initializeMesh(EdgezMeshConfig(identity: identity));
+
+      const beaconNode = 0x02000e36aca7;
+      ble.emitPacket(
+        NetworkPacket(
+          from: Int64(beaconNode),
+          operation: Operation.BROADCAST,
+          interface: Interface.HALOW,
+          beacon: Beacon(
+            userIdHigh: Int64(identity.userIdHigh),
+            userIdLow: Int64(identity.userIdLow),
+            userName: identity.name,
+            userPublicKey: identity.publicKey,
+            deviceType: DeviceType.DEVICE_TYPE_BEACON,
+            channelNumber: 27,
+            sensorData: <SensorData>[
+              SensorData(
+                type: SensorType.SENSOR_ACCEL_X,
+                floatValue: 1.25,
+              ),
+            ],
+          ),
+        ),
+      );
+      await ble.flushEvents();
+
+      expect(session.state.nodes[beaconNode]?.deviceType, 'Beacon');
+      expect(session.state.nodes[beaconNode]?.channelNumber, 27);
+      expect(session.state.sensorSamples[beaconNode], hasLength(1));
       session.dispose();
     });
 
