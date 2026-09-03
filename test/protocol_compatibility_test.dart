@@ -300,7 +300,7 @@ void main() {
     );
   });
 
-  test('topology reports become five-minute RSSI links', () async {
+  test('topology reports become three-minute RSSI links', () async {
     final fakeSdk = _FakeEdgezMeshSdk();
     final session = EdgezMeshSession(sdk: fakeSdk);
     final reportPacket = NetworkPacket(
@@ -336,6 +336,30 @@ void main() {
           .rssiDbm,
       isNull,
     );
+
+    session.dispose();
+    await fakeSdk.close();
+  });
+
+  test('topology links expire without another report', () async {
+    final fakeSdk = _FakeEdgezMeshSdk();
+    final session = EdgezMeshSession(
+      sdk: fakeSdk,
+      topologyReportValidity: const Duration(milliseconds: 20),
+    );
+    fakeSdk.addPacket(
+      NetworkPacket(
+        from: Int64(0x100),
+        operation: Operation.BROADCAST,
+        interface: Interface.HALOW,
+        report: Report(peers: <Peer>[Peer(id: Int64(0x200), rssi: 934)]),
+      ).writeToBuffer(),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(session.state.topologyLinks, hasLength(1));
+
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(session.state.topologyLinks, isEmpty);
 
     session.dispose();
     await fakeSdk.close();

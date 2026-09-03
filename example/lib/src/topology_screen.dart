@@ -62,7 +62,7 @@ class TopologyScreen extends StatelessWidget {
           Text('Radio topology',
               style: Theme.of(context).textTheme.titleMedium),
           Text(
-            'Direct peers and beacons heard in the last 5 minutes',
+            'Direct peers and beacons heard in the last 3 minutes',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
@@ -75,7 +75,7 @@ class TopologyScreen extends StatelessWidget {
                 children: <Widget>[
                   _Metric(label: 'Nodes', value: '${nodeIds.length}'),
                   _Metric(label: 'Links', value: '${links.length}'),
-                  const _Metric(label: 'Window', value: '5 min'),
+                  const _Metric(label: 'Window', value: '3 min'),
                 ],
               ),
             ),

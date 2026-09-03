@@ -253,6 +253,7 @@ class EdgezMeshSession extends ChangeNotifier {
     this.speedTestReliableDelivery = false,
     this.deviceStatusTimeout = const Duration(seconds: 8),
     this.halowBootRetryDelay = const Duration(seconds: 3),
+    this.topologyReportValidity = const Duration(minutes: 3),
   }) : sdk = sdk ?? EdgezMeshSdk() {
     _subscription = this.sdk.events.listen(_handleEvent);
   }
@@ -265,6 +266,7 @@ class EdgezMeshSession extends ChangeNotifier {
   final bool speedTestReliableDelivery;
   final Duration deviceStatusTimeout;
   final Duration halowBootRetryDelay;
+  final Duration topologyReportValidity;
   late final StreamSubscription<EdgezMeshEvent> _subscription;
   EdgezMeshState _state = EdgezMeshState.initial();
   // Device logs share the BLE realtime characteristic with voice and speed
@@ -275,6 +277,7 @@ class EdgezMeshSession extends ChangeNotifier {
   Timer? _deviceStatusTimeout;
   Timer? _halowBootRetryTimer;
   Timer? _routingTableTimeout;
+  Timer? _topologyExpiryTimer;
   Timer? _locationUpdateTimer;
   Duration? _locationUpdateInterval;
   Timer? _voiceCallTimeout;
@@ -1714,7 +1717,7 @@ class EdgezMeshSession extends ChangeNotifier {
     if (reporter == 0) return;
     final localNode = _state.status?.macAddress ?? 0;
     final now = DateTime.now().millisecondsSinceEpoch;
-    const windowMs = 5 * 60 * 1000;
+    final windowMs = topologyReportValidity.inMilliseconds;
     final latestByPair = <String, EdgezTopologyLink>{};
     final sensorSamples =
         Map<int, List<EdgezSensorSample>>.of(_state.sensorSamples);
@@ -1767,6 +1770,37 @@ class EdgezMeshSession extends ChangeNotifier {
         statusLine: 'Topology report received',
       ),
     );
+    _scheduleTopologyExpiry(links, now);
+  }
+
+  void _scheduleTopologyExpiry(
+    List<EdgezTopologyLink> links,
+    int nowMs,
+  ) {
+    _topologyExpiryTimer?.cancel();
+    _topologyExpiryTimer = null;
+    if (links.isEmpty) return;
+
+    final earliestExpiryMs = links
+        .map((link) => link.lastSeenMs + topologyReportValidity.inMilliseconds)
+        .reduce((left, right) => left < right ? left : right);
+    final delayMs = earliestExpiryMs > nowMs ? earliestExpiryMs - nowMs : 0;
+    _topologyExpiryTimer = Timer(
+      Duration(milliseconds: delayMs + 1),
+      _expireTopologyLinks,
+    );
+  }
+
+  void _expireTopologyLinks() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final cutoff = now - topologyReportValidity.inMilliseconds;
+    final links = _state.topologyLinks
+        .where((link) => link.lastSeenMs > cutoff)
+        .toList(growable: false);
+    if (links.length != _state.topologyLinks.length) {
+      _setState(_state.copyWith(topologyLinks: links));
+    }
+    _scheduleTopologyExpiry(links, now);
   }
 
   void _handleRoutingTable(proto.NetworkPacket packet) {
@@ -3124,6 +3158,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _deviceStatusTimeout?.cancel();
     _halowBootRetryTimer?.cancel();
     _routingTableTimeout?.cancel();
+    _topologyExpiryTimer?.cancel();
     _stopLocationTracking();
     _voiceCallTimeout?.cancel();
     _pendingVoiceMessages.clear();
