@@ -756,6 +756,91 @@ class AppLocalizationsDe extends AppLocalizations {
   String get last6Hours => 'Letzte 6 Stunden';
 
   @override
+  String get switchTo2d => 'Zu 2D wechseln';
+
+  @override
+  String get switchTo3d => 'Zu 3D wechseln';
+
+  @override
+  String get useDayMap => 'Tageskarte verwenden';
+
+  @override
+  String get useNightMap => 'Nachtkarte verwenden';
+
+  @override
+  String get useStandardMap => 'Standardkarte verwenden';
+
+  @override
+  String get useSatelliteImagery => 'Satellitenbilder verwenden';
+
+  @override
+  String downloadMapQuestion(String region) {
+    return 'Karte herunterladen: $region?';
+  }
+
+  @override
+  String get mapCachedDescription =>
+      'Sie wird für die Offline-Nutzung zwischengespeichert.';
+
+  @override
+  String get noNodesSharingLocation =>
+      'Keine Mesh-Knoten teilen ihren Standort';
+
+  @override
+  String get unableChangeMap => 'Kartenansicht kann nicht geändert werden';
+
+  @override
+  String get zoomForMap =>
+      'In eine nicht gespeicherte Region zoomen, um die Detailkarte herunterzuladen.';
+
+  @override
+  String get deviceLicenseInvalid => 'Gerätelizenz ungültig';
+
+  @override
+  String get licenseNoResponse =>
+      'Das Gerät hat keine gültige Lizenzantwort geliefert.';
+
+  @override
+  String get provisioningCannotContinue =>
+      'Die Bereitstellung kann auf diesem Gerät nicht fortgesetzt werden.';
+
+  @override
+  String get ok => 'OK';
+
+  @override
+  String get selectDeviceMode => 'Beacon-, Sensor- oder Relay-Modus auswählen';
+
+  @override
+  String stepProgress(int current, int total, String title) {
+    return 'Schritt $current von $total: $title';
+  }
+
+  @override
+  String get provisioningUnavailable => 'Bereitstellung ist nicht verfügbar.';
+
+  @override
+  String get beaconModeDescription =>
+      'Sendet ein Geräteprofil und den Standort.';
+
+  @override
+  String get sensorModeDescription =>
+      'Sendet ein Geräteprofil und Sensorwerte.';
+
+  @override
+  String get relayModeDescription =>
+      'Erweitert die Mesh-Abdeckung ohne Geräteprofil.';
+
+  @override
+  String get chooseDeviceMode => 'Wähle, wie dieses EdgeZ-Gerät arbeitet.';
+
+  @override
+  String get regenerateDeviceId => 'Geräte-ID neu erzeugen';
+
+  @override
+  String get deviceGpsWakeDescription =>
+      'Regelmäßig für Positionsbestimmung aufwachen und Empfänger ausschalten';
+
+  @override
   String get dashboardEmptyDescription =>
       'Füge einen Knoten über seine Dashboard-Schaltfläche hinzu und wähle die Visualisierung in den Gerätedetails.';
 

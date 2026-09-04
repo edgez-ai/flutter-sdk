@@ -755,6 +755,94 @@ class AppLocalizationsEs extends AppLocalizations {
   String get last6Hours => 'Últimas 6 horas';
 
   @override
+  String get switchTo2d => 'Cambiar a 2D';
+
+  @override
+  String get switchTo3d => 'Cambiar a 3D';
+
+  @override
+  String get useDayMap => 'Usar mapa diurno';
+
+  @override
+  String get useNightMap => 'Usar mapa nocturno';
+
+  @override
+  String get useStandardMap => 'Usar mapa estándar';
+
+  @override
+  String get useSatelliteImagery => 'Usar imágenes satelitales';
+
+  @override
+  String downloadMapQuestion(String region) {
+    return '¿Descargar mapa: $region?';
+  }
+
+  @override
+  String get mapCachedDescription =>
+      'Se almacenará en caché para usarlo sin conexión.';
+
+  @override
+  String get noNodesSharingLocation =>
+      'Ningún nodo de malla comparte su ubicación';
+
+  @override
+  String get unableChangeMap => 'No se puede cambiar la vista del mapa';
+
+  @override
+  String get zoomForMap =>
+      'Amplía una región no almacenada para descargar su mapa detallado.';
+
+  @override
+  String get deviceLicenseInvalid => 'Licencia del dispositivo no válida';
+
+  @override
+  String get licenseNoResponse =>
+      'El dispositivo no devolvió una respuesta de licencia válida.';
+
+  @override
+  String get provisioningCannotContinue =>
+      'No se puede continuar el aprovisionamiento en este dispositivo.';
+
+  @override
+  String get ok => 'Aceptar';
+
+  @override
+  String get selectDeviceMode =>
+      'Selecciona el modo Baliza, Sensor o Repetidor';
+
+  @override
+  String stepProgress(int current, int total, String title) {
+    return 'Paso $current de $total: $title';
+  }
+
+  @override
+  String get provisioningUnavailable =>
+      'El aprovisionamiento no está disponible.';
+
+  @override
+  String get beaconModeDescription =>
+      'Anuncia un perfil de dispositivo y su ubicación.';
+
+  @override
+  String get sensorModeDescription =>
+      'Anuncia un perfil de dispositivo y lecturas del sensor.';
+
+  @override
+  String get relayModeDescription =>
+      'Amplía la cobertura de malla sin perfil de dispositivo.';
+
+  @override
+  String get chooseDeviceMode =>
+      'Elige cómo funcionará este dispositivo EdgeZ.';
+
+  @override
+  String get regenerateDeviceId => 'Regenerar ID del dispositivo';
+
+  @override
+  String get deviceGpsWakeDescription =>
+      'Activar periódicamente para obtener la posición y apagar el receptor';
+
+  @override
   String get dashboardEmptyDescription =>
       'Usa el botón del panel de un nodo para añadirlo y elige su visualización en los detalles del dispositivo.';
 

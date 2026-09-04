@@ -428,8 +428,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
-            Text(AppLocalizations.of(context).stepProgress(step.index + 1, 8,
-                _localizedStepTitle(AppLocalizations.of(context), step)),
+            Text(
+                AppLocalizations.of(context).stepProgress(step.index + 1, 8,
+                    _localizedStepTitle(AppLocalizations.of(context), step)),
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text('Interface: ${state.connection.name.toUpperCase()}'),
@@ -437,7 +438,8 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
                 style: Theme.of(context).textTheme.bodySmall),
             if (state.status?.licenseStatus case final status?
                 when _isRejectedLicense(status))
-              Text('${status.label}. ${AppLocalizations.of(context).provisioningUnavailable}',
+              Text(
+                  '${status.label}. ${AppLocalizations.of(context).provisioningUnavailable}',
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (error != null) ...<Widget>[
               const SizedBox(height: 8),

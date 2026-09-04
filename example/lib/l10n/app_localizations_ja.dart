@@ -745,6 +745,82 @@ class AppLocalizationsJa extends AppLocalizations {
   String get last6Hours => '過去6時間';
 
   @override
+  String get switchTo2d => '2D に切り替え';
+
+  @override
+  String get switchTo3d => '3D に切り替え';
+
+  @override
+  String get useDayMap => '昼間マップを使用';
+
+  @override
+  String get useNightMap => '夜間マップを使用';
+
+  @override
+  String get useStandardMap => '標準マップを使用';
+
+  @override
+  String get useSatelliteImagery => '衛星画像を使用';
+
+  @override
+  String downloadMapQuestion(String region) {
+    return 'マップをダウンロード: $region?';
+  }
+
+  @override
+  String get mapCachedDescription => 'オフライン使用のためにキャッシュされます。';
+
+  @override
+  String get noNodesSharingLocation => '位置を共有しているメッシュノードはありません';
+
+  @override
+  String get unableChangeMap => 'マップ表示を変更できません';
+
+  @override
+  String get zoomForMap => '未キャッシュの地域を拡大して詳細マップをダウンロードします。';
+
+  @override
+  String get deviceLicenseInvalid => 'デバイスライセンスが無効です';
+
+  @override
+  String get licenseNoResponse => 'デバイスから有効なライセンス応答がありません。';
+
+  @override
+  String get provisioningCannotContinue => 'このデバイスでプロビジョニングを続行できません。';
+
+  @override
+  String get ok => 'OK';
+
+  @override
+  String get selectDeviceMode => 'ビーコン、センサー、またはリレーモードを選択';
+
+  @override
+  String stepProgress(int current, int total, String title) {
+    return '$total ステップ中 $current: $title';
+  }
+
+  @override
+  String get provisioningUnavailable => 'プロビジョニングは利用できません。';
+
+  @override
+  String get beaconModeDescription => 'デバイスプロファイルと位置を配信します。';
+
+  @override
+  String get sensorModeDescription => 'デバイスプロファイルとセンサー値を配信します。';
+
+  @override
+  String get relayModeDescription => 'デバイスプロファイルなしでメッシュ範囲を拡張します。';
+
+  @override
+  String get chooseDeviceMode => 'この EdgeZ デバイスの動作を選択します。';
+
+  @override
+  String get regenerateDeviceId => 'デバイス ID を再生成';
+
+  @override
+  String get deviceGpsWakeDescription => '定期的な位置取得のために起動し、受信機を停止';
+
+  @override
   String get dashboardEmptyDescription =>
       'ノードのダッシュボードボタンで追加し、デバイス詳細で表示方法を選択します。';
 

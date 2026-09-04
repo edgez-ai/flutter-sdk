@@ -745,7 +745,83 @@ class AppLocalizationsZh extends AppLocalizations {
   String get last6Hours => '过去 6 小时';
 
   @override
-  String get dashboardEmptyDescription => '使用节点上的仪表盘按钮添加设备，然后在设备详情中选择可视化方式。';
+  String get switchTo2d => '切换到 2D';
+
+  @override
+  String get switchTo3d => '切换到 3D';
+
+  @override
+  String get useDayMap => '使用日间地图';
+
+  @override
+  String get useNightMap => '使用夜间地图';
+
+  @override
+  String get useStandardMap => '使用标准地图';
+
+  @override
+  String get useSatelliteImagery => '使用卫星影像';
+
+  @override
+  String downloadMapQuestion(String region) {
+    return '下载地图：$region？';
+  }
+
+  @override
+  String get mapCachedDescription => '地图将被缓存以供离线使用。';
+
+  @override
+  String get noNodesSharingLocation => '没有 Mesh 节点正在共享位置';
+
+  @override
+  String get unableChangeMap => '无法更改地图视图';
+
+  @override
+  String get zoomForMap => '放大到未缓存的区域以下载详细地图。';
+
+  @override
+  String get deviceLicenseInvalid => '设备许可证无效';
+
+  @override
+  String get licenseNoResponse => '设备未返回有效的许可证响应。';
+
+  @override
+  String get provisioningCannotContinue => '无法在此设备上继续配置。';
+
+  @override
+  String get ok => '确定';
+
+  @override
+  String get selectDeviceMode => '请选择信标、传感器或中继模式';
+
+  @override
+  String stepProgress(int current, int total, String title) {
+    return '第 $current/$total 步：$title';
+  }
+
+  @override
+  String get provisioningUnavailable => '无法进行配置。';
+
+  @override
+  String get beaconModeDescription => '广播设备配置和位置。';
+
+  @override
+  String get sensorModeDescription => '广播设备配置和传感器读数。';
+
+  @override
+  String get relayModeDescription => '在不使用设备配置的情况下扩展 Mesh 覆盖。';
+
+  @override
+  String get chooseDeviceMode => '选择此 EdgeZ 设备的运行方式。';
+
+  @override
+  String get regenerateDeviceId => '重新生成设备 ID';
+
+  @override
+  String get deviceGpsWakeDescription => '周期性唤醒定位，然后关闭接收器';
+
+  @override
+  String get dashboardEmptyDescription => '使用节点上的仪盘按钮添加设备，然后在设备详情中选择可视化方式。';
 
   @override
   String get nearbyDevices => '附近的 BLE 设备将显示在此。';

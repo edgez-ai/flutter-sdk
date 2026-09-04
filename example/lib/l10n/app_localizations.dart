@@ -1540,6 +1540,150 @@ abstract class AppLocalizations {
   /// **'Last 6 hours'**
   String get last6Hours;
 
+  /// No description provided for @switchTo2d.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to 2D'**
+  String get switchTo2d;
+
+  /// No description provided for @switchTo3d.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to 3D'**
+  String get switchTo3d;
+
+  /// No description provided for @useDayMap.
+  ///
+  /// In en, this message translates to:
+  /// **'Use day map'**
+  String get useDayMap;
+
+  /// No description provided for @useNightMap.
+  ///
+  /// In en, this message translates to:
+  /// **'Use night map'**
+  String get useNightMap;
+
+  /// No description provided for @useStandardMap.
+  ///
+  /// In en, this message translates to:
+  /// **'Use standard map'**
+  String get useStandardMap;
+
+  /// No description provided for @useSatelliteImagery.
+  ///
+  /// In en, this message translates to:
+  /// **'Use satellite imagery'**
+  String get useSatelliteImagery;
+
+  /// No description provided for @downloadMapQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Download map: {region}?'**
+  String downloadMapQuestion(String region);
+
+  /// No description provided for @mapCachedDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'It will be cached for offline use.'**
+  String get mapCachedDescription;
+
+  /// No description provided for @noNodesSharingLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'No mesh nodes are sharing a location'**
+  String get noNodesSharingLocation;
+
+  /// No description provided for @unableChangeMap.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to change map view'**
+  String get unableChangeMap;
+
+  /// No description provided for @zoomForMap.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom in to an uncached region to download its detailed map.'**
+  String get zoomForMap;
+
+  /// No description provided for @deviceLicenseInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Device license invalid'**
+  String get deviceLicenseInvalid;
+
+  /// No description provided for @licenseNoResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'The device did not return a valid license response.'**
+  String get licenseNoResponse;
+
+  /// No description provided for @provisioningCannotContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Provisioning cannot continue on this device.'**
+  String get provisioningCannotContinue;
+
+  /// No description provided for @ok.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get ok;
+
+  /// No description provided for @selectDeviceMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Beacon, Sensor, or Relay mode'**
+  String get selectDeviceMode;
+
+  /// No description provided for @stepProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {current} of {total}: {title}'**
+  String stepProgress(int current, int total, String title);
+
+  /// No description provided for @provisioningUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Provisioning is unavailable.'**
+  String get provisioningUnavailable;
+
+  /// No description provided for @beaconModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Advertises a device profile and location.'**
+  String get beaconModeDescription;
+
+  /// No description provided for @sensorModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Advertises a device profile and sensor readings.'**
+  String get sensorModeDescription;
+
+  /// No description provided for @relayModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Extends mesh coverage without a device profile.'**
+  String get relayModeDescription;
+
+  /// No description provided for @chooseDeviceMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how this EdgeZ device will operate.'**
+  String get chooseDeviceMode;
+
+  /// No description provided for @regenerateDeviceId.
+  ///
+  /// In en, this message translates to:
+  /// **'Regenerate device ID'**
+  String get regenerateDeviceId;
+
+  /// No description provided for @deviceGpsWakeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Wake for periodic fixes, then power the receiver down'**
+  String get deviceGpsWakeDescription;
+
   /// No description provided for @dashboardEmptyDescription.
   ///
   /// In en, this message translates to:

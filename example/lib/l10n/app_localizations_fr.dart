@@ -759,6 +759,93 @@ class AppLocalizationsFr extends AppLocalizations {
   String get last6Hours => '6 dernières heures';
 
   @override
+  String get switchTo2d => 'Passer en 2D';
+
+  @override
+  String get switchTo3d => 'Passer en 3D';
+
+  @override
+  String get useDayMap => 'Utiliser la carte de jour';
+
+  @override
+  String get useNightMap => 'Utiliser la carte de nuit';
+
+  @override
+  String get useStandardMap => 'Utiliser la carte standard';
+
+  @override
+  String get useSatelliteImagery => 'Utiliser l’imagerie satellite';
+
+  @override
+  String downloadMapQuestion(String region) {
+    return 'Télécharger la carte : $region ?';
+  }
+
+  @override
+  String get mapCachedDescription =>
+      'Elle sera mise en cache pour une utilisation hors ligne.';
+
+  @override
+  String get noNodesSharingLocation =>
+      'Aucun nœud maillé ne partage sa position';
+
+  @override
+  String get unableChangeMap => 'Impossible de changer la vue de la carte';
+
+  @override
+  String get zoomForMap =>
+      'Zoomez sur une zone non mise en cache pour télécharger sa carte détaillée.';
+
+  @override
+  String get deviceLicenseInvalid => 'Licence de l’appareil invalide';
+
+  @override
+  String get licenseNoResponse =>
+      'L’appareil n’a pas renvoyé de licence valide.';
+
+  @override
+  String get provisioningCannotContinue =>
+      'Le provisionnement ne peut pas continuer sur cet appareil.';
+
+  @override
+  String get ok => 'OK';
+
+  @override
+  String get selectDeviceMode =>
+      'Sélectionnez le mode Balise, Capteur ou Relais';
+
+  @override
+  String stepProgress(int current, int total, String title) {
+    return 'Étape $current sur $total : $title';
+  }
+
+  @override
+  String get provisioningUnavailable => 'Le provisionnement est indisponible.';
+
+  @override
+  String get beaconModeDescription =>
+      'Annonce un profil d’appareil et sa position.';
+
+  @override
+  String get sensorModeDescription =>
+      'Annonce un profil d’appareil et les mesures du capteur.';
+
+  @override
+  String get relayModeDescription =>
+      'Étend la couverture du maillage sans profil d’appareil.';
+
+  @override
+  String get chooseDeviceMode =>
+      'Choisissez le fonctionnement de cet appareil EdgeZ.';
+
+  @override
+  String get regenerateDeviceId => 'Régénérer l’ID de l’appareil';
+
+  @override
+  String get deviceGpsWakeDescription =>
+      'Réveil périodique pour la position, puis extinction du récepteur';
+
+  @override
   String get dashboardEmptyDescription =>
       'Utilisez le bouton de tableau de bord d’un nœud pour l’ajouter, puis choisissez sa visualisation dans les détails de l’appareil.';
 

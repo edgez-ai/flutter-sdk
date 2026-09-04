@@ -753,6 +753,89 @@ class AppLocalizationsEn extends AppLocalizations {
   String get last6Hours => 'Last 6 hours';
 
   @override
+  String get switchTo2d => 'Switch to 2D';
+
+  @override
+  String get switchTo3d => 'Switch to 3D';
+
+  @override
+  String get useDayMap => 'Use day map';
+
+  @override
+  String get useNightMap => 'Use night map';
+
+  @override
+  String get useStandardMap => 'Use standard map';
+
+  @override
+  String get useSatelliteImagery => 'Use satellite imagery';
+
+  @override
+  String downloadMapQuestion(String region) {
+    return 'Download map: $region?';
+  }
+
+  @override
+  String get mapCachedDescription => 'It will be cached for offline use.';
+
+  @override
+  String get noNodesSharingLocation => 'No mesh nodes are sharing a location';
+
+  @override
+  String get unableChangeMap => 'Unable to change map view';
+
+  @override
+  String get zoomForMap =>
+      'Zoom in to an uncached region to download its detailed map.';
+
+  @override
+  String get deviceLicenseInvalid => 'Device license invalid';
+
+  @override
+  String get licenseNoResponse =>
+      'The device did not return a valid license response.';
+
+  @override
+  String get provisioningCannotContinue =>
+      'Provisioning cannot continue on this device.';
+
+  @override
+  String get ok => 'OK';
+
+  @override
+  String get selectDeviceMode => 'Select Beacon, Sensor, or Relay mode';
+
+  @override
+  String stepProgress(int current, int total, String title) {
+    return 'Step $current of $total: $title';
+  }
+
+  @override
+  String get provisioningUnavailable => 'Provisioning is unavailable.';
+
+  @override
+  String get beaconModeDescription =>
+      'Advertises a device profile and location.';
+
+  @override
+  String get sensorModeDescription =>
+      'Advertises a device profile and sensor readings.';
+
+  @override
+  String get relayModeDescription =>
+      'Extends mesh coverage without a device profile.';
+
+  @override
+  String get chooseDeviceMode => 'Choose how this EdgeZ device will operate.';
+
+  @override
+  String get regenerateDeviceId => 'Regenerate device ID';
+
+  @override
+  String get deviceGpsWakeDescription =>
+      'Wake for periodic fixes, then power the receiver down';
+
+  @override
   String get dashboardEmptyDescription =>
       'Use the dashboard button on a node to add it, then choose its visualization from device details.';
 

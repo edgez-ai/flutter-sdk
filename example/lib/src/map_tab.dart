@@ -88,10 +88,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         if (regionId == null) {
-          _downloadUpdate = const EdgezMapDownloadUpdate(
+          _downloadUpdate = EdgezMapDownloadUpdate(
             regionId: '',
-            status:
-                AppLocalizations.of(context).zoomForMap,
+            status: AppLocalizations.of(context).zoomForMap,
           );
         } else {
           _downloadUpdate = null;
@@ -188,8 +187,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content: Text(error.message ??
-              AppLocalizations.of(context).unableChangeMap)),
+          content: Text(
+              error.message ?? AppLocalizations.of(context).unableChangeMap)),
     );
   }
 
@@ -337,7 +336,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                             style: Theme.of(context).textTheme.titleSmall,
                           ),
                           const SizedBox(height: 4),
-                          Text(AppLocalizations.of(context).mapCachedDescription),
+                          Text(AppLocalizations.of(context)
+                              .mapCachedDescription),
                           const SizedBox(height: 8),
                           Row(
                             children: <Widget>[
