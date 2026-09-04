@@ -476,6 +476,283 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get selectedDevice => 'Selected device';
+
+  @override
+  String get noDeviceSelected => 'No device selected';
+
+  @override
+  String get usbConnected => 'USB connected; high-speed channel ready';
+
+  @override
+  String get bleControlReady => 'BLE connected; control channel ready';
+
+  @override
+  String get bleSettingUp => 'BLE connected; setting up control channel';
+
+  @override
+  String get blePairing => 'BLE pairing or connecting';
+
+  @override
+  String get disconnected => 'Disconnected';
+
+  @override
+  String firmwareVersion(String version) {
+    return 'Firmware: $version';
+  }
+
+  @override
+  String get waitingBle => 'Waiting for BLE connection';
+
+  @override
+  String get connectBleDevice => 'Connect a BLE device';
+
+  @override
+  String get waitingBleControl => 'Waiting for BLE control channel';
+
+  @override
+  String get waitingDeviceStatus => 'Waiting for device status';
+
+  @override
+  String updatingProgress(int percent) {
+    return 'Updating $percent%';
+  }
+
+  @override
+  String get otaUnsupported =>
+      'This connected firmware does not expose BLE OTA yet.';
+
+  @override
+  String identifier(String value) {
+    return 'ID $value';
+  }
+
+  @override
+  String get notLoaded => 'Not loaded';
+
+  @override
+  String get useDeviceGps => 'Use device GPS (L76K)';
+
+  @override
+  String get deviceGpsDescription =>
+      'Use periodic low-power device fixes instead of phone/static location';
+
+  @override
+  String deviceFix(String latitude, String longitude) {
+    return 'Device fix: $latitude, $longitude';
+  }
+
+  @override
+  String get refreshPhoneLocation => 'Refresh phone location';
+
+  @override
+  String get geofenceBeaconDescription =>
+      'Include a geofence in device beacons';
+
+  @override
+  String get enableSensors => 'Enable sensors';
+
+  @override
+  String get sensorConnectorDescription => 'Configure device sensor connectors';
+
+  @override
+  String get enableUpstreamNetwork => 'Enable upstream network';
+
+  @override
+  String get upstreamDescription =>
+      'Forward through Wi-Fi and send beacons to a multicast address.';
+
+  @override
+  String get notSet => 'Not set';
+
+  @override
+  String get translationLanguageDescription =>
+      'Used as the initial target language in conversations. The spoken language is detected once and saved with the transcript on the message.';
+
+  @override
+  String get selectBleOrUsb => 'Select BLE or USB device';
+
+  @override
+  String get noUsbDevices =>
+      'No USB devices attached. Connect with a USB OTG cable.';
+
+  @override
+  String get bluetooth => 'Bluetooth';
+
+  @override
+  String get userIdentity => 'User identity';
+
+  @override
+  String get loadingIdentity => 'Loading identity';
+
+  @override
+  String get publicKey => 'X25519 public key';
+
+  @override
+  String get privateKey => 'X25519 private key';
+
+  @override
+  String get regenerateKeyPair => 'Regenerate key pair';
+
+  @override
+  String get recording => 'Recording';
+
+  @override
+  String get requestingMicrophone => 'Requesting microphone';
+
+  @override
+  String get microphoneDenied => 'Microphone permission denied';
+
+  @override
+  String get startingVoice => 'Starting voice';
+
+  @override
+  String get voiceCancelled => 'Voice cancelled';
+
+  @override
+  String get sendingVoice => 'Sending voice';
+
+  @override
+  String get voiceSent => 'Voice sent';
+
+  @override
+  String get sending => 'Sending';
+
+  @override
+  String get sentToDevice => 'Sent to device';
+
+  @override
+  String get encrypted => 'Encrypted';
+
+  @override
+  String get waitingForKey => 'Waiting for key';
+
+  @override
+  String get joinTalkgroup => 'Join OpenMANET talkgroup';
+
+  @override
+  String get startVoiceCall => 'Start voice call';
+
+  @override
+  String get noSensorGps => 'No sensor GPS';
+
+  @override
+  String get connectToSendVoice => 'Connect to send voice';
+
+  @override
+  String get translateVoice => 'Translate voice';
+
+  @override
+  String get checkingTranslation => 'Checking offline translation…';
+
+  @override
+  String get offlineTranslation => 'Offline translation · 2.6 GB';
+
+  @override
+  String get installGemma => 'Install Gemma 4 to translate';
+
+  @override
+  String get noReplayData => 'No replay data';
+
+  @override
+  String get tapToReplay => 'Tap to replay';
+
+  @override
+  String get transcript => 'Transcript';
+
+  @override
+  String translationFailed(String error) {
+    return 'Translation failed: $error';
+  }
+
+  @override
+  String speechFailed(String error) {
+    return 'Speech failed: $error';
+  }
+
+  @override
+  String get delivered => 'Delivered';
+
+  @override
+  String get incomingVoiceCall => 'Incoming voice call';
+
+  @override
+  String get calling => 'Calling…';
+
+  @override
+  String get connected => 'Connected';
+
+  @override
+  String get callEnded => 'Call ended';
+
+  @override
+  String get meshUser => 'Mesh user';
+
+  @override
+  String get transmitting => 'Transmitting…';
+
+  @override
+  String callActionFailed(String error) {
+    return 'Call action failed: $error';
+  }
+
+  @override
+  String voiceTransmissionFailed(String error) {
+    return 'Voice transmission failed: $error';
+  }
+
+  @override
+  String get unspecified => 'Unspecified';
+
+  @override
+  String get gatewayType => 'Gateway';
+
+  @override
+  String get blue => 'Blue';
+
+  @override
+  String get red => 'Red';
+
+  @override
+  String get green => 'Green';
+
+  @override
+  String get orange => 'Orange';
+
+  @override
+  String get purple => 'Purple';
+
+  @override
+  String get teal => 'Teal';
+
+  @override
+  String get gray => 'Gray';
+
+  @override
+  String get tempHumidity => 'Temp & Humidity';
+
+  @override
+  String get latestValue => 'Latest value';
+
+  @override
+  String get imuOrientation => 'IMU orientation';
+
+  @override
+  String get binaryData => 'Binary data';
+
+  @override
+  String get timeSeries => 'Time series';
+
+  @override
+  String get last30Minutes => 'Last 30 min';
+
+  @override
+  String get lastHour => 'Last 1 hour';
+
+  @override
+  String get last6Hours => 'Last 6 hours';
+
+  @override
   String get dashboardEmptyDescription =>
       'Use the dashboard button on a node to add it, then choose its visualization from device details.';
 

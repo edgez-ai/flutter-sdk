@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import 'models.dart';
+import 'localized_model_labels.dart';
 import 'settings_tab.dart' show halowFrequenciesKhz, halowFrequencyLabel;
 import 'shared_widgets.dart';
 
@@ -321,7 +322,8 @@ class NodeCard extends StatelessWidget {
                             : 'Node ${user.nodeId}'),
                         Text('User ${user.exampleUserId}',
                             style: Theme.of(context).textTheme.bodySmall),
-                        Text('Type ${user.exampleDeviceType.label}',
+                        Text(
+                            '${AppLocalizations.of(context).type} ${user.exampleDeviceType.localizedLabel(AppLocalizations.of(context))}',
                             style: Theme.of(context).textTheme.bodySmall),
                         if (user.opensConversation)
                           Text('Conversation ready',

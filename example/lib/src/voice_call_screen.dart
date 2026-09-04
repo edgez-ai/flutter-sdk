@@ -71,7 +71,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Call action failed: $error')),
+        SnackBar(
+            content:
+                Text(AppLocalizations.of(context).callActionFailed('$error'))),
       );
     } finally {
       if (mounted) setState(() => actionInProgress = false);
@@ -91,7 +93,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
       if (!mounted) return;
       setState(() => transmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Voice transmission failed: $error')),
+        SnackBar(
+            content: Text(AppLocalizations.of(context)
+                .voiceTransmissionFailed('$error'))),
       );
     }
   }
@@ -99,24 +103,25 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   String get _status {
     switch (widget.call.phase) {
       case EdgezVoiceCallPhase.incoming:
-        return 'Incoming voice call';
+        return AppLocalizations.of(context).incomingVoiceCall;
       case EdgezVoiceCallPhase.outgoing:
-        return 'Calling…';
+        return AppLocalizations.of(context).calling;
       case EdgezVoiceCallPhase.active:
         final start = connectedAt;
-        if (start == null) return 'Connected';
+        if (start == null) return AppLocalizations.of(context).connected;
         final elapsed = DateTime.now().difference(start);
         final minutes = elapsed.inMinutes.toString().padLeft(2, '0');
         final seconds = (elapsed.inSeconds % 60).toString().padLeft(2, '0');
         return '$minutes:$seconds';
       case EdgezVoiceCallPhase.idle:
-        return 'Call ended';
+        return AppLocalizations.of(context).callEnded;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final peerName = widget.peer?.resolvedDisplayName ?? 'Mesh user';
+    final peerName = widget.peer?.resolvedDisplayName ??
+        AppLocalizations.of(context).meshUser;
     final isOpenManet = widget.peer?.isPublicChannel == true;
     final isIncoming = widget.call.phase == EdgezVoiceCallPhase.incoming;
     return PopScope(
@@ -189,7 +194,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                       ),
                       child: Text(
                         transmitting
-                            ? 'Transmitting…'
+                            ? AppLocalizations.of(context).transmitting
                             : AppLocalizations.of(context).holdToTalk,
                         style: const TextStyle(
                           color: Colors.white,

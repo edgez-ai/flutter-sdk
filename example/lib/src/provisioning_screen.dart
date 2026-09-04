@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import 'driver_catalog.dart';
+import 'localized_model_labels.dart';
 import 'models.dart';
 import 'settings_tab.dart';
 import 'shared_widgets.dart';
@@ -22,6 +23,18 @@ enum _ProvisionStep {
   const _ProvisionStep(this.title);
   final String title;
 }
+
+String _localizedStepTitle(AppLocalizations l10n, _ProvisionStep step) =>
+    switch (step) {
+      _ProvisionStep.selectBle => l10n.selectBleDevice,
+      _ProvisionStep.mode => l10n.deviceMode,
+      _ProvisionStep.deviceUser => l10n.deviceUser,
+      _ProvisionStep.network => l10n.network,
+      _ProvisionStep.location => l10n.location,
+      _ProvisionStep.geoFence => l10n.geoFence,
+      _ProvisionStep.sensor => l10n.sensor,
+      _ProvisionStep.sleepMode => l10n.sleepMode,
+    };
 
 List<EdgezBleDevice> provisioningBleDevices(
   List<EdgezBleDevice> devices,
@@ -199,19 +212,19 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
 
   Future<void> _showInvalidLicenseDialog(EdgezLicenseStatus status) {
     final detail = status == EdgezLicenseStatus.unspecified
-        ? 'The device did not return a valid license response.'
+        ? AppLocalizations.of(context).licenseNoResponse
         : '${status.label}.';
     return showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Device license invalid'),
+        title: Text(AppLocalizations.of(context).deviceLicenseInvalid),
         content: Text(
-          '$detail Provisioning cannot continue on this device.',
+          '$detail ${AppLocalizations.of(context).provisioningCannotContinue}',
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            child: Text(AppLocalizations.of(context).ok),
           ),
         ],
       ),
@@ -324,7 +337,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
       return;
     }
     if (step == _ProvisionStep.mode && deviceType.isEmpty) {
-      setState(() => error = 'Select Beacon, Sensor, or Relay mode');
+      setState(() => error = AppLocalizations.of(context).selectDeviceMode);
       return;
     }
     if (step == _ProvisionStep.sensor && deviceType == 'relay' ||
@@ -415,7 +428,8 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
-            Text('Step ${step.index + 1} of 8: ${step.title}',
+            Text(AppLocalizations.of(context).stepProgress(step.index + 1, 8,
+                _localizedStepTitle(AppLocalizations.of(context), step)),
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text('Interface: ${state.connection.name.toUpperCase()}'),
@@ -423,7 +437,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
                 style: Theme.of(context).textTheme.bodySmall),
             if (state.status?.licenseStatus case final status?
                 when _isRejectedLicense(status))
-              Text('${status.label}. Provisioning is unavailable.',
+              Text('${status.label}. ${AppLocalizations.of(context).provisioningUnavailable}',
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (error != null) ...<Widget>[
               const SizedBox(height: 8),
@@ -530,10 +544,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
             ),
             const SizedBox(height: 8),
             Text(switch (deviceType) {
-              'beacon' => 'Advertises a device profile and location.',
-              'sensor' => 'Advertises a device profile and sensor readings.',
-              'relay' => 'Extends mesh coverage without a device profile.',
-              _ => 'Choose how this EdgeZ device will operate.',
+              'beacon' => AppLocalizations.of(context).beaconModeDescription,
+              'sensor' => AppLocalizations.of(context).sensorModeDescription,
+              'relay' => AppLocalizations.of(context).relayModeDescription,
+              _ => AppLocalizations.of(context).chooseDeviceMode,
             }),
           ],
         );
@@ -550,7 +564,8 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
               label: AppLocalizations.of(context).marker,
               value: marker,
               values: ExampleMarker.values,
-              titleFor: (value) => value.label,
+              titleFor: (value) =>
+                  value.localizedLabel(AppLocalizations.of(context)),
               onChanged: (value) => setState(() => marker = value),
             ),
             const SizedBox(height: 8),
@@ -563,7 +578,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
                   deviceIdentity =
                       EdgezIdentityStore().createIdentity(name: userName);
                 }),
-                child: const Text('Regenerate device ID'),
+                child: Text(AppLocalizations.of(context).regenerateDeviceId),
               ),
             ),
           ],
@@ -630,10 +645,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
             if (shareLocation) ...<Widget>[
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Use device GPS (L76K)'),
-                subtitle: const Text(
-                  'Wake for periodic fixes, then power the receiver down',
-                ),
+                title: Text(AppLocalizations.of(context).useDeviceGps),
+                subtitle:
+                    Text(AppLocalizations.of(context).deviceGpsWakeDescription),
                 value: deviceGpsEnabled,
                 onChanged: (value) => setState(() => deviceGpsEnabled = value),
               ),

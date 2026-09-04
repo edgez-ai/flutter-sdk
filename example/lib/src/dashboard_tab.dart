@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import 'device_detail_screen.dart';
 import 'map_tab.dart';
+import 'localized_model_labels.dart';
 import 'models.dart';
 import 'shared_widgets.dart';
 
@@ -201,7 +202,9 @@ class _DashboardSensorCard extends StatelessWidget {
             children: <Widget>[
               Text(item.user.resolvedDisplayName,
                   style: Theme.of(context).textTheme.titleMedium),
-              Text(item.display.widget.label,
+              Text(
+                  item.display.widget
+                      .localizedLabel(AppLocalizations.of(context)),
                   style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 8),
               if (sample == null || !sample.data.hasAnyValue)
@@ -330,7 +333,8 @@ class _TimeSeries extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(range.label, style: Theme.of(context).textTheme.bodySmall),
+        Text(range.localizedLabel(AppLocalizations.of(context)),
+            style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 8),
         SizedBox(
           height: 180,

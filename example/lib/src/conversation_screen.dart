@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import 'models.dart';
+import 'localized_model_labels.dart';
 import 'gemma_voice_translator.dart';
 
 class ConversationScreen extends StatefulWidget {
@@ -168,7 +169,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     if (voiceStarting || recording) return;
     voicePressed = true;
     voiceStarting = true;
-    setState(() => status = 'Requesting microphone');
+    setState(() => status = AppLocalizations.of(context).requestingMicrophone);
     final started = await widget.onStartVoiceMessage();
     if (!mounted) return;
     voiceStarting = false;
@@ -179,7 +180,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
     }
     setState(() {
       recording = started;
-      status = started ? 'Recording' : 'Microphone permission denied';
+      status = started
+          ? AppLocalizations.of(context).recording
+          : AppLocalizations.of(context).microphoneDenied;
     });
   }
 
@@ -187,16 +190,22 @@ class _ConversationScreenState extends State<ConversationScreen> {
     voicePressed = false;
     final shouldSend = send && recording;
     if (voiceStarting) {
-      setState(() => status = send ? 'Starting voice' : 'Voice cancelled');
+      setState(() => status = send
+          ? AppLocalizations.of(context).startingVoice
+          : AppLocalizations.of(context).voiceCancelled);
       return;
     }
     setState(() {
       recording = false;
-      status = shouldSend ? 'Sending voice' : 'Voice cancelled';
+      status = shouldSend
+          ? AppLocalizations.of(context).sendingVoice
+          : AppLocalizations.of(context).voiceCancelled;
     });
     await widget.onStopVoiceMessage(shouldSend);
     if (!mounted) return;
-    if (shouldSend) setState(() => status = 'Voice sent');
+    if (shouldSend) {
+      setState(() => status = AppLocalizations.of(context).voiceSent);
+    }
   }
 
   Future<void> _startSpeedTest() async {
@@ -296,8 +305,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
                       Text(
                         widget.user.isPublicChannel
                             ? 'OpenMANET · Port ${widget.user.nodeNum}'
-                            : '${widget.user.exampleDeviceType.label} · '
-                                '${widget.user.opensConversation ? 'Encrypted' : 'Waiting for key'} · '
+                            : '${widget.user.exampleDeviceType.localizedLabel(AppLocalizations.of(context))} · '
+                                '${widget.user.opensConversation ? AppLocalizations.of(context).encrypted : AppLocalizations.of(context).waitingForKey} · '
                                 '${widget.user.nodeId}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -308,8 +317,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 ),
                 IconButton(
                   tooltip: widget.user.isPublicChannel
-                      ? 'Join OpenMANET talkgroup'
-                      : 'Start voice call',
+                      ? AppLocalizations.of(context).joinTalkgroup
+                      : AppLocalizations.of(context).startVoiceCall,
                   onPressed: canSendVoice && widget.callState.isIdle
                       ? () => unawaited(widget.onStartCall())
                       : null,
@@ -346,14 +355,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Location',
+                      AppLocalizations.of(context).location,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: SelectableText(
                         location == null
-                            ? 'No sensor GPS'
+                            ? AppLocalizations.of(context).noSensorGps
                             : '${_formatCoordinate(location.data.latitude)}, '
                                 '${_formatCoordinate(location.data.longitude)}'
                                 '${location.timestampMs > 0 ? ' · ${_formatLocationTime(location.timestampMs)}' : ''}',
@@ -448,7 +457,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Center(
-                      child: Text('Recording',
+                      child: Text(AppLocalizations.of(context).recording,
                           style: TextStyle(
                               color: Theme.of(context)
                                   .colorScheme
@@ -473,12 +482,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   onPressed: canSend
                       ? () async {
                           final text = controller.text.trim();
-                          setState(() => status = 'Sending');
+                          setState(() =>
+                              status = AppLocalizations.of(context).sending);
                           try {
                             await widget.onSendMessage(text);
                             if (!mounted) return;
                             controller.clear();
-                            setState(() => status = 'Sent to device');
+                            setState(() => status =
+                                AppLocalizations.of(context).sentToDevice);
                           } catch (error) {
                             if (!mounted) return;
                             setState(() => status = 'Send failed: $error');
@@ -580,10 +591,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 ),
                 child: Text(
                   recording
-                      ? 'Recording'
+                      ? AppLocalizations.of(context).recording
                       : canSendVoiceMessage
                           ? AppLocalizations.of(context).holdToTalk
-                          : 'Connect to send voice',
+                          : AppLocalizations.of(context).connectToSendVoice,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: recording || canSendVoiceMessage
@@ -657,12 +668,13 @@ class _GemmaTranslationBar extends StatelessWidget {
                 Expanded(
                   child: Text(
                     ready
-                        ? 'Translate voice'
+                        ? AppLocalizations.of(context).translateVoice
                         : checking
-                            ? 'Checking offline translation…'
+                            ? AppLocalizations.of(context).checkingTranslation
                             : downloading
                                 ? 'Gemma 4 · ${translator.downloadProgress}%'
-                                : 'Offline translation · 2.6 GB',
+                                : AppLocalizations.of(context)
+                                    .offlineTranslation,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall,
@@ -790,7 +802,7 @@ class ConversationBubble extends StatelessWidget {
                         visualDensity: VisualDensity.compact,
                         tooltip: canTranslate
                             ? 'Translate voice message'
-                            : 'Install Gemma 4 to translate',
+                            : AppLocalizations.of(context).installGemma,
                         onPressed:
                             !translating ? onTranslateVoiceMessage : null,
                         icon: translating
@@ -815,8 +827,8 @@ class ConversationBubble extends StatelessWidget {
                 if (isVoice)
                   Text(
                       message.voiceBytes.isEmpty
-                          ? 'No replay data'
-                          : 'Tap to replay',
+                          ? AppLocalizations.of(context).noReplayData
+                          : AppLocalizations.of(context).tapToReplay,
                       style: Theme.of(context).textTheme.labelSmall),
                 if (translation != null) ...<Widget>[
                   const SizedBox(height: 8),
@@ -844,19 +856,20 @@ class ConversationBubble extends StatelessWidget {
                   ),
                   if (translation!.transcript.isNotEmpty)
                     Text(
-                      'Transcript: ${message.transcript.isNotEmpty ? message.transcript : translation!.transcript}',
+                      '${AppLocalizations.of(context).transcript}: ${message.transcript.isNotEmpty ? message.transcript : translation!.transcript}',
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                 ],
                 if (translation == null && message.transcript.isNotEmpty)
                   Text(
-                    'Transcript${message.transcriptLanguage.isEmpty ? '' : ' (${message.transcriptLanguage})'}: '
+                    '${AppLocalizations.of(context).transcript}${message.transcriptLanguage.isEmpty ? '' : ' (${message.transcriptLanguage})'}: '
                     '${message.transcript}',
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 if (translationError?.isNotEmpty == true)
                   Text(
-                    'Translation failed: $translationError',
+                    AppLocalizations.of(context)
+                        .translationFailed('$translationError'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -865,7 +878,7 @@ class ConversationBubble extends StatelessWidget {
                   ),
                 if (speechError?.isNotEmpty == true)
                   Text(
-                    'Speech failed: $speechError',
+                    AppLocalizations.of(context).speechFailed('$speechError'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -874,7 +887,9 @@ class ConversationBubble extends StatelessWidget {
                   ),
                 if (message.status.isNotEmpty)
                   Text(
-                    isDelivered ? 'Delivered' : message.status,
+                    isDelivered
+                        ? AppLocalizations.of(context).delivered
+                        : message.status,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: isDelivered ? const Color(0xFF16803C) : null),
                   ),

@@ -4,6 +4,7 @@ import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import 'localized_model_labels.dart';
 import 'models.dart';
 import 'shared_widgets.dart';
 
@@ -39,7 +40,8 @@ class DeviceDetailScreen extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: <Widget>[
-                  Text('Conversation · ${user.exampleDeviceType.label}',
+                  Text(
+                      'Conversation · ${user.exampleDeviceType.localizedLabel(AppLocalizations.of(context))}',
                       style: Theme.of(context).textTheme.titleLarge),
                   Text(user.resolvedDisplayName),
                   Text('Node ${user.nodeId}',
@@ -97,7 +99,10 @@ class DashboardDisplayCard extends StatelessWidget {
               InputDecoration(labelText: AppLocalizations.of(context).widget),
           items: <DropdownMenuItem<ExampleDashboardWidget>>[
             for (final option in ExampleDashboardWidget.values)
-              DropdownMenuItem(value: option, child: Text(option.label)),
+              DropdownMenuItem(
+                  value: option,
+                  child: Text(
+                      option.localizedLabel(AppLocalizations.of(context)))),
           ],
           onChanged: !display.showOnDashboard
               ? null
@@ -120,7 +125,10 @@ class DashboardDisplayCard extends StatelessWidget {
               InputDecoration(labelText: AppLocalizations.of(context).range),
           items: <DropdownMenuItem<ExampleDashboardRange>>[
             for (final option in ExampleDashboardRange.timeSeriesOptions)
-              DropdownMenuItem(value: option, child: Text(option.label)),
+              DropdownMenuItem(
+                  value: option,
+                  child: Text(
+                      option.localizedLabel(AppLocalizations.of(context)))),
           ],
           onChanged: !display.showOnDashboard ||
                   display.widget != ExampleDashboardWidget.timeSeries
@@ -144,8 +152,10 @@ class DeviceSummaryCard extends StatelessWidget {
     return InfoCard(
       title: AppLocalizations.of(context).device,
       children: <Widget>[
-        Text('Type ${user.exampleDeviceType.label}'),
-        Text('Marker ${user.exampleMarker.label}'),
+        Text(
+            '${AppLocalizations.of(context).type} ${user.exampleDeviceType.localizedLabel(AppLocalizations.of(context))}'),
+        Text(
+            '${AppLocalizations.of(context).marker} ${user.exampleMarker.localizedLabel(AppLocalizations.of(context))}'),
         Text('User ${user.exampleUserId}',
             style: Theme.of(context).textTheme.bodySmall),
         if (user.sleeping)
@@ -172,7 +182,8 @@ class GeoFenceCard extends StatelessWidget {
           ? <Widget>[Text(AppLocalizations.of(context).none)]
           : <Widget>[
               Text(user.geoFenceName),
-              Text('${user.exampleMarker.label} · Enter',
+              Text(
+                  '${user.exampleMarker.localizedLabel(AppLocalizations.of(context))} · Enter',
                   style: Theme.of(context).textTheme.bodySmall),
               Text('Index ${user.geoIndex}',
                   style: Theme.of(context).textTheme.bodySmall),

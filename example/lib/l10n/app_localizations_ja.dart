@@ -473,6 +473,278 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get selectedDevice => '選択済みのデバイス';
+
+  @override
+  String get noDeviceSelected => 'デバイスが選択されていません';
+
+  @override
+  String get usbConnected => 'USB 接続済み、高速チャネル準備完了';
+
+  @override
+  String get bleControlReady => 'BLE 接続済み、制御チャネル準備完了';
+
+  @override
+  String get bleSettingUp => 'BLE 接続済み、制御チャネルを設定中';
+
+  @override
+  String get blePairing => 'BLE ペアリングまたは接続中';
+
+  @override
+  String get disconnected => '切断済み';
+
+  @override
+  String firmwareVersion(String version) {
+    return 'ファームウェア: $version';
+  }
+
+  @override
+  String get waitingBle => 'BLE 接続待ち';
+
+  @override
+  String get connectBleDevice => 'BLE デバイスを接続';
+
+  @override
+  String get waitingBleControl => 'BLE 制御チャネル待ち';
+
+  @override
+  String get waitingDeviceStatus => 'デバイス状態待ち';
+
+  @override
+  String updatingProgress(int percent) {
+    return '更新中 $percent%';
+  }
+
+  @override
+  String get otaUnsupported => '接続中のファームウェアはまだ BLE OTA を提供していません。';
+
+  @override
+  String identifier(String value) {
+    return 'ID $value';
+  }
+
+  @override
+  String get notLoaded => '未読み込み';
+
+  @override
+  String get useDeviceGps => 'デバイス GPS (L76K) を使用';
+
+  @override
+  String get deviceGpsDescription => 'スマートフォン/固定位置の代わりに定期的な低電力位置を使用';
+
+  @override
+  String deviceFix(String latitude, String longitude) {
+    return 'デバイス位置: $latitude, $longitude';
+  }
+
+  @override
+  String get refreshPhoneLocation => 'スマートフォンの位置を更新';
+
+  @override
+  String get geofenceBeaconDescription => 'デバイスビーコンにジオフェンスを含める';
+
+  @override
+  String get enableSensors => 'センサーを有効化';
+
+  @override
+  String get sensorConnectorDescription => 'センサーコネクタを設定';
+
+  @override
+  String get enableUpstreamNetwork => 'アップストリームネットワークを有効化';
+
+  @override
+  String get upstreamDescription => 'Wi-Fi 経由で転送し、ビーコンをマルチキャストアドレスに送信します。';
+
+  @override
+  String get notSet => '未設定';
+
+  @override
+  String get translationLanguageDescription =>
+      '会話の初期翻訳先言語として使用されます。音声言語は一度検出され、文字起こしとともに保存されます。';
+
+  @override
+  String get selectBleOrUsb => 'BLE または USB デバイスを選択';
+
+  @override
+  String get noUsbDevices => 'USB デバイスが接続されていません。USB OTG ケーブルで接続してください。';
+
+  @override
+  String get bluetooth => 'Bluetooth';
+
+  @override
+  String get userIdentity => 'ユーザー ID';
+
+  @override
+  String get loadingIdentity => 'ID を読み込み中';
+
+  @override
+  String get publicKey => 'X25519 公開鍵';
+
+  @override
+  String get privateKey => 'X25519 秘密鍵';
+
+  @override
+  String get regenerateKeyPair => '鍵ペアを再生成';
+
+  @override
+  String get recording => '録音中';
+
+  @override
+  String get requestingMicrophone => 'マイクをリクエスト中';
+
+  @override
+  String get microphoneDenied => 'マイクの権限が拒否されました';
+
+  @override
+  String get startingVoice => '音声を開始中';
+
+  @override
+  String get voiceCancelled => '音声をキャンセルしました';
+
+  @override
+  String get sendingVoice => '音声を送信中';
+
+  @override
+  String get voiceSent => '音声を送信しました';
+
+  @override
+  String get sending => '送信中';
+
+  @override
+  String get sentToDevice => 'デバイスに送信済み';
+
+  @override
+  String get encrypted => '暗号化済み';
+
+  @override
+  String get waitingForKey => '鍵待ち';
+
+  @override
+  String get joinTalkgroup => 'OpenMANET トークグループに参加';
+
+  @override
+  String get startVoiceCall => '音声通話を開始';
+
+  @override
+  String get noSensorGps => 'センサー GPS なし';
+
+  @override
+  String get connectToSendVoice => '接続して音声を送信';
+
+  @override
+  String get translateVoice => '音声を翻訳';
+
+  @override
+  String get checkingTranslation => 'オフライン翻訳を確認中…';
+
+  @override
+  String get offlineTranslation => 'オフライン翻訳 · 2.6 GB';
+
+  @override
+  String get installGemma => '翻訳用に Gemma 4 をインストール';
+
+  @override
+  String get noReplayData => '再生データなし';
+
+  @override
+  String get tapToReplay => 'タップして再生';
+
+  @override
+  String get transcript => '文字起こし';
+
+  @override
+  String translationFailed(String error) {
+    return '翻訳失敗: $error';
+  }
+
+  @override
+  String speechFailed(String error) {
+    return '音声失敗: $error';
+  }
+
+  @override
+  String get delivered => '配達済み';
+
+  @override
+  String get incomingVoiceCall => '音声着信';
+
+  @override
+  String get calling => '発信中…';
+
+  @override
+  String get connected => '接続済み';
+
+  @override
+  String get callEnded => '通話終了';
+
+  @override
+  String get meshUser => 'メッシュユーザー';
+
+  @override
+  String get transmitting => '送信中…';
+
+  @override
+  String callActionFailed(String error) {
+    return '通話操作失敗: $error';
+  }
+
+  @override
+  String voiceTransmissionFailed(String error) {
+    return '音声送信失敗: $error';
+  }
+
+  @override
+  String get unspecified => '未指定';
+
+  @override
+  String get gatewayType => 'ゲートウェイ';
+
+  @override
+  String get blue => '青';
+
+  @override
+  String get red => '赤';
+
+  @override
+  String get green => '緑';
+
+  @override
+  String get orange => 'オレンジ';
+
+  @override
+  String get purple => '紫';
+
+  @override
+  String get teal => '青緑';
+
+  @override
+  String get gray => 'グレー';
+
+  @override
+  String get tempHumidity => '温度と湿度';
+
+  @override
+  String get latestValue => '最新値';
+
+  @override
+  String get imuOrientation => 'IMU 姿勢';
+
+  @override
+  String get binaryData => 'バイナリデータ';
+
+  @override
+  String get timeSeries => '時系列';
+
+  @override
+  String get last30Minutes => '過去30分';
+
+  @override
+  String get lastHour => '過去1時間';
+
+  @override
+  String get last6Hours => '過去6時間';
+
+  @override
   String get dashboardEmptyDescription =>
       'ノードのダッシュボードボタンで追加し、デバイス詳細で表示方法を選択します。';
 

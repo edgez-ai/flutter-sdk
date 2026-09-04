@@ -473,6 +473,278 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get selectedDevice => '已选设备';
+
+  @override
+  String get noDeviceSelected => '未选择设备';
+
+  @override
+  String get usbConnected => 'USB 已连接；高速通道就绪';
+
+  @override
+  String get bleControlReady => 'BLE 已连接；控制通道就绪';
+
+  @override
+  String get bleSettingUp => 'BLE 已连接；正在设置控制通道';
+
+  @override
+  String get blePairing => 'BLE 正在配对或连接';
+
+  @override
+  String get disconnected => '已断开';
+
+  @override
+  String firmwareVersion(String version) {
+    return '固件：$version';
+  }
+
+  @override
+  String get waitingBle => '正在等待 BLE 连接';
+
+  @override
+  String get connectBleDevice => '连接 BLE 设备';
+
+  @override
+  String get waitingBleControl => '正在等待 BLE 控制通道';
+
+  @override
+  String get waitingDeviceStatus => '正在等待设备状态';
+
+  @override
+  String updatingProgress(int percent) {
+    return '正在更新 $percent%';
+  }
+
+  @override
+  String get otaUnsupported => '当前连接的固件尚不支持 BLE OTA。';
+
+  @override
+  String identifier(String value) {
+    return 'ID $value';
+  }
+
+  @override
+  String get notLoaded => '未加载';
+
+  @override
+  String get useDeviceGps => '使用设备 GPS (L76K)';
+
+  @override
+  String get deviceGpsDescription => '使用周期性低功耗设备定位，而非手机/静态位置';
+
+  @override
+  String deviceFix(String latitude, String longitude) {
+    return '设备定位：$latitude, $longitude';
+  }
+
+  @override
+  String get refreshPhoneLocation => '刷新手机位置';
+
+  @override
+  String get geofenceBeaconDescription => '在设备广播中包含地理围栏';
+
+  @override
+  String get enableSensors => '启用传感器';
+
+  @override
+  String get sensorConnectorDescription => '配置设备传感器连接器';
+
+  @override
+  String get enableUpstreamNetwork => '启用上游网络';
+
+  @override
+  String get upstreamDescription => '通过 Wi-Fi 转发并将信标发送到多播地址。';
+
+  @override
+  String get notSet => '未设置';
+
+  @override
+  String get translationLanguageDescription =>
+      '作为会话的初始目标语言。系统会检测一次口语语言，并将其与转录一起保存。';
+
+  @override
+  String get selectBleOrUsb => '选择 BLE 或 USB 设备';
+
+  @override
+  String get noUsbDevices => '未连接 USB 设备。请使用 USB OTG 线连接。';
+
+  @override
+  String get bluetooth => '蓝牙';
+
+  @override
+  String get userIdentity => '用户身份';
+
+  @override
+  String get loadingIdentity => '正在加载身份';
+
+  @override
+  String get publicKey => 'X25519 公钥';
+
+  @override
+  String get privateKey => 'X25519 私钥';
+
+  @override
+  String get regenerateKeyPair => '重新生成密钥对';
+
+  @override
+  String get recording => '正在录音';
+
+  @override
+  String get requestingMicrophone => '正在请求麦克风权限';
+
+  @override
+  String get microphoneDenied => '麦克风权限已拒绝';
+
+  @override
+  String get startingVoice => '正在启动语音';
+
+  @override
+  String get voiceCancelled => '语音已取消';
+
+  @override
+  String get sendingVoice => '正在发送语音';
+
+  @override
+  String get voiceSent => '语音已发送';
+
+  @override
+  String get sending => '正在发送';
+
+  @override
+  String get sentToDevice => '已发送到设备';
+
+  @override
+  String get encrypted => '已加密';
+
+  @override
+  String get waitingForKey => '正在等待密钥';
+
+  @override
+  String get joinTalkgroup => '加入 OpenMANET 通话组';
+
+  @override
+  String get startVoiceCall => '开始语音通话';
+
+  @override
+  String get noSensorGps => '无传感器 GPS';
+
+  @override
+  String get connectToSendVoice => '连接后可发送语音';
+
+  @override
+  String get translateVoice => '翻译语音';
+
+  @override
+  String get checkingTranslation => '正在检查离线翻译……';
+
+  @override
+  String get offlineTranslation => '离线翻译 · 2.6 GB';
+
+  @override
+  String get installGemma => '安装 Gemma 4 以进行翻译';
+
+  @override
+  String get noReplayData => '无可回放数据';
+
+  @override
+  String get tapToReplay => '点击回放';
+
+  @override
+  String get transcript => '转录';
+
+  @override
+  String translationFailed(String error) {
+    return '翻译失败：$error';
+  }
+
+  @override
+  String speechFailed(String error) {
+    return '语音失败：$error';
+  }
+
+  @override
+  String get delivered => '已送达';
+
+  @override
+  String get incomingVoiceCall => '语音来电';
+
+  @override
+  String get calling => '正在呼叫……';
+
+  @override
+  String get connected => '已连接';
+
+  @override
+  String get callEnded => '通话已结束';
+
+  @override
+  String get meshUser => 'Mesh 用户';
+
+  @override
+  String get transmitting => '正在传输……';
+
+  @override
+  String callActionFailed(String error) {
+    return '通话操作失败：$error';
+  }
+
+  @override
+  String voiceTransmissionFailed(String error) {
+    return '语音传输失败：$error';
+  }
+
+  @override
+  String get unspecified => '未指定';
+
+  @override
+  String get gatewayType => '网关';
+
+  @override
+  String get blue => '蓝色';
+
+  @override
+  String get red => '红色';
+
+  @override
+  String get green => '绿色';
+
+  @override
+  String get orange => '橙色';
+
+  @override
+  String get purple => '紫色';
+
+  @override
+  String get teal => '青色';
+
+  @override
+  String get gray => '灰色';
+
+  @override
+  String get tempHumidity => '温度和湿度';
+
+  @override
+  String get latestValue => '最新值';
+
+  @override
+  String get imuOrientation => 'IMU 姿态';
+
+  @override
+  String get binaryData => '二进制数据';
+
+  @override
+  String get timeSeries => '时间序列';
+
+  @override
+  String get last30Minutes => '过去 30 分钟';
+
+  @override
+  String get lastHour => '过去 1 小时';
+
+  @override
+  String get last6Hours => '过去 6 小时';
+
+  @override
   String get dashboardEmptyDescription => '使用节点上的仪表盘按钮添加设备，然后在设备详情中选择可视化方式。';
 
   @override

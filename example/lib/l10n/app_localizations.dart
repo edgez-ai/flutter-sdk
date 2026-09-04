@@ -1030,6 +1030,516 @@ abstract class AppLocalizations {
   /// **'Incoming call from {name}'**
   String incomingCallFrom(String name);
 
+  /// No description provided for @selectedDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected device'**
+  String get selectedDevice;
+
+  /// No description provided for @noDeviceSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'No device selected'**
+  String get noDeviceSelected;
+
+  /// No description provided for @usbConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'USB connected; high-speed channel ready'**
+  String get usbConnected;
+
+  /// No description provided for @bleControlReady.
+  ///
+  /// In en, this message translates to:
+  /// **'BLE connected; control channel ready'**
+  String get bleControlReady;
+
+  /// No description provided for @bleSettingUp.
+  ///
+  /// In en, this message translates to:
+  /// **'BLE connected; setting up control channel'**
+  String get bleSettingUp;
+
+  /// No description provided for @blePairing.
+  ///
+  /// In en, this message translates to:
+  /// **'BLE pairing or connecting'**
+  String get blePairing;
+
+  /// No description provided for @disconnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnected'**
+  String get disconnected;
+
+  /// No description provided for @firmwareVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Firmware: {version}'**
+  String firmwareVersion(String version);
+
+  /// No description provided for @waitingBle.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for BLE connection'**
+  String get waitingBle;
+
+  /// No description provided for @connectBleDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a BLE device'**
+  String get connectBleDevice;
+
+  /// No description provided for @waitingBleControl.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for BLE control channel'**
+  String get waitingBleControl;
+
+  /// No description provided for @waitingDeviceStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for device status'**
+  String get waitingDeviceStatus;
+
+  /// No description provided for @updatingProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating {percent}%'**
+  String updatingProgress(int percent);
+
+  /// No description provided for @otaUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This connected firmware does not expose BLE OTA yet.'**
+  String get otaUnsupported;
+
+  /// No description provided for @identifier.
+  ///
+  /// In en, this message translates to:
+  /// **'ID {value}'**
+  String identifier(String value);
+
+  /// No description provided for @notLoaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Not loaded'**
+  String get notLoaded;
+
+  /// No description provided for @useDeviceGps.
+  ///
+  /// In en, this message translates to:
+  /// **'Use device GPS (L76K)'**
+  String get useDeviceGps;
+
+  /// No description provided for @deviceGpsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Use periodic low-power device fixes instead of phone/static location'**
+  String get deviceGpsDescription;
+
+  /// No description provided for @deviceFix.
+  ///
+  /// In en, this message translates to:
+  /// **'Device fix: {latitude}, {longitude}'**
+  String deviceFix(String latitude, String longitude);
+
+  /// No description provided for @refreshPhoneLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh phone location'**
+  String get refreshPhoneLocation;
+
+  /// No description provided for @geofenceBeaconDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Include a geofence in device beacons'**
+  String get geofenceBeaconDescription;
+
+  /// No description provided for @enableSensors.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable sensors'**
+  String get enableSensors;
+
+  /// No description provided for @sensorConnectorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure device sensor connectors'**
+  String get sensorConnectorDescription;
+
+  /// No description provided for @enableUpstreamNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable upstream network'**
+  String get enableUpstreamNetwork;
+
+  /// No description provided for @upstreamDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Forward through Wi-Fi and send beacons to a multicast address.'**
+  String get upstreamDescription;
+
+  /// No description provided for @notSet.
+  ///
+  /// In en, this message translates to:
+  /// **'Not set'**
+  String get notSet;
+
+  /// No description provided for @translationLanguageDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Used as the initial target language in conversations. The spoken language is detected once and saved with the transcript on the message.'**
+  String get translationLanguageDescription;
+
+  /// No description provided for @selectBleOrUsb.
+  ///
+  /// In en, this message translates to:
+  /// **'Select BLE or USB device'**
+  String get selectBleOrUsb;
+
+  /// No description provided for @noUsbDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'No USB devices attached. Connect with a USB OTG cable.'**
+  String get noUsbDevices;
+
+  /// No description provided for @bluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth'**
+  String get bluetooth;
+
+  /// No description provided for @userIdentity.
+  ///
+  /// In en, this message translates to:
+  /// **'User identity'**
+  String get userIdentity;
+
+  /// No description provided for @loadingIdentity.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading identity'**
+  String get loadingIdentity;
+
+  /// No description provided for @publicKey.
+  ///
+  /// In en, this message translates to:
+  /// **'X25519 public key'**
+  String get publicKey;
+
+  /// No description provided for @privateKey.
+  ///
+  /// In en, this message translates to:
+  /// **'X25519 private key'**
+  String get privateKey;
+
+  /// No description provided for @regenerateKeyPair.
+  ///
+  /// In en, this message translates to:
+  /// **'Regenerate key pair'**
+  String get regenerateKeyPair;
+
+  /// No description provided for @recording.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording'**
+  String get recording;
+
+  /// No description provided for @requestingMicrophone.
+  ///
+  /// In en, this message translates to:
+  /// **'Requesting microphone'**
+  String get requestingMicrophone;
+
+  /// No description provided for @microphoneDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Microphone permission denied'**
+  String get microphoneDenied;
+
+  /// No description provided for @startingVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting voice'**
+  String get startingVoice;
+
+  /// No description provided for @voiceCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice cancelled'**
+  String get voiceCancelled;
+
+  /// No description provided for @sendingVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending voice'**
+  String get sendingVoice;
+
+  /// No description provided for @voiceSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice sent'**
+  String get voiceSent;
+
+  /// No description provided for @sending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending'**
+  String get sending;
+
+  /// No description provided for @sentToDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent to device'**
+  String get sentToDevice;
+
+  /// No description provided for @encrypted.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted'**
+  String get encrypted;
+
+  /// No description provided for @waitingForKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for key'**
+  String get waitingForKey;
+
+  /// No description provided for @joinTalkgroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Join OpenMANET talkgroup'**
+  String get joinTalkgroup;
+
+  /// No description provided for @startVoiceCall.
+  ///
+  /// In en, this message translates to:
+  /// **'Start voice call'**
+  String get startVoiceCall;
+
+  /// No description provided for @noSensorGps.
+  ///
+  /// In en, this message translates to:
+  /// **'No sensor GPS'**
+  String get noSensorGps;
+
+  /// No description provided for @connectToSendVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to send voice'**
+  String get connectToSendVoice;
+
+  /// No description provided for @translateVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Translate voice'**
+  String get translateVoice;
+
+  /// No description provided for @checkingTranslation.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking offline translation…'**
+  String get checkingTranslation;
+
+  /// No description provided for @offlineTranslation.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline translation · 2.6 GB'**
+  String get offlineTranslation;
+
+  /// No description provided for @installGemma.
+  ///
+  /// In en, this message translates to:
+  /// **'Install Gemma 4 to translate'**
+  String get installGemma;
+
+  /// No description provided for @noReplayData.
+  ///
+  /// In en, this message translates to:
+  /// **'No replay data'**
+  String get noReplayData;
+
+  /// No description provided for @tapToReplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to replay'**
+  String get tapToReplay;
+
+  /// No description provided for @transcript.
+  ///
+  /// In en, this message translates to:
+  /// **'Transcript'**
+  String get transcript;
+
+  /// No description provided for @translationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Translation failed: {error}'**
+  String translationFailed(String error);
+
+  /// No description provided for @speechFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Speech failed: {error}'**
+  String speechFailed(String error);
+
+  /// No description provided for @delivered.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivered'**
+  String get delivered;
+
+  /// No description provided for @incomingVoiceCall.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming voice call'**
+  String get incomingVoiceCall;
+
+  /// No description provided for @calling.
+  ///
+  /// In en, this message translates to:
+  /// **'Calling…'**
+  String get calling;
+
+  /// No description provided for @connected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get connected;
+
+  /// No description provided for @callEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Call ended'**
+  String get callEnded;
+
+  /// No description provided for @meshUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Mesh user'**
+  String get meshUser;
+
+  /// No description provided for @transmitting.
+  ///
+  /// In en, this message translates to:
+  /// **'Transmitting…'**
+  String get transmitting;
+
+  /// No description provided for @callActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Call action failed: {error}'**
+  String callActionFailed(String error);
+
+  /// No description provided for @voiceTransmissionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice transmission failed: {error}'**
+  String voiceTransmissionFailed(String error);
+
+  /// No description provided for @unspecified.
+  ///
+  /// In en, this message translates to:
+  /// **'Unspecified'**
+  String get unspecified;
+
+  /// No description provided for @gatewayType.
+  ///
+  /// In en, this message translates to:
+  /// **'Gateway'**
+  String get gatewayType;
+
+  /// No description provided for @blue.
+  ///
+  /// In en, this message translates to:
+  /// **'Blue'**
+  String get blue;
+
+  /// No description provided for @red.
+  ///
+  /// In en, this message translates to:
+  /// **'Red'**
+  String get red;
+
+  /// No description provided for @green.
+  ///
+  /// In en, this message translates to:
+  /// **'Green'**
+  String get green;
+
+  /// No description provided for @orange.
+  ///
+  /// In en, this message translates to:
+  /// **'Orange'**
+  String get orange;
+
+  /// No description provided for @purple.
+  ///
+  /// In en, this message translates to:
+  /// **'Purple'**
+  String get purple;
+
+  /// No description provided for @teal.
+  ///
+  /// In en, this message translates to:
+  /// **'Teal'**
+  String get teal;
+
+  /// No description provided for @gray.
+  ///
+  /// In en, this message translates to:
+  /// **'Gray'**
+  String get gray;
+
+  /// No description provided for @tempHumidity.
+  ///
+  /// In en, this message translates to:
+  /// **'Temp & Humidity'**
+  String get tempHumidity;
+
+  /// No description provided for @latestValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest value'**
+  String get latestValue;
+
+  /// No description provided for @imuOrientation.
+  ///
+  /// In en, this message translates to:
+  /// **'IMU orientation'**
+  String get imuOrientation;
+
+  /// No description provided for @binaryData.
+  ///
+  /// In en, this message translates to:
+  /// **'Binary data'**
+  String get binaryData;
+
+  /// No description provided for @timeSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Time series'**
+  String get timeSeries;
+
+  /// No description provided for @last30Minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 30 min'**
+  String get last30Minutes;
+
+  /// No description provided for @lastHour.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 1 hour'**
+  String get lastHour;
+
+  /// No description provided for @last6Hours.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 6 hours'**
+  String get last6Hours;
+
   /// No description provided for @dashboardEmptyDescription.
   ///
   /// In en, this message translates to:

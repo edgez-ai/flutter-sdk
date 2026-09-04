@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import 'app_locale.dart';
 import 'models.dart';
 import 'driver_catalog.dart';
+import 'localized_model_labels.dart';
 import 'shared_widgets.dart';
 
 List<int> halowFrequenciesKhz(String country, int bandwidthMhz) {
@@ -358,12 +359,12 @@ class SettingsScreen extends StatefulWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          'Selected device',
+                          l10n.selectedDevice,
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                         Text(activeConnection == EdgezConnectionType.usb
                             ? selectedUsbDevice?.label ?? 'ESP32-S3 USB'
-                            : selectedBle?.label ?? 'No device selected'),
+                            : selectedBle?.label ?? l10n.noDeviceSelected),
                         if (activeConnection != EdgezConnectionType.usb &&
                             selectedBle != null)
                           Text(
@@ -372,21 +373,20 @@ class SettingsScreen extends StatefulWidget {
                           ),
                         Text(
                           switch (activeConnection) {
-                            EdgezConnectionType.usb =>
-                              'USB connected; high-speed channel ready',
+                            EdgezConnectionType.usb => l10n.usbConnected,
                             EdgezConnectionType.ble => bleReady
-                                ? 'BLE connected; control channel ready'
-                                : 'BLE connected; setting up control channel',
+                                ? l10n.bleControlReady
+                                : l10n.bleSettingUp,
                             EdgezConnectionType.none => bleConnecting
-                                ? 'BLE pairing or connecting'
-                                : 'Disconnected',
+                                ? l10n.blePairing
+                                : l10n.disconnected,
                           },
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         if (activeConnection != EdgezConnectionType.none &&
                             meshStatus?.firmwareVersion.isNotEmpty == true)
                           Text(
-                            'Firmware: ${meshStatus!.firmwareVersion}',
+                            l10n.firmwareVersion(meshStatus!.firmwareVersion),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         if (activeConnection == EdgezConnectionType.usb)
@@ -424,16 +424,15 @@ class SettingsScreen extends StatefulWidget {
                                       bleConnecting,
                                       bleReady
                                     )) {
-                                      (_, true, _) =>
-                                        'Waiting for BLE connection',
+                                      (_, true, _) => l10n.waitingBle,
                                       (EdgezConnectionType.none, false, _) =>
-                                        'Connect a BLE device',
+                                        l10n.connectBleDevice,
                                       (EdgezConnectionType.ble, false, false) =>
-                                        'Waiting for BLE control channel',
+                                        l10n.waitingBleControl,
                                       (EdgezConnectionType.ble, false, true) =>
-                                        'Waiting for device status',
+                                        l10n.waitingDeviceStatus,
                                       (EdgezConnectionType.usb, false, _) =>
-                                        'Waiting for device status',
+                                        l10n.waitingDeviceStatus,
                                     }}',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
@@ -494,7 +493,8 @@ class SettingsScreen extends StatefulWidget {
                             : null,
                         child: Text(
                           otaInProgress
-                              ? 'Updating ${(otaProgress * 100).floor()}%'
+                              ? l10n
+                                  .updatingProgress((otaProgress * 100).floor())
                               : l10n.update,
                         ),
                       ),
@@ -510,7 +510,7 @@ class SettingsScreen extends StatefulWidget {
                 if (otaUpdateAvailable && !otaReady) ...<Widget>[
                   const SizedBox(height: 4),
                   Text(
-                    'This connected firmware does not expose BLE OTA yet.',
+                    l10n.otaUnsupported,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.error,
                         ),
@@ -554,14 +554,14 @@ class SettingsScreen extends StatefulWidget {
                   label: l10n.marker,
                   value: deviceModeEnabled ? deviceMarker : userMarker,
                   values: ExampleMarker.values,
-                  titleFor: (value) => value.label,
+                  titleFor: (value) => value.localizedLabel(l10n),
                   onChanged: deviceModeEnabled
                       ? onDeviceMarkerChanged
                       : onUserMarkerChanged,
                 ),
                 if (deviceModeEnabled)
                   Text(
-                    'ID ${userIdentity?.userUuid ?? 'Not loaded'}',
+                    l10n.identifier(userIdentity?.userUuid ?? l10n.notLoaded),
                     style: Theme.of(context).textTheme.bodySmall,
                   )
                 else
@@ -588,18 +588,17 @@ class SettingsScreen extends StatefulWidget {
                 if (deviceModeEnabled ? deviceShareLocation : shareLocation)
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Use device GPS (L76K)'),
-                    subtitle: const Text(
-                      'Use periodic low-power device fixes instead of phone/static location',
-                    ),
+                    title: Text(l10n.useDeviceGps),
+                    subtitle: Text(l10n.deviceGpsDescription),
                     value: deviceGpsEnabled,
                     onChanged: onDeviceGpsEnabledChanged,
                   ),
                 if (deviceGpsEnabled && deviceGpsLocation != null)
                   Text(
-                    'Device fix: '
-                    '${deviceGpsLocation!.latitude.toStringAsFixed(6)}, '
-                    '${deviceGpsLocation!.longitude.toStringAsFixed(6)}',
+                    l10n.deviceFix(
+                      deviceGpsLocation!.latitude.toStringAsFixed(6),
+                      deviceGpsLocation!.longitude.toStringAsFixed(6),
+                    ),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 if (locationMessage.isNotEmpty) ...<Widget>[
@@ -639,7 +638,7 @@ class SettingsScreen extends StatefulWidget {
                       Future<void>.value(onRefreshDeviceLocation()),
                     ),
                     icon: const Icon(Icons.my_location),
-                    label: const Text('Refresh phone location'),
+                    label: Text(l10n.refreshPhoneLocation),
                   ),
                 ],
               ],
@@ -653,7 +652,7 @@ class SettingsScreen extends StatefulWidget {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(l10n.enableGeoFence),
-                  subtitle: const Text('Include a geofence in device beacons'),
+                  subtitle: Text(l10n.geofenceBeaconDescription),
                   value: geoFenceEnabled,
                   onChanged: (enabled) => onDeviceGeoFenceNameChanged(
                     enabled ? 'Geo fence' : '',
@@ -677,8 +676,8 @@ class SettingsScreen extends StatefulWidget {
               children: <Widget>[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Enable sensors'),
-                  subtitle: const Text('Configure device sensor connectors'),
+                  title: Text(l10n.enableSensors),
+                  subtitle: Text(l10n.sensorConnectorDescription),
                   value: sensorsEnabled,
                   onChanged: (enabled) {
                     if (enabled) {
@@ -797,9 +796,8 @@ class SettingsScreen extends StatefulWidget {
               children: <Widget>[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Enable upstream network'),
-                  subtitle: const Text(
-                      'Forward through Wi-Fi and send beacons to a multicast address.'),
+                  title: Text(l10n.enableUpstreamNetwork),
+                  subtitle: Text(l10n.upstreamDescription),
                   value: deviceUpstreamEnabled,
                   onChanged: onDeviceUpstreamEnabledChanged,
                 ),
@@ -827,7 +825,7 @@ class SettingsScreen extends StatefulWidget {
                       '239.192.0.1',
                     ],
                     titleFor: (value) => switch (value) {
-                      '' => 'Not set',
+                      '' => l10n.notSet,
                       '224.0.0.1' => '224.0.0.1 - all hosts',
                       '224.0.0.251' => '224.0.0.251 - mDNS',
                       '239.255.255.250' => '239.255.255.250 - SSDP',
@@ -925,11 +923,7 @@ class SettingsScreen extends StatefulWidget {
                   onChanged: onDefaultVoiceTargetLanguageChanged,
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Used as the initial target language in conversations. The '
-                  'spoken language is detected once and saved with the '
-                  'transcript on the message.',
-                ),
+                Text(l10n.translationLanguageDescription),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(l10n.autoReplayVoice),
@@ -967,7 +961,7 @@ class SettingsScreen extends StatefulWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'Select BLE or USB device',
+                AppLocalizations.of(context).selectBleOrUsb,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const Spacer(),
@@ -984,7 +978,7 @@ class SettingsScreen extends StatefulWidget {
           Text('USB', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           if (usbDevices.isEmpty)
-            const Text('No USB devices attached. Connect with a USB OTG cable.')
+            Text(AppLocalizations.of(context).noUsbDevices)
           else ...<Widget>[
             for (final device in usbDevices) ...<Widget>[
               Card(
@@ -1006,7 +1000,8 @@ class SettingsScreen extends StatefulWidget {
             ],
           ],
           const SizedBox(height: 8),
-          Text('Bluetooth', style: Theme.of(context).textTheme.titleMedium),
+          Text(AppLocalizations.of(context).bluetooth,
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           if (bleDevices.isEmpty)
             InfoCard(
@@ -1116,22 +1111,22 @@ class IdentitySummary extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: current == null
-          ? const <Widget>[
-              Text('User identity'),
-              Text('Loading identity'),
+          ? <Widget>[
+              Text(AppLocalizations.of(context).userIdentity),
+              Text(AppLocalizations.of(context).loadingIdentity),
             ]
           : <Widget>[
-              Text('User identity',
+              Text(AppLocalizations.of(context).userIdentity,
                   style: Theme.of(context).textTheme.titleMedium),
               Text('UUID ${current.userUuid}',
                   style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 6),
-              Text('X25519 public key',
+              Text(AppLocalizations.of(context).publicKey,
                   style: Theme.of(context).textTheme.titleSmall),
               SelectableText(edgezFormatHex(current.publicKey),
                   style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 6),
-              Text('X25519 private key',
+              Text(AppLocalizations.of(context).privateKey,
                   style: Theme.of(context).textTheme.titleSmall),
               SelectableText(edgezFormatHex(current.privateKey),
                   style: Theme.of(context).textTheme.bodySmall),
@@ -1140,7 +1135,7 @@ class IdentitySummary extends StatelessWidget {
                 child: OutlinedButton(
                   onPressed: () =>
                       unawaited(Future<void>.value(onRegenerateUserKeyPair())),
-                  child: const Text('Regenerate key pair'),
+                  child: Text(AppLocalizations.of(context).regenerateKeyPair),
                 ),
               ),
             ],

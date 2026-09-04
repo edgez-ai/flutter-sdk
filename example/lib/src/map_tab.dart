@@ -91,7 +91,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           _downloadUpdate = const EdgezMapDownloadUpdate(
             regionId: '',
             status:
-                'Zoom in to an uncached region to download its detailed map.',
+                AppLocalizations.of(context).zoomForMap,
           );
         } else {
           _downloadUpdate = null;
@@ -187,7 +187,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void _showMapSettingError(PlatformException error) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(error.message ?? 'Unable to change map view')),
+      SnackBar(
+          content: Text(error.message ??
+              AppLocalizations.of(context).unableChangeMap)),
     );
   }
 
@@ -259,14 +261,18 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   children: <Widget>[
                     _MapViewButton(
                       selected: _is3d,
-                      tooltip: _is3d ? 'Switch to 2D' : 'Switch to 3D',
+                      tooltip: _is3d
+                          ? AppLocalizations.of(context).switchTo2d
+                          : AppLocalizations.of(context).switchTo3d,
                       label: _is3d ? '3D' : '2D',
                       onPressed: () => _set3d(!_is3d),
                     ),
                     const SizedBox(height: 8),
                     _MapViewButton(
                       selected: _isNight,
-                      tooltip: _isNight ? 'Use day map' : 'Use night map',
+                      tooltip: _isNight
+                          ? AppLocalizations.of(context).useDayMap
+                          : AppLocalizations.of(context).useNightMap,
                       icon: _isNight ? Icons.dark_mode : Icons.light_mode,
                       onPressed: () => _setNight(!_isNight),
                     ),
@@ -274,8 +280,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     _MapViewButton(
                       selected: _isSatellite,
                       tooltip: _isSatellite
-                          ? 'Use standard map'
-                          : 'Use satellite imagery',
+                          ? AppLocalizations.of(context).useStandardMap
+                          : AppLocalizations.of(context).useSatelliteImagery,
                       icon: _isSatellite ? Icons.map : Icons.satellite_alt,
                       onPressed: () => _setSatellite(!_isSatellite),
                     ),
@@ -326,11 +332,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
                           Text(
-                            'Download map: $regionId?',
+                            AppLocalizations.of(context)
+                                .downloadMapQuestion(regionId),
                             style: Theme.of(context).textTheme.titleSmall,
                           ),
                           const SizedBox(height: 4),
-                          const Text('It will be cached for offline use.'),
+                          Text(AppLocalizations.of(context).mapCachedDescription),
                           const SizedBox(height: 8),
                           Row(
                             children: <Widget>[
@@ -358,7 +365,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 bottom: 8,
                 child: Text(
                   positionedNodes.isEmpty
-                      ? 'No mesh nodes are sharing a location · ${_mapAttribution()}'
+                      ? '${AppLocalizations.of(context).noNodesSharingLocation} · ${_mapAttribution()}'
                       : '${positionedNodes.length} mesh nodes · ${_mapAttribution()}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     shadows: const <Shadow>[
