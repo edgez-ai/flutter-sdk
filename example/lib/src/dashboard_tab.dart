@@ -60,7 +60,7 @@ class DashboardScreen extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onOpenProvisioning,
                 icon: const Icon(Icons.bluetooth_searching),
-                label: const Text('Prov'),
+                label: Text(AppLocalizations.of(context).provisioning),
               ),
             ],
           ),

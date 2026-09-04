@@ -113,7 +113,9 @@ private const val OTA_ABORT: Byte = 4
 private const val OTA_DATA_HEADER_SIZE = 5
 private const val OTA_DATA_MAX_CHUNK_SIZE = 220
 private const val OTA_WRITE_TIMEOUT_MS = 15_000L
-private const val CONTROL_SERVICE_READY_FALLBACK_MS = 750L
+// Samsung's Bluetooth stack can take just over a second to finish the control
+// CCCD write while its post-bond service discovery is still settling.
+private const val CONTROL_SERVICE_READY_FALLBACK_MS = 2_500L
 private const val MTU_CALLBACK_FALLBACK_MS = 1_500L
 private const val SERVICE_DISCOVERY_TIMEOUT_MS = 5_000L
 private const val MAX_SERVICE_DISCOVERY_ATTEMPTS = 2
@@ -2798,7 +2800,17 @@ class EdgezFlutterSdkPlugin :
         val currentGatt = activeGatt ?: return false
         val rx = writeCharacteristic ?: return false
         val frame = synchronized(this) {
-            if (dataWriteInFlight || txWriteInFlight) return true
+            // Android permits only one outstanding GATT operation per client.
+            // Keep application frames queued until notification setup has
+            // finished, including when the service-ready fallback fires before
+            // onDescriptorWrite reaches the plugin.
+            if (notificationDescriptorWriteInFlight ||
+                notificationDescriptors.isNotEmpty() ||
+                dataWriteInFlight ||
+                txWriteInFlight
+            ) {
+                return true
+            }
             val nextFrame = txQueue.peekFirst() ?: return true
             txWriteInFlight = true
             dataWriteInFlight = true
@@ -2829,7 +2841,13 @@ class EdgezFlutterSdkPlugin :
         val currentGatt = activeGatt ?: return false
         val voice = writeCharacteristic ?: return false
         val frame = synchronized(this) {
-            if (dataWriteInFlight || voiceTxWriteInFlight) return true
+            if (notificationDescriptorWriteInFlight ||
+                notificationDescriptors.isNotEmpty() ||
+                dataWriteInFlight ||
+                voiceTxWriteInFlight
+            ) {
+                return true
+            }
             val nextFrame = voiceTxQueue.peekFirst() ?: return true
             val waitMs = nextVoiceTxAllowedAtMs - SystemClock.elapsedRealtime()
             if (waitMs > 0) {
@@ -2893,7 +2911,14 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun writeNextDataFrame(activeGatt: BluetoothGatt) {
-        if (synchronized(this) { dataWriteInFlight }) return
+        if (synchronized(this) {
+                notificationDescriptorWriteInFlight ||
+                    notificationDescriptors.isNotEmpty() ||
+                    dataWriteInFlight
+            }
+        ) {
+            return
+        }
         if (txQueue.isNotEmpty()) {
             writeNextFrame(activeGatt, rxCharacteristic)
         } else if (voiceTxQueue.isNotEmpty()) {
@@ -3125,9 +3150,15 @@ class EdgezFlutterSdkPlugin :
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 emit(mapOf("type" to "log", "log" to "BLE notification subscription failed status=$status uuid=${descriptor.characteristic.uuid}"))
                 if (isControlNotification) controlNotificationFailed = true
+            } else {
+                emit(mapOf("type" to "log", "log" to "BLE notification subscription ready uuid=${descriptor.characteristic.uuid}"))
             }
             writeNextNotificationDescriptor(gatt)
             maybeMarkControlServiceReady(gatt)
+            // A service-ready fallback may already have queued authorization or
+            // initialization data. Resume it only after the final descriptor
+            // callback, when Android's per-client GATT command slot is free.
+            writeNextDataFrame(gatt)
         }
 
         @SuppressLint("MissingPermission")
