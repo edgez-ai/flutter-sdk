@@ -13,6 +13,21 @@ flutter pub get
 flutter run
 ```
 
+## Localization
+
+The app ships with English, Simplified Chinese, French, Spanish, German, and
+Japanese. On first launch it follows the device locale when supported and falls
+back to English otherwise. A language selected under **Settings > Others** is
+saved with `shared_preferences` and overrides the device locale.
+
+Translations live in `assets/i18n/app_<language-code>.arb`. ARB is JSON with
+Flutter localization metadata. After editing a catalog, regenerate the typed
+localization classes with:
+
+```sh
+flutter gen-l10n
+```
+
 The Nodes tab includes a **Prov** action that follows the Android app's
 eight-step BLE device-provisioning flow. Only the Random Temperature sample is
 bundled; production UART/I2C and RS485 drivers are installed from the

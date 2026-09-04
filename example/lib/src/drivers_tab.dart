@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
+
+import '../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'driver_catalog.dart';
@@ -134,7 +136,7 @@ class _DriversScreenState extends State<DriversScreen> {
               Row(
                 children: <Widget>[
                   Expanded(
-                    child: Text('Drivers',
+                    child: Text(AppLocalizations.of(context).drivers,
                         style: Theme.of(context).textTheme.headlineMedium),
                   ),
                   FilledButton(

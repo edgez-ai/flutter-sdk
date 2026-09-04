@@ -6,14 +6,19 @@ import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
 
 import 'src/app.dart';
+import 'src/app_locale.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final initialConfiguration = await EdgezBleConfigurationStore().load();
+  final initialLanguage = await AppLocaleStore().load();
   if (Platform.isAndroid) {
     await FlutterGemma.initialize(
       inferenceEngines: const [LiteRtLmEngine()],
     );
   }
-  runApp(EdgezExampleApp(initialConfiguration: initialConfiguration));
+  runApp(EdgezExampleApp(
+    initialConfiguration: initialConfiguration,
+    initialLanguage: initialLanguage,
+  ));
 }

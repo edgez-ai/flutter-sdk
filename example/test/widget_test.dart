@@ -7,8 +7,10 @@ import 'package:edgez_flutter_sdk_example/src/nodes_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:edgez_flutter_sdk_example/src/app.dart';
+import 'package:edgez_flutter_sdk_example/src/app_locale.dart';
 import 'package:edgez_flutter_sdk_example/src/provisioning_screen.dart';
 import 'package:edgez_flutter_sdk_example/src/voice_call_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Finder findVerticalScrollable() => find.byWidgetPredicate(
       (widget) =>
@@ -18,6 +20,42 @@ Finder findVerticalScrollable() => find.byWidgetPredicate(
     );
 
 void main() {
+  test('app locale is persisted in shared preferences', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final store = AppLocaleStore();
+
+    expect(
+      await store.load(deviceLocale: const Locale('pt')),
+      AppLanguage.english,
+    );
+    expect(
+      await store.load(deviceLocale: const Locale('fr')),
+      AppLanguage.french,
+    );
+    await store.save(AppLanguage.japanese);
+    expect(await store.load(), AppLanguage.japanese);
+  });
+
+  testWidgets('language can be changed from settings', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(const EdgezExampleApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Settings').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Others'));
+    await tester.tap(find.text('Others'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Language').first);
+    await tester.tap(find.byType(DropdownButtonFormField<AppLanguage>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('中文').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('设置'), findsWidgets);
+    expect(await AppLocaleStore().load(), AppLanguage.chinese);
+  });
+
   test('provisioning excludes the BLE device selected in settings', () {
     const selected = EdgezBleDevice(
       id: 'selected',

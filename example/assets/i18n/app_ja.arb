@@ -1,0 +1,10 @@
+{
+  "@@locale": "ja",
+  "appTitle": "EdgeZ", "dashboard": "ダッシュボード", "nodes": "ノード", "map": "マップ", "drivers": "ドライバー", "settings": "設定",
+  "language": "言語", "languageDescription": "アプリで使用する言語を選択", "deviceConnection": "デバイス接続", "select": "選択", "connect": "接続", "connecting": "接続中…", "disconnect": "切断",
+  "autoConnect": "自動接続", "autoConnectDescription": "アプリ起動時に選択済みの BLE デバイスに接続し、切断時は再接続します", "user": "ユーザー", "meshNetwork": "メッシュネットワーク", "others": "その他",
+  "deviceUser": "デバイスユーザー", "userName": "ユーザー名", "deviceUserName": "デバイスユーザー名", "marker": "マーカー", "location": "位置", "deviceLocation": "デバイスの位置", "shareLocation": "位置を共有", "shareLocationDescription": "HaLow ビーコンに位置を含める",
+  "country": "国/地域", "bandwidth": "帯域幅", "channel": "チャンネル", "meshId": "Mesh ID / SSID", "passphrase": "パスフレーズ", "maxHop": "最大ホップ数", "beaconInterval": "ビーコン間隔（秒）", "saveSettings": "設定を保存",
+  "logging": "ログ", "logLevel": "ログレベル", "chat": "チャット", "defaultTranslationLanguage": "既定の翻訳言語", "autoReplayVoice": "受信音声を自動再生", "autoReplayVoiceDescription": "新しい受信音声メッセージを自動再生",
+  "debug": "デバッグ", "back": "戻る", "deviceMode": "デバイスモード", "phoneMode": "スマートフォンモード", "checkForUpdate": "更新を確認", "checking": "確認中…", "update": "更新", "settingsLanguageSemantics": "現在のアプリ言語: {language}"
+}

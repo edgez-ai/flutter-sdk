@@ -1,6 +1,7 @@
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import 'models.dart';
 import 'settings_tab.dart' show halowFrequenciesKhz, halowFrequencyLabel;
 import 'shared_widgets.dart';
@@ -71,7 +72,7 @@ class NodesScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: <Widget>[
           Text(
-            'Nodes',
+            AppLocalizations.of(context).nodes,
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           Row(
@@ -90,7 +91,7 @@ class NodesScreen extends StatelessWidget {
                       value: meshFrequencies.contains(meshFrequencyKhz)
                           ? meshFrequencyKhz
                           : null,
-                      hint: const Text('Channel'),
+                      hint: Text(AppLocalizations.of(context).channel),
                       isDense: true,
                       isExpanded: true,
                       items: meshFrequencies

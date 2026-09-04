@@ -1,0 +1,10 @@
+{
+  "@@locale": "de",
+  "appTitle": "EdgeZ", "dashboard": "Dashboard", "nodes": "Knoten", "map": "Karte", "drivers": "Treiber", "settings": "Einstellungen",
+  "language": "Sprache", "languageDescription": "Wähle die Sprache der App", "deviceConnection": "Geräteverbindung", "select": "Auswählen", "connect": "Verbinden", "connecting": "Verbindung wird hergestellt…", "disconnect": "Trennen",
+  "autoConnect": "Automatisch verbinden", "autoConnectDescription": "Das ausgewählte BLE-Gerät beim App-Start verbinden und nach Abbruch erneut verbinden", "user": "Benutzer", "meshNetwork": "Mesh-Netzwerk", "others": "Sonstiges",
+  "deviceUser": "Gerätebenutzer", "userName": "Benutzername", "deviceUserName": "Gerätebenutzername", "marker": "Markierung", "location": "Standort", "deviceLocation": "Gerätestandort", "shareLocation": "Standort teilen", "shareLocationDescription": "Standort in HaLow-Beacon aufnehmen",
+  "country": "Land", "bandwidth": "Bandbreite", "channel": "Kanal", "meshId": "Mesh-ID / SSID", "passphrase": "Passphrase", "maxHop": "Maximale Hops", "beaconInterval": "Beacon-Intervall (Sekunden)", "saveSettings": "Einstellungen speichern",
+  "logging": "Protokollierung", "logLevel": "Protokollstufe", "chat": "Chat", "defaultTranslationLanguage": "Standard-Übersetzungssprache", "autoReplayVoice": "Empfangene Sprachnachrichten automatisch abspielen", "autoReplayVoiceDescription": "Neue eingehende Sprachnachrichten automatisch abspielen",
+  "debug": "Debug", "back": "Zurück", "deviceMode": "Gerätemodus", "phoneMode": "Telefonmodus", "checkForUpdate": "Nach Update suchen", "checking": "Prüfung…", "update": "Aktualisieren", "settingsLanguageSemantics": "Aktuelle App-Sprache: {language}"
+}

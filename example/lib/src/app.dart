@@ -7,6 +7,9 @@ import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_localizations.dart';
+import 'app_locale.dart';
+
 import 'conversation_screen.dart';
 import 'dashboard_tab.dart';
 import 'debug_tab.dart';
@@ -25,18 +28,24 @@ import 'topology_screen.dart';
 import 'voice_call_screen.dart';
 
 enum AppDestination {
-  dashboard('Dashboard', Icons.dashboard_outlined, Icons.dashboard),
-  nodes('Nodes', Icons.hub_outlined, Icons.hub),
-  map('Map', Icons.map_outlined, Icons.map),
-  drivers('Drivers', Icons.usb_outlined, Icons.usb),
-  settings('Settings', Icons.bluetooth_connected_outlined,
-      Icons.bluetooth_connected);
+  dashboard(Icons.dashboard_outlined, Icons.dashboard),
+  nodes(Icons.hub_outlined, Icons.hub),
+  map(Icons.map_outlined, Icons.map),
+  drivers(Icons.usb_outlined, Icons.usb),
+  settings(Icons.bluetooth_connected_outlined, Icons.bluetooth_connected);
 
-  const AppDestination(this.label, this.icon, this.selectedIcon);
+  const AppDestination(this.icon, this.selectedIcon);
 
-  final String label;
   final IconData icon;
   final IconData selectedIcon;
+
+  String label(AppLocalizations l10n) => switch (this) {
+        AppDestination.dashboard => l10n.dashboard,
+        AppDestination.nodes => l10n.nodes,
+        AppDestination.map => l10n.map,
+        AppDestination.drivers => l10n.drivers,
+        AppDestination.settings => l10n.settings,
+      };
 }
 
 const _navigationDestinations = <AppDestination>[
@@ -54,9 +63,14 @@ const _downloadsChannel = MethodChannel(
 );
 
 class EdgezExampleApp extends StatefulWidget {
-  const EdgezExampleApp({this.initialConfiguration, super.key});
+  const EdgezExampleApp({
+    this.initialConfiguration,
+    this.initialLanguage,
+    super.key,
+  });
 
   final EdgezBleConfiguration? initialConfiguration;
+  final AppLanguage? initialLanguage;
 
   @override
   State<EdgezExampleApp> createState() => _EdgezExampleAppState();
@@ -94,6 +108,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   String lastPersistSignature = '';
   bool shareLocation = false;
   bool autoReplayReceivedVoice = false;
+  late AppLanguage appLanguage;
   String defaultVoiceTargetLanguage = 'English';
   bool deviceModeEnabled = false;
   bool provisionMode = false;
@@ -153,6 +168,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   @override
   void initState() {
     super.initState();
+    appLanguage = widget.initialLanguage ??
+        AppLanguage.fromCode(
+          WidgetsBinding.instance.platformDispatcher.locale.languageCode,
+        );
     final initialConfiguration = widget.initialConfiguration;
     if (initialConfiguration != null) {
       meshCountry = initialConfiguration.meshCountry;
@@ -185,6 +204,20 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     unawaited(_hydrateFromDatabase());
     unawaited(_loadInstalledDrivers());
     _listenForAppLinks();
+  }
+
+  void _setAppLanguage(AppLanguage language) {
+    if (language == appLanguage) return;
+    setState(() => appLanguage = language);
+    unawaited(_persistAppLanguage(language));
+  }
+
+  Future<void> _persistAppLanguage(AppLanguage language) async {
+    try {
+      await AppLocaleStore().save(language);
+    } catch (_) {
+      // A locale change remains usable for this session if persistence fails.
+    }
   }
 
   @override
@@ -1586,6 +1619,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   onClose: () => setState(() => showDebug = false),
                 )
               : SettingsScreen(
+                  appLanguage: appLanguage,
+                  onAppLanguageChanged: _setAppLanguage,
                   activeConnection: meshState.connection,
                   bleConnecting: meshState.bleConnecting,
                   bleReady: meshState.bleReady,
@@ -1775,59 +1810,66 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         return MaterialApp(
           scaffoldMessengerKey: scaffoldMessengerKey,
           debugShowCheckedModeBanner: false,
+          onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+          locale: appLanguage.locale,
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
           theme: ThemeData(
             colorSchemeSeed: Colors.teal,
             useMaterial3: true,
             cardTheme: const CardThemeData(margin: EdgeInsets.zero),
           ),
-          home: !meshState.voiceCall.isIdle
-              ? VoiceCallScreen(
-                  call: meshState.voiceCall,
-                  peer: callPeer,
-                  onAnswer: _answerCall,
-                  onEnd: _endCall,
-                  onTalkStart: () => session.setVoiceTransmit(true),
-                  onTalkEnd: () => session.setVoiceTransmit(false),
-                )
-              : provisionMode
-                  ? ProvisioningScreen(
-                      session: session,
-                      drivers: drivers,
-                      excludedBleDeviceId: selectedBleDevice?.id,
-                      defaultMeshId: meshId,
-                      defaultPassphrase: passphrase,
-                      defaultMaxHop: maxHop,
-                      defaultBeaconInterval: beaconIntervalSeconds,
-                      defaultMeshCountry: meshCountry,
-                      defaultMeshFrequencyKhz: defaultMeshFrequencyKhz,
-                      defaultMeshBandwidthMhz: meshBandwidthMhz,
-                      onCancel: _closeProvisioning,
-                      onComplete: _closeProvisioning,
-                    )
-                  : destination == AppDestination.map
-                      ? body
-                      : Scaffold(
-                          body: body,
-                          bottomNavigationBar: NavigationBar(
-                            selectedIndex:
-                                _navigationDestinations.indexOf(destination),
-                            onDestinationSelected: (index) => setState(() {
-                              destination = _navigationDestinations[index];
-                              showDebug = false;
-                              if (destination != AppDestination.nodes) {
-                                selectedNodeNum = null;
-                                showTopology = false;
-                              }
-                            }),
-                            destinations: _navigationDestinations.map((item) {
-                              return NavigationDestination(
-                                icon: Icon(item.icon),
-                                selectedIcon: Icon(item.selectedIcon),
-                                label: item.label,
-                              );
-                            }).toList(),
+          home: Builder(
+            builder: (context) => !meshState.voiceCall.isIdle
+                ? VoiceCallScreen(
+                    call: meshState.voiceCall,
+                    peer: callPeer,
+                    onAnswer: _answerCall,
+                    onEnd: _endCall,
+                    onTalkStart: () => session.setVoiceTransmit(true),
+                    onTalkEnd: () => session.setVoiceTransmit(false),
+                  )
+                : provisionMode
+                    ? ProvisioningScreen(
+                        session: session,
+                        drivers: drivers,
+                        excludedBleDeviceId: selectedBleDevice?.id,
+                        defaultMeshId: meshId,
+                        defaultPassphrase: passphrase,
+                        defaultMaxHop: maxHop,
+                        defaultBeaconInterval: beaconIntervalSeconds,
+                        defaultMeshCountry: meshCountry,
+                        defaultMeshFrequencyKhz: defaultMeshFrequencyKhz,
+                        defaultMeshBandwidthMhz: meshBandwidthMhz,
+                        onCancel: _closeProvisioning,
+                        onComplete: _closeProvisioning,
+                      )
+                    : destination == AppDestination.map
+                        ? body
+                        : Scaffold(
+                            body: body,
+                            bottomNavigationBar: NavigationBar(
+                              selectedIndex:
+                                  _navigationDestinations.indexOf(destination),
+                              onDestinationSelected: (index) => setState(() {
+                                destination = _navigationDestinations[index];
+                                showDebug = false;
+                                if (destination != AppDestination.nodes) {
+                                  selectedNodeNum = null;
+                                  showTopology = false;
+                                }
+                              }),
+                              destinations: _navigationDestinations.map((item) {
+                                return NavigationDestination(
+                                  icon: Icon(item.icon),
+                                  selectedIcon: Icon(item.selectedIcon),
+                                  label:
+                                      item.label(AppLocalizations.of(context)),
+                                );
+                              }).toList(),
+                            ),
                           ),
-                        ),
+          ),
         );
       },
     );

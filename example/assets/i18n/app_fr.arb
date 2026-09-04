@@ -1,0 +1,10 @@
+{
+  "@@locale": "fr",
+  "appTitle": "EdgeZ", "dashboard": "Tableau de bord", "nodes": "Nœuds", "map": "Carte", "drivers": "Pilotes", "settings": "Paramètres",
+  "language": "Langue", "languageDescription": "Choisissez la langue utilisée par l’application", "deviceConnection": "Connexion de l’appareil", "select": "Sélectionner", "connect": "Connecter", "connecting": "Connexion…", "disconnect": "Déconnecter",
+  "autoConnect": "Connexion automatique", "autoConnectDescription": "Connecter l’appareil BLE sélectionné au démarrage et le reconnecter en cas de coupure", "user": "Utilisateur", "meshNetwork": "Réseau maillé", "others": "Autres",
+  "deviceUser": "Utilisateur de l’appareil", "userName": "Nom d’utilisateur", "deviceUserName": "Nom d’utilisateur de l’appareil", "marker": "Marqueur", "location": "Localisation", "deviceLocation": "Localisation de l’appareil", "shareLocation": "Partager la localisation", "shareLocationDescription": "Inclure la localisation dans la balise HaLow",
+  "country": "Pays", "bandwidth": "Bande passante", "channel": "Canal", "meshId": "ID Mesh / SSID", "passphrase": "Phrase secrète", "maxHop": "Nombre maximal de sauts", "beaconInterval": "Intervalle de balise (secondes)", "saveSettings": "Enregistrer les paramètres",
+  "logging": "Journalisation", "logLevel": "Niveau de journal", "chat": "Discussion", "defaultTranslationLanguage": "Langue de traduction par défaut", "autoReplayVoice": "Relire automatiquement les messages vocaux", "autoReplayVoiceDescription": "Lire automatiquement les nouveaux messages vocaux reçus",
+  "debug": "Débogage", "back": "Retour", "deviceMode": "Mode appareil", "phoneMode": "Mode téléphone", "checkForUpdate": "Rechercher une mise à jour", "checking": "Vérification…", "update": "Mettre à jour", "settingsLanguageSemantics": "Langue actuelle de l’application : {language}"
+}

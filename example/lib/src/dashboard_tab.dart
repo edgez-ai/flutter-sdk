@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import 'device_detail_screen.dart';
 import 'map_tab.dart';
 import 'models.dart';
@@ -51,7 +52,7 @@ class DashboardScreen extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: Text('Dashboard',
+                child: Text(AppLocalizations.of(context).dashboard,
                     style: Theme.of(context).textTheme.headlineMedium),
               ),
               FilledButton.icon(

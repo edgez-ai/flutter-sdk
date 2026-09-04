@@ -1,0 +1,10 @@
+{
+  "@@locale": "es",
+  "appTitle": "EdgeZ", "dashboard": "Panel", "nodes": "Nodos", "map": "Mapa", "drivers": "Controladores", "settings": "Ajustes",
+  "language": "Idioma", "languageDescription": "Elige el idioma de la aplicación", "deviceConnection": "Conexión del dispositivo", "select": "Seleccionar", "connect": "Conectar", "connecting": "Conectando…", "disconnect": "Desconectar",
+  "autoConnect": "Conexión automática", "autoConnectDescription": "Conecta el dispositivo BLE seleccionado al iniciar y vuelve a conectarlo si se desconecta", "user": "Usuario", "meshNetwork": "Red mallada", "others": "Otros",
+  "deviceUser": "Usuario del dispositivo", "userName": "Nombre de usuario", "deviceUserName": "Nombre de usuario del dispositivo", "marker": "Marcador", "location": "Ubicación", "deviceLocation": "Ubicación del dispositivo", "shareLocation": "Compartir ubicación", "shareLocationDescription": "Incluir la ubicación en la baliza HaLow",
+  "country": "País", "bandwidth": "Ancho de banda", "channel": "Canal", "meshId": "ID de malla / SSID", "passphrase": "Contraseña", "maxHop": "Saltos máximos", "beaconInterval": "Intervalo de baliza (segundos)", "saveSettings": "Guardar ajustes",
+  "logging": "Registros", "logLevel": "Nivel de registro", "chat": "Chat", "defaultTranslationLanguage": "Idioma de traducción predeterminado", "autoReplayVoice": "Reproducir voz recibida automáticamente", "autoReplayVoiceDescription": "Reproducir automáticamente los mensajes de voz nuevos",
+  "debug": "Depuración", "back": "Atrás", "deviceMode": "Modo dispositivo", "phoneMode": "Modo teléfono", "checkForUpdate": "Buscar actualización", "checking": "Comprobando…", "update": "Actualizar", "settingsLanguageSemantics": "Idioma actual de la aplicación: {language}"
+}

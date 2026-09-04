@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+import 'app_locale.dart';
 import 'models.dart';
 import 'driver_catalog.dart';
 import 'shared_widgets.dart';
@@ -54,6 +56,8 @@ enum _SettingsTab { user, meshNetwork, others }
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
+    required this.appLanguage,
+    required this.onAppLanguageChanged,
     required this.activeConnection,
     required this.bleConnecting,
     required this.bleReady,
@@ -162,6 +166,8 @@ class SettingsScreen extends StatefulWidget {
     super.key,
   });
 
+  final AppLanguage appLanguage;
+  final ValueChanged<AppLanguage> onAppLanguageChanged;
   final EdgezConnectionType activeConnection;
   final bool bleConnecting;
   final bool bleReady;
@@ -278,6 +284,7 @@ class SettingsScreen extends StatefulWidget {
     required ValueChanged<int> onTabChanged,
     required VoidCallback onSelectBle,
   }) {
+    final l10n = AppLocalizations.of(context);
     const cardGap = SizedBox(height: 12);
     final sensorsEnabled =
         uartI2cSensorType.isNotEmpty || rs485SensorType.isNotEmpty;
@@ -320,14 +327,14 @@ class SettingsScreen extends StatefulWidget {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  'Settings',
+                  l10n.settings,
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
               ),
               OutlinedButton.icon(
                 onPressed: onOpenDebug,
                 icon: const Icon(Icons.bug_report_outlined),
-                label: const Text('Debug'),
+                label: Text(l10n.debug),
               ),
             ],
           ),
@@ -337,10 +344,10 @@ class SettingsScreen extends StatefulWidget {
           ],
           cardGap,
           InfoCard(
-            title: 'Device connection',
+            title: l10n.deviceConnection,
             action: OutlinedButton(
               onPressed: onSelectBle,
-              child: const Text('Select'),
+              child: Text(l10n.select),
             ),
             children: <Widget>[
               Row(
@@ -447,10 +454,10 @@ class SettingsScreen extends StatefulWidget {
                                 : () => onConnectBleDevice(selectedBle.id),
                     child: Text(
                       bleConnecting
-                          ? 'Connecting...'
+                          ? l10n.connecting
                           : activeConnection != EdgezConnectionType.none
-                              ? 'Disconnect'
-                              : 'Connect',
+                              ? l10n.disconnect
+                              : l10n.connect,
                     ),
                   ),
                 ],
@@ -473,7 +480,9 @@ class SettingsScreen extends StatefulWidget {
                                   )
                               : null,
                       child: Text(
-                        otaCheckInProgress ? 'Checking...' : 'Check for update',
+                        otaCheckInProgress
+                            ? l10n.checking
+                            : l10n.checkForUpdate,
                       ),
                     ),
                     if (otaUpdateAvailable)
@@ -486,7 +495,7 @@ class SettingsScreen extends StatefulWidget {
                         child: Text(
                           otaInProgress
                               ? 'Updating ${(otaProgress * 100).floor()}%'
-                              : 'Update',
+                              : l10n.update,
                         ),
                       ),
                   ],
@@ -511,10 +520,8 @@ class SettingsScreen extends StatefulWidget {
               const Divider(height: 24),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Auto connect'),
-                subtitle: const Text(
-                  'Connect the selected BLE device on app start and reconnect if it drops',
-                ),
+                title: Text(l10n.autoConnect),
+                subtitle: Text(l10n.autoConnectDescription),
                 value: bleAutoConnect,
                 onChanged: onBleAutoConnectChanged,
               ),
@@ -524,26 +531,27 @@ class SettingsScreen extends StatefulWidget {
           TabBar(
             controller: tabController,
             onTap: onTabChanged,
-            tabs: const <Widget>[
-              Tab(text: 'User'),
-              Tab(text: 'Mesh Network'),
-              Tab(text: 'Others'),
+            tabs: <Widget>[
+              Tab(text: l10n.user),
+              Tab(text: l10n.meshNetwork),
+              Tab(text: l10n.others),
             ],
           ),
           if (selectedTab == _SettingsTab.user) ...<Widget>[
             cardGap,
             InfoCard(
-              title: deviceModeEnabled ? 'Device user' : 'User',
+              title: deviceModeEnabled ? l10n.deviceUser : l10n.user,
               children: <Widget>[
                 SettingsTextField(
-                  label: deviceModeEnabled ? 'Device user name' : 'User name',
+                  label:
+                      deviceModeEnabled ? l10n.deviceUserName : l10n.userName,
                   value: deviceModeEnabled ? deviceUserName : userName,
                   onChanged: deviceModeEnabled
                       ? onDeviceUserNameChanged
                       : onUserNameChanged,
                 ),
                 DropdownSetting<ExampleMarker>(
-                  label: 'Marker',
+                  label: l10n.marker,
                   value: deviceModeEnabled ? deviceMarker : userMarker,
                   values: ExampleMarker.values,
                   titleFor: (value) => value.label,
@@ -565,12 +573,12 @@ class SettingsScreen extends StatefulWidget {
             ),
             cardGap,
             InfoCard(
-              title: deviceModeEnabled ? 'Device location' : 'Location',
+              title: deviceModeEnabled ? l10n.deviceLocation : l10n.location,
               children: <Widget>[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Share location'),
-                  subtitle: const Text('Include location in HaLow beacon'),
+                  title: Text(l10n.shareLocation),
+                  subtitle: Text(l10n.shareLocationDescription),
                   value:
                       deviceModeEnabled ? deviceShareLocation : shareLocation,
                   onChanged: deviceModeEnabled
@@ -708,18 +716,18 @@ class SettingsScreen extends StatefulWidget {
               selectedTab == _SettingsTab.meshNetwork) ...<Widget>[
             cardGap,
             InfoCard(
-              title: deviceModeEnabled ? 'Network' : 'Mesh network',
+              title: l10n.meshNetwork,
               children: <Widget>[
                 if (!deviceModeEnabled) ...<Widget>[
                   DropdownSetting<String>(
-                    label: 'Country',
+                    label: l10n.country,
                     value: meshCountry,
                     values: const <String>['US', 'JP', 'EU'],
                     titleFor: (value) => value,
                     onChanged: onMeshCountryChanged,
                   ),
                   DropdownSetting<int>(
-                    label: 'Bandwidth',
+                    label: l10n.bandwidth,
                     value: meshBandwidthMhz,
                     values: halowBandwidthOptions(meshCountry),
                     titleFor: (value) => '$value MHz',
@@ -727,7 +735,7 @@ class SettingsScreen extends StatefulWidget {
                   ),
                 ],
                 DropdownSetting<int>(
-                  label: 'Channel',
+                  label: l10n.channel,
                   value: meshFrequencyKhz,
                   values: halowFrequenciesKhz(
                     meshCountry,
@@ -737,14 +745,14 @@ class SettingsScreen extends StatefulWidget {
                   onChanged: onMeshFrequencyChanged,
                 ),
                 SettingsTextField(
-                  label: 'Mesh ID / SSID',
+                  label: l10n.meshId,
                   value: deviceModeEnabled ? deviceMeshId : meshId,
                   onChanged: deviceModeEnabled
                       ? onDeviceMeshIdChanged
                       : onMeshIdChanged,
                 ),
                 SettingsTextField(
-                  label: 'Passphrase',
+                  label: l10n.passphrase,
                   value: deviceModeEnabled ? devicePassphrase : passphrase,
                   onChanged: deviceModeEnabled
                       ? onDevicePassphraseChanged
@@ -752,7 +760,7 @@ class SettingsScreen extends StatefulWidget {
                   obscureText: true,
                 ),
                 SettingsTextField(
-                  label: 'Max hop',
+                  label: l10n.maxHop,
                   value: deviceModeEnabled ? deviceMaxHop : maxHop,
                   onChanged: deviceModeEnabled
                       ? onDeviceMaxHopChanged
@@ -760,7 +768,7 @@ class SettingsScreen extends StatefulWidget {
                   keyboardType: TextInputType.number,
                 ),
                 SettingsTextField(
-                  label: 'Beacon interval (seconds)',
+                  label: l10n.beaconInterval,
                   value: deviceModeEnabled
                       ? deviceBeaconIntervalSeconds
                       : beaconIntervalSeconds,
@@ -776,7 +784,7 @@ class SettingsScreen extends StatefulWidget {
                       onPressed: () => unawaited(
                         Future<void>.value(onSaveAppSettings()),
                       ),
-                      child: const Text('Save settings'),
+                      child: Text(l10n.saveSettings),
                     ),
                   ),
               ],
@@ -859,12 +867,37 @@ class SettingsScreen extends StatefulWidget {
               selectedTab == _SettingsTab.others) ...<Widget>[
             cardGap,
             InfoCard(
-              title: 'Logging',
+              title: l10n.language,
+              children: <Widget>[
+                DropdownButtonFormField<AppLanguage>(
+                  key: ValueKey(appLanguage),
+                  initialValue: appLanguage,
+                  decoration: InputDecoration(
+                    labelText: l10n.language,
+                    helperText: l10n.languageDescription,
+                  ),
+                  items: AppLanguage.values
+                      .map(
+                        (language) => DropdownMenuItem<AppLanguage>(
+                          value: language,
+                          child: Text(language.nativeName),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (language) {
+                    if (language != null) onAppLanguageChanged(language);
+                  },
+                ),
+              ],
+            ),
+            cardGap,
+            InfoCard(
+              title: l10n.logging,
               children: <Widget>[
                 DropdownButtonFormField<EdgezDeviceLogLevel>(
                   initialValue: logLevel,
-                  decoration: const InputDecoration(
-                    labelText: 'Log level',
+                  decoration: InputDecoration(
+                    labelText: l10n.logLevel,
                     helperText: 'Applies to device output and app log storage',
                   ),
                   items: EdgezDeviceLogLevel.values
@@ -883,10 +916,10 @@ class SettingsScreen extends StatefulWidget {
             ),
             cardGap,
             InfoCard(
-              title: 'Chat',
+              title: l10n.chat,
               children: <Widget>[
                 DropdownSetting<String>(
-                  label: 'Default translation language',
+                  label: l10n.defaultTranslationLanguage,
                   value: defaultVoiceTargetLanguage,
                   values: voiceTargetLanguages,
                   titleFor: (value) => value,
@@ -900,9 +933,8 @@ class SettingsScreen extends StatefulWidget {
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Auto replay received voice'),
-                  subtitle: const Text(
-                      'Play new incoming voice messages automatically'),
+                  title: Text(l10n.autoReplayVoice),
+                  subtitle: Text(l10n.autoReplayVoiceDescription),
                   value: autoReplayReceivedVoice,
                   onChanged: onAutoReplayChanged,
                 ),
