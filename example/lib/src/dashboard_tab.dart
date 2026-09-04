@@ -36,6 +36,7 @@ class DashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final knownNodeCount = users.where((user) => !user.isPublicChannel).length;
     final items = <_DashboardItem>[
       for (final user in users)
         if (dashboardDisplays[user.exampleUserId] case final display?
@@ -73,7 +74,8 @@ class DashboardScreen extends StatelessWidget {
                   value: activeConnection.name.toUpperCase()),
               _DashboardValue(
                   label: AppLocalizations.of(context).knownNodes,
-                  value: users.length.toString()),
+                  value: knownNodeCount.toString(),
+                  valueKey: const ValueKey('dashboard-known-node-count')),
               _DashboardValue(
                   label: AppLocalizations.of(context).license,
                   value: status?.licenseStatus.label ?? 'Waiting for device'),
@@ -461,10 +463,15 @@ Color _markerCardColor(BuildContext context, EdgezMeshNode user) {
 }
 
 class _DashboardValue extends StatelessWidget {
-  const _DashboardValue({required this.label, required this.value});
+  const _DashboardValue({
+    required this.label,
+    required this.value,
+    this.valueKey,
+  });
 
   final String label;
   final String value;
+  final Key? valueKey;
 
   @override
   Widget build(BuildContext context) {
@@ -475,7 +482,7 @@ class _DashboardValue extends StatelessWidget {
           SizedBox(
               width: 104,
               child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
-          Expanded(child: Text(value)),
+          Expanded(child: Text(value, key: valueKey)),
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:edgez_flutter_sdk_example/src/conversation_screen.dart';
 import 'package:edgez_flutter_sdk_example/src/dashboard_tab.dart';
 import 'package:edgez_flutter_sdk_example/src/gemma_voice_translator.dart';
+import 'package:edgez_flutter_sdk_example/l10n/app_localizations.dart';
 import 'package:edgez_flutter_sdk_example/src/models.dart';
 import 'package:edgez_flutter_sdk_example/src/nodes_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -197,6 +198,7 @@ void main() {
           marker: 'green',
           deviceType: index == 0 ? 'User' : 'Sensor',
         ),
+      EdgezPublicChannels.node(1),
     ];
     final widgets = <ExampleDashboardWidget>[
       ExampleDashboardWidget.tempHumidity,
@@ -207,6 +209,8 @@ void main() {
     ];
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: DashboardScreen(
           activeConnection: EdgezConnectionType.ble,
           status: null,
@@ -268,6 +272,17 @@ void main() {
       expect(find.text(widget.label), findsOneWidget);
     }
     expect(find.text('Binary length: 128 bytes'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('dashboard-known-node-count')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Text>(
+              find.byKey(const ValueKey('dashboard-known-node-count')))
+          .data,
+      '6',
+    );
     expect(tester.takeException(), isNull);
   });
 
