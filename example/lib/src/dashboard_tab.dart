@@ -64,16 +64,17 @@ class DashboardScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           InfoCard(
-            title: 'Mesh overview',
+            title: AppLocalizations.of(context).meshOverview,
             action: HaLowMeshStatusIcon(status: status),
             children: <Widget>[
               _DashboardValue(
-                  label: 'Interface',
+                  label: AppLocalizations.of(context).interfaceLabel,
                   value: activeConnection.name.toUpperCase()),
               _DashboardValue(
-                  label: 'Known nodes', value: users.length.toString()),
+                  label: AppLocalizations.of(context).knownNodes,
+                  value: users.length.toString()),
               _DashboardValue(
-                  label: 'License',
+                  label: AppLocalizations.of(context).license,
                   value: status?.licenseStatus.label ?? 'Waiting for device'),
             ],
           ),
@@ -84,15 +85,14 @@ class DashboardScreen extends StatelessWidget {
             onOpenMap: onOpenMap,
           ),
           const SizedBox(height: 16),
-          Text('Visualization widgets',
+          Text(AppLocalizations.of(context).visualizationWidgets,
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           if (items.isEmpty)
-            const InfoCard(
-              title: 'No dashboard devices yet',
+            InfoCard(
+              title: AppLocalizations.of(context).noDashboardDevices,
               children: <Widget>[
-                Text(
-                    'Use the dashboard button on a node to add it, then choose its visualization from device details.'),
+                Text(AppLocalizations.of(context).dashboardEmptyDescription),
               ],
             )
           else
@@ -245,8 +245,14 @@ class _TempHumidity extends StatelessWidget {
     }
     return Column(
       children: <Widget>[
-        SensorValueRow(label: 'Temp', value: data.temperature, unit: '°C'),
-        SensorValueRow(label: 'Humidity', value: data.humidity, unit: '%'),
+        SensorValueRow(
+            label: AppLocalizations.of(context).temp,
+            value: data.temperature,
+            unit: '°C'),
+        SensorValueRow(
+            label: AppLocalizations.of(context).humidity,
+            value: data.humidity,
+            unit: '%'),
       ],
     );
   }
@@ -263,12 +269,25 @@ class _LatestValues extends StatelessWidget {
     return Column(
       children: <Widget>[
         SensorValueRow(
-            label: 'Temperature', value: data.temperature, unit: '°C'),
-        SensorValueRow(label: 'Humidity', value: data.humidity, unit: '%'),
-        SensorValueRow(label: 'Pressure', value: data.pressure, unit: 'hPa'),
+            label: AppLocalizations.of(context).temperature,
+            value: data.temperature,
+            unit: '°C'),
         SensorValueRow(
-            label: 'Pass-by score', value: data.vibrationAverage, unit: ''),
-        SensorValueRow(label: 'Altitude', value: data.altitude, unit: 'm'),
+            label: AppLocalizations.of(context).humidity,
+            value: data.humidity,
+            unit: '%'),
+        SensorValueRow(
+            label: AppLocalizations.of(context).pressure,
+            value: data.pressure,
+            unit: 'hPa'),
+        SensorValueRow(
+            label: AppLocalizations.of(context).passByScore,
+            value: data.vibrationAverage,
+            unit: ''),
+        SensorValueRow(
+            label: AppLocalizations.of(context).altitude,
+            value: data.altitude,
+            unit: 'm'),
         SensorValueRow(label: 'Accel X', value: data.accelX, unit: 'm/s²'),
         SensorValueRow(label: 'Accel Y', value: data.accelY, unit: 'm/s²'),
         SensorValueRow(label: 'Accel Z', value: data.accelZ, unit: 'm/s²'),

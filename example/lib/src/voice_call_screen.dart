@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+
 class VoiceCallScreen extends StatefulWidget {
   const VoiceCallScreen({
     super.key,
@@ -186,7 +188,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                         borderRadius: BorderRadius.circular(40),
                       ),
                       child: Text(
-                        transmitting ? 'Transmitting…' : 'Hold to Talk',
+                        transmitting
+                            ? 'Transmitting…'
+                            : AppLocalizations.of(context).holdToTalk,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -208,7 +212,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                       : MainAxisAlignment.center,
                   children: <Widget>[
                     _CallAction(
-                      label: isIncoming ? 'Decline' : 'End',
+                      label: isIncoming
+                          ? AppLocalizations.of(context).decline
+                          : AppLocalizations.of(context).end,
                       icon: Icons.call_end,
                       color: Colors.red.shade600,
                       enabled: !actionInProgress,
@@ -216,7 +222,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                     ),
                     if (isIncoming)
                       _CallAction(
-                        label: 'Answer',
+                        label: AppLocalizations.of(context).answer,
                         icon: Icons.call,
                         color: Colors.green.shade600,
                         enabled: !actionInProgress,

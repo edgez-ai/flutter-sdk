@@ -80,7 +80,7 @@ class NodesScreen extends StatelessWidget {
               TextButton.icon(
                 onPressed: onOpenTopology,
                 icon: const Icon(Icons.account_tree_outlined),
-                label: const Text('Routes'),
+                label: Text(AppLocalizations.of(context).routes),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -172,7 +172,7 @@ class _PublicChannelsSection extends StatelessWidget {
           key: const PageStorageKey<String>('public-channels'),
           initiallyExpanded: false,
           leading: const Icon(Icons.campaign_outlined),
-          title: const Text('Public channels'),
+          title: Text(AppLocalizations.of(context).publicChannels),
           subtitle: Text(
               '${channels.length} ${channels.length == 1 ? 'channel' : 'channels'}'),
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -238,7 +238,7 @@ class _ChannelNodesSection extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 color: Theme.of(context).colorScheme.errorContainer,
-                child: Text('Delete',
+                child: Text(AppLocalizations.of(context).delete,
                     style: TextStyle(
                         color: Theme.of(context).colorScheme.onErrorContainer)),
               ),

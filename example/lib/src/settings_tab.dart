@@ -311,7 +311,7 @@ class SettingsScreen extends StatefulWidget {
         rs485SensorType,
     ];
     String driverLabel(List<ExampleDriver> available, String key) {
-      if (key.isEmpty) return 'None';
+      if (key.isEmpty) return l10n.none;
       return available
               .where((driver) => driver.key == key)
               .map((driver) => driver.label)
@@ -616,7 +616,7 @@ class SettingsScreen extends StatefulWidget {
                     children: <Widget>[
                       Expanded(
                         child: SettingsTextField(
-                          label: 'Latitude',
+                          label: l10n.latitude,
                           value: deviceLatitude,
                           onChanged: onDeviceLatitudeChanged,
                           keyboardType: TextInputType.number,
@@ -625,7 +625,7 @@ class SettingsScreen extends StatefulWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: SettingsTextField(
-                          label: 'Longitude',
+                          label: l10n.longitude,
                           value: deviceLongitude,
                           onChanged: onDeviceLongitudeChanged,
                           keyboardType: TextInputType.number,
@@ -648,11 +648,11 @@ class SettingsScreen extends StatefulWidget {
           if (deviceModeEnabled) ...<Widget>[
             cardGap,
             InfoCard(
-              title: 'Device geofence',
+              title: l10n.geoFence,
               children: <Widget>[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Enable geofence'),
+                  title: Text(l10n.enableGeoFence),
                   subtitle: const Text('Include a geofence in device beacons'),
                   value: geoFenceEnabled,
                   onChanged: (enabled) => onDeviceGeoFenceNameChanged(
@@ -660,12 +660,12 @@ class SettingsScreen extends StatefulWidget {
                   ),
                 ),
                 SettingsTextField(
-                  label: 'Geo fence',
+                  label: l10n.geoFence,
                   value: deviceGeoFenceName,
                   onChanged: onDeviceGeoFenceNameChanged,
                 ),
                 StepperSetting(
-                  label: 'Geo index',
+                  label: l10n.geoIndex,
                   value: deviceGeoIndex,
                   onChanged: onDeviceGeoIndexChanged,
                 ),
@@ -673,7 +673,7 @@ class SettingsScreen extends StatefulWidget {
             ),
             cardGap,
             InfoCard(
-              title: 'Device sensors',
+              title: l10n.sensorDrivers,
               children: <Widget>[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -694,7 +694,7 @@ class SettingsScreen extends StatefulWidget {
                   },
                 ),
                 DropdownSetting<String>(
-                  label: 'UART/I2C connector',
+                  label: l10n.uartConnector,
                   value: uartI2cSensorType,
                   values: uartDriverKeys,
                   titleFor: (value) => driverLabel(uartDrivers, value),
@@ -702,7 +702,7 @@ class SettingsScreen extends StatefulWidget {
                   enabled: sensorsEnabled,
                 ),
                 DropdownSetting<String>(
-                  label: 'RS485 connector',
+                  label: l10n.rs485Connector,
                   value: rs485SensorType,
                   values: rs485DriverKeys,
                   titleFor: (value) => driverLabel(rs485Drivers, value),
@@ -793,7 +793,7 @@ class SettingsScreen extends StatefulWidget {
           if (deviceModeEnabled) ...<Widget>[
             cardGap,
             InfoCard(
-              title: 'Upstream network',
+              title: l10n.upstreamNetwork,
               children: <Widget>[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -805,18 +805,18 @@ class SettingsScreen extends StatefulWidget {
                 ),
                 if (deviceUpstreamEnabled) ...<Widget>[
                   SettingsTextField(
-                    label: 'Upstream Wi-Fi SSID',
+                    label: l10n.upstreamWifiSsid,
                     value: deviceUpstreamWifiSsid,
                     onChanged: onDeviceUpstreamWifiSsidChanged,
                   ),
                   SettingsTextField(
-                    label: 'Upstream Wi-Fi passphrase',
+                    label: l10n.upstreamWifiPassphrase,
                     value: deviceUpstreamWifiPassphrase,
                     onChanged: onDeviceUpstreamWifiPassphraseChanged,
                     obscureText: true,
                   ),
                   DropdownSetting<String>(
-                    label: 'Beacon multicast',
+                    label: l10n.beaconMulticast,
                     value: deviceBeaconMulticast,
                     values: const <String>[
                       '',
@@ -841,13 +841,12 @@ class SettingsScreen extends StatefulWidget {
             ),
             cardGap,
             InfoCard(
-              title: 'Sleep mode',
+              title: l10n.sleepMode,
               children: <Widget>[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Enable sleep mode'),
-                  subtitle:
-                      const Text('Allow the device to enter low-power sleep.'),
+                  title: Text(l10n.enableSleepMode),
+                  subtitle: Text(l10n.sleepModeDescription),
                   value: deviceSleepModeEnabled,
                   onChanged: onDeviceSleepModeChanged,
                 ),
@@ -859,7 +858,7 @@ class SettingsScreen extends StatefulWidget {
               child: FilledButton(
                 onPressed: () =>
                     unawaited(Future<void>.value(onSaveDeviceSettings())),
-                child: const Text('Save to device'),
+                child: Text(l10n.save),
               ),
             ),
           ],
@@ -898,7 +897,7 @@ class SettingsScreen extends StatefulWidget {
                   initialValue: logLevel,
                   decoration: InputDecoration(
                     labelText: l10n.logLevel,
-                    helperText: 'Applies to device output and app log storage',
+                    helperText: l10n.loggingHelper,
                   ),
                   items: EdgezDeviceLogLevel.values
                       .map(
@@ -963,7 +962,7 @@ class SettingsScreen extends StatefulWidget {
             children: <Widget>[
               IconButton(
                 onPressed: onBack,
-                tooltip: 'Back',
+                tooltip: AppLocalizations.of(context).back,
                 icon: const Icon(Icons.arrow_back),
               ),
               const SizedBox(width: 8),
@@ -974,7 +973,7 @@ class SettingsScreen extends StatefulWidget {
               const Spacer(),
               IconButton(
                 onPressed: () => unawaited(onRefreshUsb()),
-                tooltip: 'Refresh USB devices',
+                tooltip: AppLocalizations.of(context).refreshUsb,
                 icon: const Icon(Icons.refresh),
               ),
             ],
@@ -1010,12 +1009,12 @@ class SettingsScreen extends StatefulWidget {
           Text('Bluetooth', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           if (bleDevices.isEmpty)
-            const InfoCard(
-              title: 'Scanning for EdgeZ devices',
+            InfoCard(
+              title: AppLocalizations.of(context).scanningDevices,
               children: <Widget>[
-                LinearProgressIndicator(),
-                SizedBox(height: 8),
-                Text('Nearby BLE devices will appear here.'),
+                const LinearProgressIndicator(),
+                const SizedBox(height: 8),
+                Text(AppLocalizations.of(context).nearbyDevices),
               ],
             )
           else

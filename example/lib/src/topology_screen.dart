@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+
 class TopologyScreen extends StatelessWidget {
   const TopologyScreen({
     required this.users,
@@ -39,7 +41,9 @@ class TopologyScreen extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              TextButton(onPressed: onBack, child: const Text('Back')),
+              TextButton(
+                  onPressed: onBack,
+                  child: Text(AppLocalizations.of(context).back)),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -73,9 +77,15 @@ class TopologyScreen extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: <Widget>[
-                  _Metric(label: 'Nodes', value: '${nodeIds.length}'),
-                  _Metric(label: 'Links', value: '${links.length}'),
-                  const _Metric(label: 'Window', value: '3 min'),
+                  _Metric(
+                      label: AppLocalizations.of(context).nodes,
+                      value: '${nodeIds.length}'),
+                  _Metric(
+                      label: AppLocalizations.of(context).links,
+                      value: '${links.length}'),
+                  _Metric(
+                      label: AppLocalizations.of(context).window,
+                      value: '3 min'),
                 ],
               ),
             ),
@@ -128,7 +138,7 @@ class TopologyScreen extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: 'Refresh routing table',
+                tooltip: AppLocalizations.of(context).refreshRouting,
                 onPressed: loading
                     ? null
                     : () => unawaited(onRefresh().catchError((Object _) {})),
@@ -149,10 +159,14 @@ class TopologyScreen extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: <Widget>[
-                  _Metric(label: 'Routes', value: '${routes.length}'),
-                  _Metric(label: 'Direct', value: '$directRoutes'),
                   _Metric(
-                    label: 'Relayed',
+                      label: AppLocalizations.of(context).routes,
+                      value: '${routes.length}'),
+                  _Metric(
+                      label: AppLocalizations.of(context).direct,
+                      value: '$directRoutes'),
+                  _Metric(
+                    label: AppLocalizations.of(context).relayed,
                     value: '${routes.length - directRoutes}',
                   ),
                 ],

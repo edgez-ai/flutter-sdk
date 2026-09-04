@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import 'driver_catalog.dart';
 import 'models.dart';
 import 'settings_tab.dart';
@@ -405,8 +406,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     final state = widget.session.state;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Provisioning'),
-        leading: TextButton(onPressed: _back, child: const Text('Back')),
+        title: Text(AppLocalizations.of(context).provisioning),
+        leading: TextButton(
+            onPressed: _back, child: Text(AppLocalizations.of(context).back)),
         leadingWidth: 72,
       ),
       body: SafeArea(
@@ -441,7 +443,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: saving ? null : _cancel,
-                  child: const Text('Cancel'),
+                  child: Text(AppLocalizations.of(context).cancel),
                 ),
               ),
               const SizedBox(width: 12),
@@ -449,14 +451,14 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
                 child: FilledButton(
                   onPressed: _canContinue(state) ? _next : null,
                   child: Text(saving
-                      ? 'Saving'
+                      ? AppLocalizations.of(context).saving
                       : step == _ProvisionStep.sleepMode ||
                               step == _ProvisionStep.sensor &&
                                   deviceType == 'relay'
-                          ? 'Save'
+                          ? AppLocalizations.of(context).save
                           : waitingForSettings
-                              ? 'Loading'
-                              : 'Next'),
+                              ? AppLocalizations.of(context).loading
+                              : AppLocalizations.of(context).next),
                 ),
               ),
             ],
@@ -484,14 +486,15 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           widget.excludedBleDeviceId,
         );
         return InfoCard(
-          title: 'Select BLE device',
+          title: AppLocalizations.of(context).selectBleDevice,
           action: IconButton(
-            tooltip: 'Scan again',
+            tooltip: AppLocalizations.of(context).scanAgain,
             onPressed: widget.session.startBleScan,
             icon: const Icon(Icons.refresh),
           ),
           children: <Widget>[
-            if (devices.isEmpty) const Text('Scanning for EdgeZ devices...'),
+            if (devices.isEmpty)
+              Text(AppLocalizations.of(context).scanningDevices),
             for (final device in devices)
               ListTile(
                 selected: selectedBle?.id == device.id,
@@ -506,13 +509,19 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         );
       case _ProvisionStep.mode:
         return InfoCard(
-          title: 'Device mode',
+          title: AppLocalizations.of(context).deviceMode,
           children: <Widget>[
             SegmentedButton<String>(
-              segments: const <ButtonSegment<String>>[
-                ButtonSegment(value: 'beacon', label: Text('Beacon')),
-                ButtonSegment(value: 'sensor', label: Text('Sensor')),
-                ButtonSegment(value: 'relay', label: Text('Relay')),
+              segments: <ButtonSegment<String>>[
+                ButtonSegment(
+                    value: 'beacon',
+                    label: Text(AppLocalizations.of(context).beacon)),
+                ButtonSegment(
+                    value: 'sensor',
+                    label: Text(AppLocalizations.of(context).sensor)),
+                ButtonSegment(
+                    value: 'relay',
+                    label: Text(AppLocalizations.of(context).relay)),
               ],
               emptySelectionAllowed: true,
               selected: deviceType.isEmpty ? const {} : {deviceType},
@@ -530,15 +539,15 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         );
       case _ProvisionStep.deviceUser:
         return InfoCard(
-          title: 'Device user',
+          title: AppLocalizations.of(context).deviceUser,
           children: <Widget>[
             SettingsTextField(
-              label: 'Device user name',
+              label: AppLocalizations.of(context).deviceUserName,
               value: userName,
               onChanged: (value) => setState(() => userName = value),
             ),
             DropdownSetting<ExampleMarker>(
-              label: 'Marker',
+              label: AppLocalizations.of(context).marker,
               value: marker,
               values: ExampleMarker.values,
               titleFor: (value) => value.label,
@@ -561,24 +570,24 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         );
       case _ProvisionStep.network:
         return InfoCard(
-          title: 'HaLow network',
+          title: AppLocalizations.of(context).meshNetwork,
           children: <Widget>[
             DropdownSetting<String>(
-              label: 'Country',
+              label: AppLocalizations.of(context).country,
               value: meshCountry,
               values: const <String>['US', 'JP', 'EU'],
               titleFor: (value) => value,
               onChanged: _setMeshCountry,
             ),
             DropdownSetting<int>(
-              label: 'Bandwidth',
+              label: AppLocalizations.of(context).bandwidth,
               value: meshBandwidthMhz,
               values: halowBandwidthOptions(meshCountry),
               titleFor: (value) => '$value MHz',
               onChanged: _setMeshBandwidth,
             ),
             DropdownSetting<int>(
-              label: 'Frequency',
+              label: AppLocalizations.of(context).frequency,
               value: meshFrequencyKhz,
               values: halowFrequenciesKhz(
                 meshCountry,
@@ -588,21 +597,21 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
               onChanged: (value) => setState(() => meshFrequencyKhz = value),
             ),
             SettingsTextField(
-                label: 'Mesh ID / SSID',
+                label: AppLocalizations.of(context).meshId,
                 value: meshId,
                 onChanged: (value) => setState(() => meshId = value)),
             SettingsTextField(
-                label: 'Passphrase',
+                label: AppLocalizations.of(context).passphrase,
                 value: passphrase,
                 obscureText: true,
                 onChanged: (value) => setState(() => passphrase = value)),
             SettingsTextField(
-                label: 'Max hop',
+                label: AppLocalizations.of(context).maxHop,
                 value: maxHop,
                 keyboardType: TextInputType.number,
                 onChanged: (value) => setState(() => maxHop = value)),
             SettingsTextField(
-                label: 'Beacon interval (seconds)',
+                label: AppLocalizations.of(context).beaconInterval,
                 value: beaconInterval,
                 keyboardType: TextInputType.number,
                 onChanged: (value) => setState(() => beaconInterval = value)),
@@ -610,11 +619,11 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         );
       case _ProvisionStep.location:
         return InfoCard(
-          title: 'Device location',
+          title: AppLocalizations.of(context).deviceLocation,
           children: <Widget>[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Share location'),
+              title: Text(AppLocalizations.of(context).shareLocation),
               value: shareLocation,
               onChanged: (value) => setState(() => shareLocation = value),
             ),
@@ -631,41 +640,41 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
             ],
             if (shareLocation && !deviceGpsEnabled) ...<Widget>[
               SettingsTextField(
-                  label: 'Latitude',
+                  label: AppLocalizations.of(context).latitude,
                   value: latitude,
                   keyboardType: TextInputType.number,
                   onChanged: (value) => setState(() => latitude = value)),
               SettingsTextField(
-                  label: 'Longitude',
+                  label: AppLocalizations.of(context).longitude,
                   value: longitude,
                   keyboardType: TextInputType.number,
                   onChanged: (value) => setState(() => longitude = value)),
               OutlinedButton.icon(
                 onPressed: _refreshLocation,
                 icon: const Icon(Icons.my_location),
-                label: const Text('Use phone location'),
+                label: Text(AppLocalizations.of(context).usePhoneLocation),
               ),
             ],
           ],
         );
       case _ProvisionStep.geoFence:
         return InfoCard(
-          title: 'Geo fence',
+          title: AppLocalizations.of(context).geoFence,
           children: <Widget>[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Enable geo fence'),
+              title: Text(AppLocalizations.of(context).enableGeoFence),
               value: geoFenceName.isNotEmpty,
               onChanged: (value) =>
                   setState(() => geoFenceName = value ? 'Geo fence' : ''),
             ),
             if (geoFenceName.isNotEmpty) ...<Widget>[
               SettingsTextField(
-                  label: 'Geo fence name',
+                  label: AppLocalizations.of(context).geoFenceName,
                   value: geoFenceName,
                   onChanged: (value) => setState(() => geoFenceName = value)),
               StepperSetting(
-                  label: 'Geo index',
+                  label: AppLocalizations.of(context).geoIndex,
                   value: geoIndex,
                   onChanged: (value) => setState(() => geoIndex = value)),
             ],
@@ -679,27 +688,27 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
             .where((item) => item.connector == EdgezSensorConnector.rs485)
             .toList(growable: false);
         return InfoCard(
-          title: 'Sensor drivers',
+          title: AppLocalizations.of(context).sensorDrivers,
           children: <Widget>[
             DropdownSetting<String>(
-              label: 'UART / I2C connector',
+              label: AppLocalizations.of(context).uartConnector,
               value: uart.any((item) => item.key == uartI2cDriver)
                   ? uartI2cDriver
                   : '',
               values: <String>['', ...uart.map((item) => item.key)],
               titleFor: (key) => key.isEmpty
-                  ? 'None'
+                  ? AppLocalizations.of(context).none
                   : uart.firstWhere((item) => item.key == key).label,
               onChanged: (value) => setState(() => uartI2cDriver = value),
             ),
             DropdownSetting<String>(
-              label: 'RS485 connector',
+              label: AppLocalizations.of(context).rs485Connector,
               value: rs485.any((item) => item.key == rs485Driver)
                   ? rs485Driver
                   : '',
               values: <String>['', ...rs485.map((item) => item.key)],
               titleFor: (key) => key.isEmpty
-                  ? 'None'
+                  ? AppLocalizations.of(context).none
                   : rs485.firstWhere((item) => item.key == key).label,
               onChanged: (value) => setState(() => rs485Driver = value),
             ),
@@ -707,13 +716,12 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         );
       case _ProvisionStep.sleepMode:
         return InfoCard(
-          title: 'Sleep mode',
+          title: AppLocalizations.of(context).sleepMode,
           children: <Widget>[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Enable sleep mode'),
-              subtitle:
-                  const Text('Allow the device to enter low-power sleep.'),
+              title: Text(AppLocalizations.of(context).enableSleepMode),
+              subtitle: Text(AppLocalizations.of(context).sleepModeDescription),
               value: sleepMode,
               onChanged: (value) => setState(() => sleepMode = value),
             ),

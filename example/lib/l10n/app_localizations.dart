@@ -388,6 +388,660 @@ abstract class AppLocalizations {
   /// **'Update'**
   String get update;
 
+  /// No description provided for @marketplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Marketplace'**
+  String get marketplace;
+
+  /// No description provided for @cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancel;
+
+  /// No description provided for @install.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get install;
+
+  /// No description provided for @close.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get close;
+
+  /// No description provided for @save.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get save;
+
+  /// No description provided for @saving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving'**
+  String get saving;
+
+  /// No description provided for @loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading'**
+  String get loading;
+
+  /// No description provided for @next.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get next;
+
+  /// No description provided for @download.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get download;
+
+  /// No description provided for @notNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get notNow;
+
+  /// No description provided for @refresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get refresh;
+
+  /// No description provided for @delete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get delete;
+
+  /// No description provided for @enabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Enabled'**
+  String get enabled;
+
+  /// No description provided for @disabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Disabled'**
+  String get disabled;
+
+  /// No description provided for @device.
+  ///
+  /// In en, this message translates to:
+  /// **'Device'**
+  String get device;
+
+  /// No description provided for @dashboardVisualization.
+  ///
+  /// In en, this message translates to:
+  /// **'Dashboard visualization'**
+  String get dashboardVisualization;
+
+  /// No description provided for @widget.
+  ///
+  /// In en, this message translates to:
+  /// **'Widget'**
+  String get widget;
+
+  /// No description provided for @range.
+  ///
+  /// In en, this message translates to:
+  /// **'Range'**
+  String get range;
+
+  /// No description provided for @type.
+  ///
+  /// In en, this message translates to:
+  /// **'Type'**
+  String get type;
+
+  /// No description provided for @sleeping.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleeping'**
+  String get sleeping;
+
+  /// No description provided for @geoFence.
+  ///
+  /// In en, this message translates to:
+  /// **'Geo fence'**
+  String get geoFence;
+
+  /// No description provided for @none.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get none;
+
+  /// No description provided for @sensor.
+  ///
+  /// In en, this message translates to:
+  /// **'Sensor'**
+  String get sensor;
+
+  /// No description provided for @noSensorData.
+  ///
+  /// In en, this message translates to:
+  /// **'No sensor data received yet'**
+  String get noSensorData;
+
+  /// No description provided for @temperature.
+  ///
+  /// In en, this message translates to:
+  /// **'Temperature'**
+  String get temperature;
+
+  /// No description provided for @humidity.
+  ///
+  /// In en, this message translates to:
+  /// **'Humidity'**
+  String get humidity;
+
+  /// No description provided for @pressure.
+  ///
+  /// In en, this message translates to:
+  /// **'Pressure'**
+  String get pressure;
+
+  /// No description provided for @altitude.
+  ///
+  /// In en, this message translates to:
+  /// **'Altitude'**
+  String get altitude;
+
+  /// No description provided for @sensorTimeSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Sensor time series'**
+  String get sensorTimeSeries;
+
+  /// No description provided for @provisioning.
+  ///
+  /// In en, this message translates to:
+  /// **'Provisioning'**
+  String get provisioning;
+
+  /// No description provided for @selectBleDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Select BLE device'**
+  String get selectBleDevice;
+
+  /// No description provided for @scanAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan again'**
+  String get scanAgain;
+
+  /// No description provided for @scanningDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning for EdgeZ devices...'**
+  String get scanningDevices;
+
+  /// No description provided for @beacon.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon'**
+  String get beacon;
+
+  /// No description provided for @relay.
+  ///
+  /// In en, this message translates to:
+  /// **'Relay'**
+  String get relay;
+
+  /// No description provided for @network.
+  ///
+  /// In en, this message translates to:
+  /// **'Network'**
+  String get network;
+
+  /// No description provided for @frequency.
+  ///
+  /// In en, this message translates to:
+  /// **'Frequency'**
+  String get frequency;
+
+  /// No description provided for @latitude.
+  ///
+  /// In en, this message translates to:
+  /// **'Latitude'**
+  String get latitude;
+
+  /// No description provided for @longitude.
+  ///
+  /// In en, this message translates to:
+  /// **'Longitude'**
+  String get longitude;
+
+  /// No description provided for @usePhoneLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Use phone location'**
+  String get usePhoneLocation;
+
+  /// No description provided for @enableGeoFence.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable geo fence'**
+  String get enableGeoFence;
+
+  /// No description provided for @geoFenceName.
+  ///
+  /// In en, this message translates to:
+  /// **'Geo fence name'**
+  String get geoFenceName;
+
+  /// No description provided for @geoIndex.
+  ///
+  /// In en, this message translates to:
+  /// **'Geo index'**
+  String get geoIndex;
+
+  /// No description provided for @sensorDrivers.
+  ///
+  /// In en, this message translates to:
+  /// **'Sensor drivers'**
+  String get sensorDrivers;
+
+  /// No description provided for @sleepMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep mode'**
+  String get sleepMode;
+
+  /// No description provided for @enableSleepMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable sleep mode'**
+  String get enableSleepMode;
+
+  /// No description provided for @sleepModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow the device to enter low-power sleep.'**
+  String get sleepModeDescription;
+
+  /// No description provided for @answer.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer'**
+  String get answer;
+
+  /// No description provided for @decline.
+  ///
+  /// In en, this message translates to:
+  /// **'Decline'**
+  String get decline;
+
+  /// No description provided for @end.
+  ///
+  /// In en, this message translates to:
+  /// **'End'**
+  String get end;
+
+  /// No description provided for @holdToTalk.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold to Talk'**
+  String get holdToTalk;
+
+  /// No description provided for @noMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'No messages yet'**
+  String get noMessages;
+
+  /// No description provided for @message.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get message;
+
+  /// No description provided for @send.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get send;
+
+  /// No description provided for @hop.
+  ///
+  /// In en, this message translates to:
+  /// **'Hop'**
+  String get hop;
+
+  /// No description provided for @routes.
+  ///
+  /// In en, this message translates to:
+  /// **'Routes'**
+  String get routes;
+
+  /// No description provided for @publicChannels.
+  ///
+  /// In en, this message translates to:
+  /// **'Public channels'**
+  String get publicChannels;
+
+  /// No description provided for @system.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get system;
+
+  /// No description provided for @deviceLogs.
+  ///
+  /// In en, this message translates to:
+  /// **'Device logs'**
+  String get deviceLogs;
+
+  /// No description provided for @transport.
+  ///
+  /// In en, this message translates to:
+  /// **'Transport'**
+  String get transport;
+
+  /// No description provided for @prune.
+  ///
+  /// In en, this message translates to:
+  /// **'Prune'**
+  String get prune;
+
+  /// No description provided for @open.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get open;
+
+  /// No description provided for @meshOverview.
+  ///
+  /// In en, this message translates to:
+  /// **'Mesh overview'**
+  String get meshOverview;
+
+  /// No description provided for @interfaceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Interface'**
+  String get interfaceLabel;
+
+  /// No description provided for @knownNodes.
+  ///
+  /// In en, this message translates to:
+  /// **'Known nodes'**
+  String get knownNodes;
+
+  /// No description provided for @license.
+  ///
+  /// In en, this message translates to:
+  /// **'License'**
+  String get license;
+
+  /// No description provided for @visualizationWidgets.
+  ///
+  /// In en, this message translates to:
+  /// **'Visualization widgets'**
+  String get visualizationWidgets;
+
+  /// No description provided for @noDashboardDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'No dashboard devices yet'**
+  String get noDashboardDevices;
+
+  /// No description provided for @temp.
+  ///
+  /// In en, this message translates to:
+  /// **'Temp'**
+  String get temp;
+
+  /// No description provided for @passByScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Pass-by score'**
+  String get passByScore;
+
+  /// No description provided for @backToSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to settings'**
+  String get backToSettings;
+
+  /// No description provided for @speedAndLoss.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed and loss · last 30 minutes'**
+  String get speedAndLoss;
+
+  /// No description provided for @movingSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Moving speed'**
+  String get movingSpeed;
+
+  /// No description provided for @movingLoss.
+  ///
+  /// In en, this message translates to:
+  /// **'Moving loss'**
+  String get movingLoss;
+
+  /// No description provided for @speed.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed'**
+  String get speed;
+
+  /// No description provided for @loss.
+  ///
+  /// In en, this message translates to:
+  /// **'Loss'**
+  String get loss;
+
+  /// No description provided for @activeConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Active connection'**
+  String get activeConnection;
+
+  /// No description provided for @status.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get status;
+
+  /// No description provided for @conversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversations'**
+  String get conversations;
+
+  /// No description provided for @database.
+  ///
+  /// In en, this message translates to:
+  /// **'Database'**
+  String get database;
+
+  /// No description provided for @halowMesh.
+  ///
+  /// In en, this message translates to:
+  /// **'HaLow mesh'**
+  String get halowMesh;
+
+  /// No description provided for @supported.
+  ///
+  /// In en, this message translates to:
+  /// **'Supported'**
+  String get supported;
+
+  /// No description provided for @initialized.
+  ///
+  /// In en, this message translates to:
+  /// **'Initialized'**
+  String get initialized;
+
+  /// No description provided for @meshMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Mesh mode'**
+  String get meshMode;
+
+  /// No description provided for @linkUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Link up'**
+  String get linkUp;
+
+  /// No description provided for @routeReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Route ready'**
+  String get routeReady;
+
+  /// No description provided for @readyForReport.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready for report'**
+  String get readyForReport;
+
+  /// No description provided for @gateway.
+  ///
+  /// In en, this message translates to:
+  /// **'Gateway'**
+  String get gateway;
+
+  /// No description provided for @sdkEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'SDK events'**
+  String get sdkEvents;
+
+  /// No description provided for @logStream.
+  ///
+  /// In en, this message translates to:
+  /// **'Log stream'**
+  String get logStream;
+
+  /// No description provided for @links.
+  ///
+  /// In en, this message translates to:
+  /// **'Links'**
+  String get links;
+
+  /// No description provided for @window.
+  ///
+  /// In en, this message translates to:
+  /// **'Window'**
+  String get window;
+
+  /// No description provided for @direct.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct'**
+  String get direct;
+
+  /// No description provided for @relayed.
+  ///
+  /// In en, this message translates to:
+  /// **'Relayed'**
+  String get relayed;
+
+  /// No description provided for @refreshRouting.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh routing table'**
+  String get refreshRouting;
+
+  /// No description provided for @downloadOfflineMap.
+  ///
+  /// In en, this message translates to:
+  /// **'Download offline map'**
+  String get downloadOfflineMap;
+
+  /// No description provided for @transcribeAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Transcribe again using the Settings language'**
+  String get transcribeAgain;
+
+  /// No description provided for @speakTranslation.
+  ///
+  /// In en, this message translates to:
+  /// **'Speak translation'**
+  String get speakTranslation;
+
+  /// No description provided for @upstreamNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Upstream network'**
+  String get upstreamNetwork;
+
+  /// No description provided for @refreshUsb.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh USB devices'**
+  String get refreshUsb;
+
+  /// No description provided for @uartConnector.
+  ///
+  /// In en, this message translates to:
+  /// **'UART / I2C connector'**
+  String get uartConnector;
+
+  /// No description provided for @rs485Connector.
+  ///
+  /// In en, this message translates to:
+  /// **'RS485 connector'**
+  String get rs485Connector;
+
+  /// No description provided for @upstreamWifiSsid.
+  ///
+  /// In en, this message translates to:
+  /// **'Upstream Wi-Fi SSID'**
+  String get upstreamWifiSsid;
+
+  /// No description provided for @upstreamWifiPassphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Upstream Wi-Fi passphrase'**
+  String get upstreamWifiPassphrase;
+
+  /// No description provided for @beaconMulticast.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon multicast'**
+  String get beaconMulticast;
+
+  /// No description provided for @loggingHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Applies to device output and app log storage'**
+  String get loggingHelper;
+
+  /// No description provided for @incomingCallFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming call from {name}'**
+  String incomingCallFrom(String name);
+
+  /// No description provided for @dashboardEmptyDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the dashboard button on a node to add it, then choose its visualization from device details.'**
+  String get dashboardEmptyDescription;
+
+  /// No description provided for @nearbyDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Nearby BLE devices will appear here.'**
+  String get nearbyDevices;
+
   /// No description provided for @settingsLanguageSemantics.
   ///
   /// In en, this message translates to:

@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
+
+import '../l10n/app_localizations.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import 'example_database.dart';
@@ -69,22 +71,22 @@ class DebugScreen extends StatelessWidget {
                 children: <Widget>[
                   IconButton(
                     onPressed: onClose,
-                    tooltip: 'Back to settings',
+                    tooltip: AppLocalizations.of(context).backToSettings,
                     icon: const Icon(Icons.arrow_back),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('Debug',
+                    child: Text(AppLocalizations.of(context).debug,
                         style: Theme.of(context).textTheme.headlineMedium),
                   ),
                   HaLowMeshStatusIcon(status: status),
                 ],
               ),
             ),
-            const TabBar(
+            TabBar(
               tabs: <Widget>[
-                Tab(text: 'System'),
-                Tab(text: 'Device logs'),
+                Tab(text: AppLocalizations.of(context).system),
+                Tab(text: AppLocalizations.of(context).deviceLogs),
               ],
             ),
             Expanded(
@@ -102,19 +104,19 @@ class DebugScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       InfoCard(
-                        title: 'Speed and loss · last 30 minutes',
+                        title: AppLocalizations.of(context).speedAndLoss,
                         children: <Widget>[
                           if (displayMetrics.isEmpty)
                             const Text(
                                 'No transport traffic in this time window.')
                           else ...<Widget>[
                             DebugValue(
-                              label: 'Moving speed',
+                              label: AppLocalizations.of(context).movingSpeed,
                               value: _formatBitRate(
                                   displayMetrics.last.bitsPerSecond),
                             ),
                             DebugValue(
-                              label: 'Moving loss',
+                              label: AppLocalizations.of(context).movingLoss,
                               value:
                                   '${displayMetrics.last.packetLossPercent.toStringAsFixed(2)}%',
                             ),
@@ -123,12 +125,12 @@ class DebugScreen extends StatelessWidget {
                               children: <Widget>[
                                 _ChartLegend(
                                   color: Colors.green.shade600,
-                                  label: 'Speed',
+                                  label: AppLocalizations.of(context).speed,
                                 ),
                                 const SizedBox(width: 16),
                                 _ChartLegend(
                                   color: Colors.red.shade600,
-                                  label: 'Loss',
+                                  label: AppLocalizations.of(context).loss,
                                 ),
                               ],
                             ),
@@ -157,62 +159,68 @@ class DebugScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       InfoCard(
-                        title: 'Transport',
+                        title: AppLocalizations.of(context).transport,
                         children: <Widget>[
                           DebugValue(
-                              label: 'Active connection',
+                              label:
+                                  AppLocalizations.of(context).activeConnection,
                               value: activeConnection.name.toUpperCase()),
                           DebugValue(
-                              label: 'Status',
+                              label: AppLocalizations.of(context).status,
                               value: statusLine.isEmpty
                                   ? 'No status'
                                   : statusLine),
                           DebugValue(
-                              label: 'Known nodes',
+                              label: AppLocalizations.of(context).knownNodes,
                               value: nodeCount.toString()),
                           DebugValue(
-                              label: 'Conversations',
+                              label: AppLocalizations.of(context).conversations,
                               value: conversationCount.toString()),
                           DebugValue(
-                              label: 'Share location',
+                              label: AppLocalizations.of(context).shareLocation,
                               value: shareLocation ? 'Enabled' : 'Disabled'),
                           DebugValue(
-                              label: 'Device mode',
+                              label: AppLocalizations.of(context).deviceMode,
                               value:
                                   deviceModeEnabled ? 'Enabled' : 'Disabled'),
                           DebugValue(
-                              label: 'SQLite',
+                              label: AppLocalizations.of(context).database,
                               value: databaseReady ? 'Enabled' : 'Memory only'),
                         ],
                       ),
                       const SizedBox(height: 12),
                       InfoCard(
-                        title: 'HaLow mesh',
+                        title: AppLocalizations.of(context).halowMesh,
                         children: status == null
                             ? const <Widget>[
                                 Text('No HaLow status received yet')
                               ]
                             : <Widget>[
                                 DebugValue(
-                                    label: 'Supported',
+                                    label:
+                                        AppLocalizations.of(context).supported,
                                     value: status.supported.toString()),
                                 DebugValue(
-                                    label: 'Initialized',
+                                    label: AppLocalizations.of(context)
+                                        .initialized,
                                     value: status.stackInitialized.toString()),
                                 DebugValue(
-                                    label: 'Mesh mode',
+                                    label:
+                                        AppLocalizations.of(context).meshMode,
                                     value: status.meshMode.toString()),
                                 DebugValue(
-                                    label: 'Link up',
+                                    label: AppLocalizations.of(context).linkUp,
                                     value: status.linkUp.toString()),
                                 DebugValue(
-                                    label: 'Route ready',
+                                    label:
+                                        AppLocalizations.of(context).routeReady,
                                     value: status.routeReady.toString()),
                                 DebugValue(
-                                    label: 'Ready for report',
+                                    label: AppLocalizations.of(context)
+                                        .readyForReport,
                                     value: status.readyForReport.toString()),
                                 DebugValue(
-                                    label: 'License',
+                                    label: AppLocalizations.of(context).license,
                                     value: status.licenseStatus.label),
                                 DebugValue(
                                     label: 'Mesh ID',
@@ -225,7 +233,7 @@ class DebugScreen extends StatelessWidget {
                                         ? 'none'
                                         : status.ipAddress),
                                 DebugValue(
-                                    label: 'Gateway',
+                                    label: AppLocalizations.of(context).gateway,
                                     value: status.gateway.isEmpty
                                         ? 'none'
                                         : status.gateway),
@@ -238,7 +246,7 @@ class DebugScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       InfoCard(
-                        title: 'SDK events',
+                        title: AppLocalizations.of(context).sdkEvents,
                         children: <Widget>[
                           Text(
                             statusLine.isEmpty
@@ -253,11 +261,11 @@ class DebugScreen extends StatelessWidget {
                     scrollCacheExtent: const ScrollCacheExtent.pixels(2400),
                     padding: const EdgeInsets.all(16),
                     children: <Widget>[
-                      Text('Device logs',
+                      Text(AppLocalizations.of(context).deviceLogs,
                           style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 12),
                       InfoCard(
-                        title: 'Log stream',
+                        title: AppLocalizations.of(context).logStream,
                         children: <Widget>[
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
@@ -265,7 +273,8 @@ class DebugScreen extends StatelessWidget {
                               OutlinedButton.icon(
                                 onPressed: onExportLogs,
                                 icon: const Icon(Icons.file_download_outlined),
-                                label: const Text('Download'),
+                                label:
+                                    Text(AppLocalizations.of(context).download),
                               ),
                               const SizedBox(width: 8),
                               OutlinedButton.icon(
@@ -284,12 +293,16 @@ class DebugScreen extends StatelessWidget {
                                               TextButton(
                                                 onPressed: () => Navigator.pop(
                                                     context, false),
-                                                child: const Text('Cancel'),
+                                                child: Text(
+                                                    AppLocalizations.of(context)
+                                                        .cancel),
                                               ),
                                               FilledButton(
                                                 onPressed: () => Navigator.pop(
                                                     context, true),
-                                                child: const Text('Prune'),
+                                                child: Text(
+                                                    AppLocalizations.of(context)
+                                                        .prune),
                                               ),
                                             ],
                                           ),
@@ -299,7 +312,7 @@ class DebugScreen extends StatelessWidget {
                                         }
                                       },
                                 icon: const Icon(Icons.delete_sweep_outlined),
-                                label: const Text('Prune'),
+                                label: Text(AppLocalizations.of(context).prune),
                               ),
                             ],
                           ),

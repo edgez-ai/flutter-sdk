@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import 'models.dart';
 import 'gemma_voice_translator.dart';
 
@@ -269,7 +270,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
               children: <Widget>[
                 IconButton(
                   onPressed: widget.onBack,
-                  tooltip: 'Back',
+                  tooltip: AppLocalizations.of(context).back,
                   icon: const Icon(Icons.arrow_back),
                 ),
                 CircleAvatar(
@@ -402,7 +403,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
               child: ListView(
                 children: <Widget>[
                   if (widget.messages.isEmpty)
-                    const Center(child: Text('No messages yet')),
+                    Center(
+                        child: Text(AppLocalizations.of(context).noMessages)),
                   for (final message in widget.messages)
                     ConversationBubble(
                       message: message,
@@ -461,8 +463,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     onChanged: (_) => setState(() {}),
                     minLines: 1,
                     maxLines: 4,
-                    decoration: const InputDecoration(
-                        labelText: 'Message', border: OutlineInputBorder()),
+                    decoration: InputDecoration(
+                        labelText: AppLocalizations.of(context).message,
+                        border: const OutlineInputBorder()),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -482,7 +485,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                           }
                         }
                       : null,
-                  child: const Text('Send'),
+                  child: Text(AppLocalizations.of(context).send),
                 ),
               ],
             ),
@@ -495,9 +498,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   child: DropdownButtonFormField<int>(
                     initialValue: speedTestHop,
                     isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Hop',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: AppLocalizations.of(context).hop,
+                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                     items: const <DropdownMenuItem<int>>[
@@ -579,7 +582,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   recording
                       ? 'Recording'
                       : canSendVoiceMessage
-                          ? 'Hold to Talk'
+                          ? AppLocalizations.of(context).holdToTalk
                           : 'Connect to send voice',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -684,7 +687,7 @@ class _GemmaTranslationBar extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                     ),
-                    child: const Text('Install'),
+                    child: Text(AppLocalizations.of(context).install),
                   ),
               ],
             ),
@@ -802,7 +805,7 @@ class ConversationBubble extends StatelessWidget {
                     if (isVoice && onRetranscribeVoiceMessage != null)
                       IconButton(
                         visualDensity: VisualDensity.compact,
-                        tooltip: 'Transcribe again using the Settings language',
+                        tooltip: AppLocalizations.of(context).transcribeAgain,
                         onPressed:
                             !translating ? onRetranscribeVoiceMessage : null,
                         icon: const Icon(Icons.refresh, size: 20),
@@ -832,7 +835,8 @@ class ConversationBubble extends StatelessWidget {
                       if (onSpeakTranslation != null)
                         IconButton(
                           visualDensity: VisualDensity.compact,
-                          tooltip: 'Speak translation',
+                          tooltip:
+                              AppLocalizations.of(context).speakTranslation,
                           onPressed: onSpeakTranslation,
                           icon: const Icon(Icons.volume_up_outlined, size: 20),
                         ),

@@ -276,7 +276,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     }
     if (!shown) {
       _showForegroundFallback(
-        title: 'Incoming call from ${caller.resolvedDisplayName}',
+        title: lookupAppLocalizations(appLanguage.locale)
+            .incomingCallFrom(caller.resolvedDisplayName),
         detail: 'Open the conversation to answer or decline.',
         nodeNum: caller.nodeNum,
         duration: const Duration(seconds: 30),
@@ -311,7 +312,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
               ],
             ),
             action: SnackBarAction(
-              label: 'Open',
+              label: AppLocalizations.of(context).open,
               onPressed: () => _openIncomingConversation(nodeNum),
             ),
           ),

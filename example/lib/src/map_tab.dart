@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
+
+import '../l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 
 class MapScreen extends StatefulWidget {
@@ -246,7 +248,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 right: 12,
                 child: IconButton.filled(
                   onPressed: _closeMap,
-                  tooltip: 'Close map',
+                  tooltip: AppLocalizations.of(context).close,
                   icon: const Icon(Icons.close),
                 ),
               ),
@@ -285,7 +287,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 left: 12,
                 child: IconButton.filled(
                   onPressed: _checkDownloadableRegion,
-                  tooltip: 'Download offline map',
+                  tooltip: AppLocalizations.of(context).downloadOfflineMap,
                   icon: const Icon(Icons.download_for_offline),
                 ),
               ),
@@ -334,12 +336,14 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                             children: <Widget>[
                               FilledButton(
                                 onPressed: () => _downloadRegion(regionId),
-                                child: const Text('Download'),
+                                child:
+                                    Text(AppLocalizations.of(context).download),
                               ),
                               const SizedBox(width: 8),
                               TextButton(
                                 onPressed: () => _dismissRegion(regionId),
-                                child: const Text('Not now'),
+                                child:
+                                    Text(AppLocalizations.of(context).notNow),
                               ),
                             ],
                           ),

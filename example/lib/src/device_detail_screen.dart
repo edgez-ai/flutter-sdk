@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import 'models.dart';
 import 'shared_widgets.dart';
 
@@ -32,7 +33,9 @@ class DeviceDetailScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
-              TextButton(onPressed: onBack, child: const Text('Back')),
+              TextButton(
+                  onPressed: onBack,
+                  child: Text(AppLocalizations.of(context).back)),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: <Widget>[
@@ -81,7 +84,7 @@ class DashboardDisplayCard extends StatelessWidget {
         ? ExampleDashboardRange.last30Minutes
         : display.range;
     return InfoCard(
-      title: 'Dashboard visualization',
+      title: AppLocalizations.of(context).dashboardVisualization,
       action: Switch(
         value: display.showOnDashboard,
         onChanged: (enabled) =>
@@ -90,7 +93,8 @@ class DashboardDisplayCard extends StatelessWidget {
       children: <Widget>[
         DropdownButtonFormField<ExampleDashboardWidget>(
           initialValue: display.widget,
-          decoration: const InputDecoration(labelText: 'Widget'),
+          decoration:
+              InputDecoration(labelText: AppLocalizations.of(context).widget),
           items: <DropdownMenuItem<ExampleDashboardWidget>>[
             for (final option in ExampleDashboardWidget.values)
               DropdownMenuItem(value: option, child: Text(option.label)),
@@ -112,7 +116,8 @@ class DashboardDisplayCard extends StatelessWidget {
         const SizedBox(height: 8),
         DropdownButtonFormField<ExampleDashboardRange>(
           initialValue: selectedRange,
-          decoration: const InputDecoration(labelText: 'Range'),
+          decoration:
+              InputDecoration(labelText: AppLocalizations.of(context).range),
           items: <DropdownMenuItem<ExampleDashboardRange>>[
             for (final option in ExampleDashboardRange.timeSeriesOptions)
               DropdownMenuItem(value: option, child: Text(option.label)),
@@ -137,14 +142,15 @@ class DeviceSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InfoCard(
-      title: 'Device',
+      title: AppLocalizations.of(context).device,
       children: <Widget>[
         Text('Type ${user.exampleDeviceType.label}'),
         Text('Marker ${user.exampleMarker.label}'),
         Text('User ${user.exampleUserId}',
             style: Theme.of(context).textTheme.bodySmall),
         if (user.sleeping)
-          Text('Sleeping', style: Theme.of(context).textTheme.bodySmall),
+          Text(AppLocalizations.of(context).sleeping,
+              style: Theme.of(context).textTheme.bodySmall),
         if (user.hasLocation)
           Text(
               'Location ${formatCoordinate(user.latitude)}, ${formatCoordinate(user.longitude)}'),
@@ -161,9 +167,9 @@ class GeoFenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InfoCard(
-      title: 'Geo fence',
+      title: AppLocalizations.of(context).geoFence,
       children: user.geoFenceName.isEmpty
-          ? const <Widget>[Text('None')]
+          ? <Widget>[Text(AppLocalizations.of(context).none)]
           : <Widget>[
               Text(user.geoFenceName),
               Text('${user.exampleMarker.label} · Enter',
@@ -186,22 +192,30 @@ class SensorLatestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final current = data;
     return InfoCard(
-      title: 'Sensor',
+      title: AppLocalizations.of(context).sensor,
       children: current == null || !current.hasAnyValue
-          ? const <Widget>[Text('No sensor data received yet')]
+          ? <Widget>[Text(AppLocalizations.of(context).noSensorData)]
           : <Widget>[
               SensorValueRow(
-                  label: 'Temperature', value: current.temperature, unit: 'C'),
+                  label: AppLocalizations.of(context).temperature,
+                  value: current.temperature,
+                  unit: 'C'),
               SensorValueRow(
-                  label: 'Humidity', value: current.humidity, unit: '%'),
+                  label: AppLocalizations.of(context).humidity,
+                  value: current.humidity,
+                  unit: '%'),
               SensorValueRow(
-                  label: 'Pressure', value: current.pressure, unit: 'hPa'),
+                  label: AppLocalizations.of(context).pressure,
+                  value: current.pressure,
+                  unit: 'hPa'),
               SensorValueRow(
-                  label: 'Pass-by score',
+                  label: AppLocalizations.of(context).passByScore,
                   value: current.vibrationAverage,
                   unit: ''),
               SensorValueRow(
-                  label: 'Altitude', value: current.altitude, unit: 'm'),
+                  label: AppLocalizations.of(context).altitude,
+                  value: current.altitude,
+                  unit: 'm'),
               if (current.latitude != null && current.longitude != null)
                 Text(
                     'Position ${formatCoordinate(current.latitude)}, ${formatCoordinate(current.longitude)}'),
@@ -247,7 +261,7 @@ class SensorChartCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InfoCard(
-      title: 'Sensor time series',
+      title: AppLocalizations.of(context).sensorTimeSeries,
       children: samples.isEmpty
           ? const <Widget>[Text('No chartable sensor values in the last hour')]
           : <Widget>[
@@ -263,16 +277,16 @@ class SensorChartCard extends StatelessWidget {
                 children: <Widget>[
                   LegendDot(
                       color: Theme.of(context).colorScheme.primary,
-                      label: 'Temperature C'),
+                      label: '${AppLocalizations.of(context).temperature} C'),
                   LegendDot(
                       color: Theme.of(context).colorScheme.secondary,
-                      label: 'Humidity %'),
+                      label: '${AppLocalizations.of(context).humidity} %'),
                   LegendDot(
                       color: Theme.of(context).colorScheme.tertiary,
-                      label: 'Pressure hPa'),
+                      label: '${AppLocalizations.of(context).pressure} hPa'),
                   LegendDot(
                       color: Theme.of(context).colorScheme.outline,
-                      label: 'Pass-by score'),
+                      label: AppLocalizations.of(context).passByScore),
                 ],
               ),
             ],

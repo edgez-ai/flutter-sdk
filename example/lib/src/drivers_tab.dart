@@ -144,7 +144,7 @@ class _DriversScreenState extends State<DriversScreen> {
                       Uri.parse(_edgezMarketplaceUrl),
                       mode: LaunchMode.externalApplication,
                     ),
-                    child: const Text('Marketplace'),
+                    child: Text(AppLocalizations.of(context).marketplace),
                   ),
                 ],
               ),
@@ -183,8 +183,11 @@ class _DriversScreenState extends State<DriversScreen> {
               ),
               actions: <Widget>[
                 TextButton(
-                    onPressed: _finishInstall, child: const Text('Cancel')),
-                FilledButton(onPressed: _install, child: const Text('Install')),
+                    onPressed: _finishInstall,
+                    child: Text(AppLocalizations.of(context).cancel)),
+                FilledButton(
+                    onPressed: _install,
+                    child: Text(AppLocalizations.of(context).install)),
               ],
             ),
           ),
@@ -199,7 +202,8 @@ class _DriversScreenState extends State<DriversScreen> {
               content: Text(message),
               actions: <Widget>[
                 TextButton(
-                    onPressed: _finishInstall, child: const Text('Close')),
+                    onPressed: _finishInstall,
+                    child: Text(AppLocalizations.of(context).close)),
               ],
             ),
           ),
