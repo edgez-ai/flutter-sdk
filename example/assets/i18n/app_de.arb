@@ -1,4 +1,10 @@
 {
+  "selectRelayWifi": "Wählen Sie zum Fortfahren Upstream-WLAN oder SoftAP.",
+  "relayWifi": "Relais-WLAN",
+  "upstreamWifi": "Upstream-WLAN",
+  "softapProvisioningDescription": "SoftAP verwendet die Mesh-SSID und Passphrase aus dem Netzwerkschritt. Eine leere Passphrase erstellt ein offenes Netzwerk.",
+  "invalidRelayWifi": "SSID: 1–32 Bytes. Passwort: leer oder 8–63 Bytes. Upstream-WLAN akzeptiert auch einen PSK mit 64 Hexadezimalziffern.",
+  "clearBleSelection": "Löschen",
   "@@locale": "de",
   "appTitle": "EdgeZ", "dashboard": "Dashboard", "nodes": "Knoten", "map": "Karte", "drivers": "Treiber", "settings": "Einstellungen",
   "language": "Sprache", "languageDescription": "Wähle die Sprache der App", "deviceConnection": "Geräteverbindung", "select": "Auswählen", "connect": "Verbinden", "connecting": "Verbindung wird hergestellt…", "disconnect": "Trennen",

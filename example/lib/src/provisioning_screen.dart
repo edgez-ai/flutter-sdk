@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:edgez_flutter_sdk/edgez_flutter_sdk.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ enum _ProvisionStep {
   mode('Device mode'),
   deviceUser('Device user'),
   network('Network'),
+  relayWifi('Relay Wi-Fi'),
   location('Location'),
   geoFence('Geo fence'),
   sensor('Sensor'),
@@ -30,6 +32,7 @@ String _localizedStepTitle(AppLocalizations l10n, _ProvisionStep step) =>
       _ProvisionStep.mode => l10n.deviceMode,
       _ProvisionStep.deviceUser => l10n.deviceUser,
       _ProvisionStep.network => l10n.network,
+      _ProvisionStep.relayWifi => l10n.relayWifi,
       _ProvisionStep.location => l10n.location,
       _ProvisionStep.geoFence => l10n.geoFence,
       _ProvisionStep.sensor => l10n.sensor,
@@ -111,6 +114,16 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   String uartI2cDriver = '';
   String rs485Driver = '';
   bool sleepMode = false;
+  String relayWifiMode = 'none';
+  bool get useUpstreamWifi => relayWifiMode == 'upstream';
+  String upstreamWifiSsid = '';
+  String upstreamWifiPassphrase = '';
+
+  List<_ProvisionStep> get steps => _ProvisionStep.values
+      .where((item) => deviceType == 'relay'
+          ? item != _ProvisionStep.sleepMode
+          : item != _ProvisionStep.relayWifi)
+      .toList(growable: false);
 
   @override
   void initState() {
@@ -249,6 +262,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     uartI2cDriver = settings.uartI2cSensorType;
     rs485Driver = settings.rs485SensorType;
     sleepMode = settings.sleepModeEnabled;
+    upstreamWifiSsid = settings.upstreamWifiSsid;
+    upstreamWifiPassphrase = settings.upstreamWifiPassphrase;
+    relayWifiMode = upstreamWifiSsid.isNotEmpty ? 'upstream' : 'none';
     if (settings.meshFrequencyKhz > 0) {
       meshFrequencyKhz = settings.meshFrequencyKhz;
     }
@@ -301,7 +317,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
       return;
     }
     setState(() {
-      step = _ProvisionStep.values[step.index - 1];
+      step = steps[steps.indexOf(step) - 1];
       error = null;
     });
   }
@@ -340,18 +356,40 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
       setState(() => error = AppLocalizations.of(context).selectDeviceMode);
       return;
     }
-    if (step == _ProvisionStep.sensor && deviceType == 'relay' ||
-        step == _ProvisionStep.sleepMode) {
+    if (step == _ProvisionStep.relayWifi && !_validateRelayWifi()) return;
+    if (step == steps.last) {
       await _save();
       return;
     }
     setState(() {
-      step = _ProvisionStep.values[step.index + 1];
+      step = steps[steps.indexOf(step) + 1];
       error = null;
     });
   }
 
+  bool _validateRelayWifi() {
+    if (relayWifiMode == 'none') {
+      setState(() => error = AppLocalizations.of(context).selectRelayWifi);
+      return false;
+    }
+    final ssid = useUpstreamWifi ? upstreamWifiSsid.trim() : meshId.trim();
+    final password = useUpstreamWifi ? upstreamWifiPassphrase : passphrase;
+    final passwordBytes = utf8.encode(password).length;
+    final validPassword = password.isEmpty ||
+        (passwordBytes >= 8 && passwordBytes <= 63) ||
+        (useUpstreamWifi && RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(password));
+    if (ssid.isEmpty || utf8.encode(ssid).length > 32 || !validPassword) {
+      setState(() => error = AppLocalizations.of(context).invalidRelayWifi);
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _save() async {
+    if (deviceType == 'relay' && !_validateRelayWifi()) {
+      setState(() => step = _ProvisionStep.relayWifi);
+      return;
+    }
     setState(() {
       saving = true;
       error = null;
@@ -374,6 +412,12 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           deviceType: deviceType,
           meshId: meshId.trim(),
           passphrase: passphrase,
+          upstreamWifiSsid: deviceType == 'relay' && useUpstreamWifi
+              ? upstreamWifiSsid.trim()
+              : '',
+          upstreamWifiPassphrase: deviceType == 'relay' && useUpstreamWifi
+              ? upstreamWifiPassphrase
+              : '',
           userName: userName.trim(),
           marker: marker.name,
           maxHop: int.tryParse(maxHop) ?? 4,
@@ -429,7 +473,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             Text(
-                AppLocalizations.of(context).stepProgress(step.index + 1, 8,
+                AppLocalizations.of(context).stepProgress(
+                    steps.indexOf(step) + 1,
+                    steps.length,
                     _localizedStepTitle(AppLocalizations.of(context), step)),
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
@@ -468,9 +514,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
                   onPressed: _canContinue(state) ? _next : null,
                   child: Text(saving
                       ? AppLocalizations.of(context).saving
-                      : step == _ProvisionStep.sleepMode ||
-                              step == _ProvisionStep.sensor &&
-                                  deviceType == 'relay'
+                      : step == steps.last
                           ? AppLocalizations.of(context).save
                           : waitingForSettings
                               ? AppLocalizations.of(context).loading
@@ -632,6 +676,46 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
                 value: beaconInterval,
                 keyboardType: TextInputType.number,
                 onChanged: (value) => setState(() => beaconInterval = value)),
+          ],
+        );
+      case _ProvisionStep.relayWifi:
+        final l10n = AppLocalizations.of(context);
+        return InfoCard(
+          title: l10n.relayWifi,
+          children: <Widget>[
+            SegmentedButton<String>(
+              segments: <ButtonSegment<String>>[
+                ButtonSegment(value: 'none', label: Text(l10n.none)),
+                ButtonSegment(
+                    value: 'upstream', label: Text(l10n.upstreamWifi)),
+                const ButtonSegment(value: 'softap', label: Text('SoftAP')),
+              ],
+              selected: {relayWifiMode},
+              onSelectionChanged: (value) => setState(() {
+                relayWifiMode = value.single;
+                error = null;
+              }),
+            ),
+            const SizedBox(height: 12),
+            if (useUpstreamWifi) ...<Widget>[
+              SettingsTextField(
+                label: l10n.upstreamWifiSsid,
+                value: upstreamWifiSsid,
+                onChanged: (value) => setState(() => upstreamWifiSsid = value),
+              ),
+              SettingsTextField(
+                label: l10n.upstreamWifiPassphrase,
+                value: upstreamWifiPassphrase,
+                obscureText: true,
+                onChanged: (value) =>
+                    setState(() => upstreamWifiPassphrase = value),
+              ),
+            ] else if (relayWifiMode == 'softap') ...<Widget>[
+              Text(l10n.softapProvisioningDescription),
+              const SizedBox(height: 8),
+              Text('SSID: ${meshId.trim()}'),
+            ] else
+              Text(l10n.selectRelayWifi),
           ],
         );
       case _ProvisionStep.location:

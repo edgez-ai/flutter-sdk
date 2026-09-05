@@ -9,6 +9,26 @@ class AppLocalizationsJa extends AppLocalizations {
   AppLocalizationsJa([String locale = 'ja']) : super(locale);
 
   @override
+  String get selectRelayWifi => '続行するには上流 Wi-Fi または SoftAP を選択してください。';
+
+  @override
+  String get relayWifi => 'リレー Wi-Fi';
+
+  @override
+  String get upstreamWifi => '上流 Wi-Fi';
+
+  @override
+  String get softapProvisioningDescription =>
+      'SoftAP はネットワーク手順のメッシュ SSID とパスフレーズを使用します。空のパスフレーズでオープンネットワークになります。';
+
+  @override
+  String get invalidRelayWifi =>
+      'SSID は 1～32 バイト、パスワードは空または 8～63 バイトにしてください。上流 Wi-Fi は 64 桁の16進数 PSK も使用できます。';
+
+  @override
+  String get clearBleSelection => 'クリア';
+
+  @override
   String get appTitle => 'EdgeZ';
 
   @override

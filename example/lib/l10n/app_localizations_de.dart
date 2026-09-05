@@ -9,6 +9,27 @@ class AppLocalizationsDe extends AppLocalizations {
   AppLocalizationsDe([String locale = 'de']) : super(locale);
 
   @override
+  String get selectRelayWifi =>
+      'Wählen Sie zum Fortfahren Upstream-WLAN oder SoftAP.';
+
+  @override
+  String get relayWifi => 'Relais-WLAN';
+
+  @override
+  String get upstreamWifi => 'Upstream-WLAN';
+
+  @override
+  String get softapProvisioningDescription =>
+      'SoftAP verwendet die Mesh-SSID und Passphrase aus dem Netzwerkschritt. Eine leere Passphrase erstellt ein offenes Netzwerk.';
+
+  @override
+  String get invalidRelayWifi =>
+      'SSID: 1–32 Bytes. Passwort: leer oder 8–63 Bytes. Upstream-WLAN akzeptiert auch einen PSK mit 64 Hexadezimalziffern.';
+
+  @override
+  String get clearBleSelection => 'Löschen';
+
+  @override
   String get appTitle => 'EdgeZ';
 
   @override

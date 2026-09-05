@@ -1,4 +1,10 @@
 {
+  "selectRelayWifi": "Choose Upstream Wi-Fi or SoftAP before continuing.",
+  "relayWifi": "Relay Wi-Fi",
+  "upstreamWifi": "Upstream Wi-Fi",
+  "softapProvisioningDescription": "SoftAP uses the mesh SSID and passphrase from the Network step. Leave the passphrase empty for an open network.",
+  "invalidRelayWifi": "Use an SSID of 1–32 bytes and an empty password or 8–63 bytes. Upstream Wi-Fi also accepts a 64-digit hexadecimal PSK.",
+  "clearBleSelection": "Clear",
   "@@locale": "en",
   "appTitle": "EdgeZ",
   "dashboard": "Dashboard",

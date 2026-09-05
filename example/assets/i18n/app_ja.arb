@@ -1,4 +1,10 @@
 {
+  "selectRelayWifi": "続行するには上流 Wi-Fi または SoftAP を選択してください。",
+  "relayWifi": "リレー Wi-Fi",
+  "upstreamWifi": "上流 Wi-Fi",
+  "softapProvisioningDescription": "SoftAP はネットワーク手順のメッシュ SSID とパスフレーズを使用します。空のパスフレーズでオープンネットワークになります。",
+  "invalidRelayWifi": "SSID は 1～32 バイト、パスワードは空または 8～63 バイトにしてください。上流 Wi-Fi は 64 桁の16進数 PSK も使用できます。",
+  "clearBleSelection": "クリア",
   "@@locale": "ja",
   "appTitle": "EdgeZ", "dashboard": "ダッシュボード", "nodes": "ノード", "map": "マップ", "drivers": "ドライバー", "settings": "設定",
   "language": "言語", "languageDescription": "アプリで使用する言語を選択", "deviceConnection": "デバイス接続", "select": "選択", "connect": "接続", "connecting": "接続中…", "disconnect": "切断",

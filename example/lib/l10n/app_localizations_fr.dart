@@ -9,6 +9,27 @@ class AppLocalizationsFr extends AppLocalizations {
   AppLocalizationsFr([String locale = 'fr']) : super(locale);
 
   @override
+  String get selectRelayWifi =>
+      'Choisissez Wi-Fi amont ou SoftAP pour continuer.';
+
+  @override
+  String get relayWifi => 'Wi-Fi du relais';
+
+  @override
+  String get upstreamWifi => 'Wi-Fi amont';
+
+  @override
+  String get softapProvisioningDescription =>
+      'SoftAP utilise le SSID et la phrase secrète du maillage définis à l’étape Réseau. Laissez la phrase secrète vide pour un réseau ouvert.';
+
+  @override
+  String get invalidRelayWifi =>
+      'SSID : 1–32 octets. Mot de passe : vide ou 8–63 octets. Le Wi-Fi amont accepte aussi une PSK de 64 chiffres hexadécimaux.';
+
+  @override
+  String get clearBleSelection => 'Effacer';
+
+  @override
   String get appTitle => 'EdgeZ';
 
   @override

@@ -9,6 +9,26 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get selectRelayWifi => '请选择上游 Wi-Fi 或 SoftAP 后继续。';
+
+  @override
+  String get relayWifi => '中继 Wi-Fi';
+
+  @override
+  String get upstreamWifi => '上游 Wi-Fi';
+
+  @override
+  String get softapProvisioningDescription =>
+      'SoftAP 使用“网络”步骤中的 Mesh SSID 和密码。密码留空则为开放网络。';
+
+  @override
+  String get invalidRelayWifi =>
+      'SSID 须为 1–32 字节，密码留空或为 8–63 字节。上游 Wi-Fi 也支持 64 位十六进制 PSK。';
+
+  @override
+  String get clearBleSelection => '清除';
+
+  @override
   String get appTitle => 'EdgeZ';
 
   @override

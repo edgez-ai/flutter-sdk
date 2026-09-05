@@ -1,4 +1,10 @@
 {
+  "selectRelayWifi": "Choisissez Wi-Fi amont ou SoftAP pour continuer.",
+  "relayWifi": "Wi-Fi du relais",
+  "upstreamWifi": "Wi-Fi amont",
+  "softapProvisioningDescription": "SoftAP utilise le SSID et la phrase secrète du maillage définis à l’étape Réseau. Laissez la phrase secrète vide pour un réseau ouvert.",
+  "invalidRelayWifi": "SSID : 1–32 octets. Mot de passe : vide ou 8–63 octets. Le Wi-Fi amont accepte aussi une PSK de 64 chiffres hexadécimaux.",
+  "clearBleSelection": "Effacer",
   "@@locale": "fr",
   "appTitle": "EdgeZ", "dashboard": "Tableau de bord", "nodes": "Nœuds", "map": "Carte", "drivers": "Pilotes", "settings": "Paramètres",
   "language": "Langue", "languageDescription": "Choisissez la langue utilisée par l’application", "deviceConnection": "Connexion de l’appareil", "select": "Sélectionner", "connect": "Connecter", "connecting": "Connexion…", "disconnect": "Déconnecter",

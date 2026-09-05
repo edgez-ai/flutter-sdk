@@ -9,6 +9,27 @@ class AppLocalizationsEs extends AppLocalizations {
   AppLocalizationsEs([String locale = 'es']) : super(locale);
 
   @override
+  String get selectRelayWifi =>
+      'Seleccione Wi-Fi de enlace o SoftAP para continuar.';
+
+  @override
+  String get relayWifi => 'Wi-Fi del repetidor';
+
+  @override
+  String get upstreamWifi => 'Wi-Fi de enlace';
+
+  @override
+  String get softapProvisioningDescription =>
+      'SoftAP usa el SSID y la contraseña de la malla del paso Red. Deje la contraseña vacía para una red abierta.';
+
+  @override
+  String get invalidRelayWifi =>
+      'SSID: 1–32 bytes. Contraseña: vacía o 8–63 bytes. El Wi-Fi de enlace también admite una PSK de 64 dígitos hexadecimales.';
+
+  @override
+  String get clearBleSelection => 'Borrar';
+
+  @override
   String get appTitle => 'EdgeZ';
 
   @override

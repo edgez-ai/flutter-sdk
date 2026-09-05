@@ -119,6 +119,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onStopBleScan,
     required this.onConnectBleDevice,
     required this.onSelectBleDevice,
+    required this.onClearBleDevice,
     required this.onRefreshUsbDevices,
     required this.onConnectUsbDevice,
     required this.onBleAutoConnectChanged,
@@ -229,6 +230,7 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback onStopBleScan;
   final ValueChanged<String> onConnectBleDevice;
   final ValueChanged<EdgezBleDevice> onSelectBleDevice;
+  final VoidCallback onClearBleDevice;
   final Future<void> Function() onRefreshUsbDevices;
   final ValueChanged<EdgezUsbDevice> onConnectUsbDevice;
   final ValueChanged<bool> onBleAutoConnectChanged;
@@ -1000,8 +1002,19 @@ class SettingsScreen extends StatefulWidget {
             ],
           ],
           const SizedBox(height: 8),
-          Text(AppLocalizations.of(context).bluetooth,
-              style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(AppLocalizations.of(context).bluetooth,
+                    style: Theme.of(context).textTheme.titleMedium),
+              ),
+              TextButton.icon(
+                onPressed: selectedBleDevice == null ? null : onClearBleDevice,
+                icon: const Icon(Icons.clear),
+                label: Text(AppLocalizations.of(context).clearBleSelection),
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
           if (bleDevices.isEmpty)
             InfoCard(

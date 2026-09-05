@@ -106,6 +106,42 @@ abstract class AppLocalizations {
     Locale('zh')
   ];
 
+  /// No description provided for @selectRelayWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Upstream Wi-Fi or SoftAP before continuing.'**
+  String get selectRelayWifi;
+
+  /// No description provided for @relayWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Relay Wi-Fi'**
+  String get relayWifi;
+
+  /// No description provided for @upstreamWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Upstream Wi-Fi'**
+  String get upstreamWifi;
+
+  /// No description provided for @softapProvisioningDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'SoftAP uses the mesh SSID and passphrase from the Network step. Leave the passphrase empty for an open network.'**
+  String get softapProvisioningDescription;
+
+  /// No description provided for @invalidRelayWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Use an SSID of 1–32 bytes and an empty password or 8–63 bytes. Upstream Wi-Fi also accepts a 64-digit hexadecimal PSK.'**
+  String get invalidRelayWifi;
+
+  /// No description provided for @clearBleSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get clearBleSelection;
+
   /// No description provided for @appTitle.
   ///
   /// In en, this message translates to:

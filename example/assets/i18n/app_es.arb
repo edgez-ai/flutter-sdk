@@ -1,4 +1,10 @@
 {
+  "selectRelayWifi": "Seleccione Wi-Fi de enlace o SoftAP para continuar.",
+  "relayWifi": "Wi-Fi del repetidor",
+  "upstreamWifi": "Wi-Fi de enlace",
+  "softapProvisioningDescription": "SoftAP usa el SSID y la contraseña de la malla del paso Red. Deje la contraseña vacía para una red abierta.",
+  "invalidRelayWifi": "SSID: 1–32 bytes. Contraseña: vacía o 8–63 bytes. El Wi-Fi de enlace también admite una PSK de 64 dígitos hexadecimales.",
+  "clearBleSelection": "Borrar",
   "@@locale": "es",
   "appTitle": "EdgeZ", "dashboard": "Panel", "nodes": "Nodos", "map": "Mapa", "drivers": "Controladores", "settings": "Ajustes",
   "language": "Idioma", "languageDescription": "Elige el idioma de la aplicación", "deviceConnection": "Conexión del dispositivo", "select": "Seleccionar", "connect": "Conectar", "connecting": "Conectando…", "disconnect": "Desconectar",

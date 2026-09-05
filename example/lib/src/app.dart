@@ -1698,6 +1698,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                     unawaited(bleConfigurationStore.saveSelectedDevice(device));
                   },
                   onRefreshUsbDevices: _refreshUsbDevices,
+                  onClearBleDevice: () {
+                    setState(() => selectedBleDevice = null);
+                    unawaited(bleConfigurationStore.clearSelectedDevice());
+                  },
                   onConnectUsbDevice: (device) =>
                       unawaited(_connectUsbDevice(device)),
                   onBleAutoConnectChanged: (value) {
