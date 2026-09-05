@@ -374,8 +374,9 @@ class _ImuOrientation extends StatelessWidget {
     return Column(
       children: <Widget>[
         SizedBox(
-          height: 120,
+          height: 180,
           child: CustomPaint(
+            key: const ValueKey('imu-orientation-cube'),
             painter: _OrientationPainter(
               roll: roll,
               pitch: pitch,
@@ -389,6 +390,39 @@ class _ImuOrientation extends StatelessWidget {
           'Pitch ${(pitch * 180 / math.pi).toStringAsFixed(1)}°',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+        const SizedBox(height: 4),
+        const Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 12,
+          children: <Widget>[
+            _AxisLegend(label: 'X', color: Color(0xffe53935)),
+            _AxisLegend(label: 'Y', color: Color(0xff43a047)),
+            _AxisLegend(label: 'Z', color: Color(0xff1e88e5)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _AxisLegend extends StatelessWidget {
+  const _AxisLegend({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
       ],
     );
   }
@@ -407,27 +441,89 @@ class _OrientationPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.translate(size.width / 2, size.height / 2);
-    canvas.rotate(roll);
-    final height = 42.0 * math.cos(pitch).abs().clamp(0.25, 1.0);
-    final rect = Rect.fromCenter(
-        center: Offset.zero,
-        width: math.min(size.width * 0.7, 180),
-        height: height);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(5)),
-      Paint()..color = colorScheme.primaryContainer,
+    final center = Offset(size.width / 2, size.height / 2 + 4);
+    final scale = math.min(size.width, size.height) * 0.27;
+    final vertices = <_Vector3>[
+      for (final x in const <double>[-1, 1])
+        for (final y in const <double>[-1, 1])
+          for (final z in const <double>[-1, 1]) _rotate(_Vector3(x, y, z)),
+    ];
+    final projected = vertices
+        .map((point) => Offset(
+              center.dx + (point.x - point.z * 0.48) * scale,
+              center.dy + (point.y + point.z * 0.32) * scale,
+            ))
+        .toList(growable: false);
+
+    final faces = <_CubeFace>[
+      const _CubeFace(<int>[4, 5, 7, 6], Color(0xffe53935)), // +X
+      const _CubeFace(<int>[2, 3, 7, 6], Color(0xff43a047)), // +Y
+      const _CubeFace(<int>[1, 3, 7, 5], Color(0xff1e88e5)), // +Z
+      const _CubeFace(<int>[0, 1, 3, 2], Color(0xffe53935)), // -X
+      const _CubeFace(<int>[0, 1, 5, 4], Color(0xff43a047)), // -Y
+      const _CubeFace(<int>[0, 2, 6, 4], Color(0xff1e88e5)), // -Z
+    ]..sort(
+        (a, b) => a.averageDepth(vertices).compareTo(b.averageDepth(vertices)));
+
+    for (final face in faces) {
+      final path = Path()
+        ..moveTo(
+            projected[face.indices.first].dx, projected[face.indices.first].dy);
+      for (final index in face.indices.skip(1)) {
+        path.lineTo(projected[index].dx, projected[index].dy);
+      }
+      path.close();
+      canvas.drawPath(path, Paint()..color = face.color.withValues(alpha: 0.5));
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = colorScheme.onSurface.withValues(alpha: 0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+
+    _drawAxis(canvas, center, _rotate(const _Vector3(1.65, 0, 0)), scale,
+        const Color(0xffe53935), 'X');
+    _drawAxis(canvas, center, _rotate(const _Vector3(0, 1.65, 0)), scale,
+        const Color(0xff43a047), 'Y');
+    _drawAxis(canvas, center, _rotate(const _Vector3(0, 0, 1.65)), scale,
+        const Color(0xff1e88e5), 'Z');
+  }
+
+  _Vector3 _rotate(_Vector3 point) {
+    final xAfterPitch = point.x * math.cos(pitch) + point.z * math.sin(pitch);
+    final zAfterPitch = -point.x * math.sin(pitch) + point.z * math.cos(pitch);
+    return _Vector3(
+      xAfterPitch,
+      point.y * math.cos(roll) - zAfterPitch * math.sin(roll),
+      point.y * math.sin(roll) + zAfterPitch * math.cos(roll),
     );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(5)),
+  }
+
+  void _drawAxis(Canvas canvas, Offset center, _Vector3 end, double scale,
+      Color color, String label) {
+    final endpoint = Offset(
+      center.dx + (end.x - end.z * 0.48) * scale,
+      center.dy + (end.y + end.z * 0.32) * scale,
+    );
+    canvas.drawLine(
+      center,
+      endpoint,
       Paint()
-        ..color = colorScheme.primary
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
+        ..color = color
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
     );
-    canvas.drawCircle(rect.centerRight, 5, Paint()..color = colorScheme.error);
-    canvas.restore();
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style:
+            TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(canvas, endpoint + const Offset(4, -7));
   }
 
   @override
@@ -435,6 +531,25 @@ class _OrientationPainter extends CustomPainter {
       oldDelegate.roll != roll ||
       oldDelegate.pitch != pitch ||
       oldDelegate.colorScheme != colorScheme;
+}
+
+class _Vector3 {
+  const _Vector3(this.x, this.y, this.z);
+
+  final double x;
+  final double y;
+  final double z;
+}
+
+class _CubeFace {
+  const _CubeFace(this.indices, this.color);
+
+  final List<int> indices;
+  final Color color;
+
+  double averageDepth(List<_Vector3> vertices) =>
+      indices.fold<double>(0, (sum, index) => sum + vertices[index].z) /
+      indices.length;
 }
 
 List<EdgezSensorSample> _samplesInRange(

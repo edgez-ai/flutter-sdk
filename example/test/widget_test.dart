@@ -272,6 +272,10 @@ void main() {
       expect(find.text(widget.label), findsOneWidget);
     }
     expect(find.text('Binary length: 128 bytes'), findsOneWidget);
+    expect(find.byKey(const ValueKey('imu-orientation-cube')), findsOneWidget);
+    expect(find.text('X'), findsOneWidget);
+    expect(find.text('Y'), findsOneWidget);
+    expect(find.text('Z'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('dashboard-known-node-count')),
       findsOneWidget,
