@@ -114,10 +114,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   String uartI2cDriver = '';
   String rs485Driver = '';
   bool sleepMode = false;
-  String relayWifiMode = 'none';
-  bool get useUpstreamWifi => relayWifiMode == 'upstream';
-  String upstreamWifiSsid = '';
-  String upstreamWifiPassphrase = '';
 
   List<_ProvisionStep> get steps => _ProvisionStep.values
       .where((item) => deviceType == 'relay'
@@ -262,9 +258,6 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
     uartI2cDriver = settings.uartI2cSensorType;
     rs485Driver = settings.rs485SensorType;
     sleepMode = settings.sleepModeEnabled;
-    upstreamWifiSsid = settings.upstreamWifiSsid;
-    upstreamWifiPassphrase = settings.upstreamWifiPassphrase;
-    relayWifiMode = upstreamWifiSsid.isNotEmpty ? 'upstream' : 'none';
     if (settings.meshFrequencyKhz > 0) {
       meshFrequencyKhz = settings.meshFrequencyKhz;
     }
@@ -368,16 +361,11 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
   }
 
   bool _validateRelayWifi() {
-    if (relayWifiMode == 'none') {
-      setState(() => error = AppLocalizations.of(context).selectRelayWifi);
-      return false;
-    }
-    final ssid = useUpstreamWifi ? upstreamWifiSsid.trim() : meshId.trim();
-    final password = useUpstreamWifi ? upstreamWifiPassphrase : passphrase;
+    final ssid = meshId.trim();
+    final password = passphrase;
     final passwordBytes = utf8.encode(password).length;
-    final validPassword = password.isEmpty ||
-        (passwordBytes >= 8 && passwordBytes <= 63) ||
-        (useUpstreamWifi && RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(password));
+    final validPassword =
+        password.isEmpty || (passwordBytes >= 8 && passwordBytes <= 63);
     if (ssid.isEmpty || utf8.encode(ssid).length > 32 || !validPassword) {
       setState(() => error = AppLocalizations.of(context).invalidRelayWifi);
       return false;
@@ -412,12 +400,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
           deviceType: deviceType,
           meshId: meshId.trim(),
           passphrase: passphrase,
-          upstreamWifiSsid: deviceType == 'relay' && useUpstreamWifi
-              ? upstreamWifiSsid.trim()
-              : '',
-          upstreamWifiPassphrase: deviceType == 'relay' && useUpstreamWifi
-              ? upstreamWifiPassphrase
-              : '',
+          // Clear credentials saved by older firmware. OpenMANET provides WAN.
+          upstreamWifiSsid: '',
+          upstreamWifiPassphrase: '',
           userName: userName.trim(),
           marker: marker.name,
           maxHop: int.tryParse(maxHop) ?? 4,
@@ -683,39 +668,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> {
         return InfoCard(
           title: l10n.relayWifi,
           children: <Widget>[
-            SegmentedButton<String>(
-              segments: <ButtonSegment<String>>[
-                ButtonSegment(value: 'none', label: Text(l10n.none)),
-                ButtonSegment(
-                    value: 'upstream', label: Text(l10n.upstreamWifi)),
-                const ButtonSegment(value: 'softap', label: Text('SoftAP')),
-              ],
-              selected: {relayWifiMode},
-              onSelectionChanged: (value) => setState(() {
-                relayWifiMode = value.single;
-                error = null;
-              }),
-            ),
-            const SizedBox(height: 12),
-            if (useUpstreamWifi) ...<Widget>[
-              SettingsTextField(
-                label: l10n.upstreamWifiSsid,
-                value: upstreamWifiSsid,
-                onChanged: (value) => setState(() => upstreamWifiSsid = value),
-              ),
-              SettingsTextField(
-                label: l10n.upstreamWifiPassphrase,
-                value: upstreamWifiPassphrase,
-                obscureText: true,
-                onChanged: (value) =>
-                    setState(() => upstreamWifiPassphrase = value),
-              ),
-            ] else if (relayWifiMode == 'softap') ...<Widget>[
-              Text(l10n.softapProvisioningDescription),
-              const SizedBox(height: 8),
-              Text('SSID: ${meshId.trim()}'),
-            ] else
-              Text(l10n.selectRelayWifi),
+            const Text('SoftAP'),
+            Text(l10n.softapProvisioningDescription),
+            const SizedBox(height: 8),
+            Text('SSID: ${meshId.trim()}'),
           ],
         );
       case _ProvisionStep.location:

@@ -109,10 +109,6 @@ class SettingsScreen extends StatefulWidget {
     required this.rs485SensorType,
     required this.deviceType,
     required this.devicePassphrase,
-    required this.deviceUpstreamEnabled,
-    required this.deviceUpstreamWifiSsid,
-    required this.deviceUpstreamWifiPassphrase,
-    required this.deviceBeaconMulticast,
     required this.deviceSleepModeEnabled,
     required this.logLevel,
     required this.onConnectBle,
@@ -159,10 +155,6 @@ class SettingsScreen extends StatefulWidget {
     required this.onRs485SensorChanged,
     required this.onDeviceTypeChanged,
     required this.onDevicePassphraseChanged,
-    required this.onDeviceUpstreamEnabledChanged,
-    required this.onDeviceUpstreamWifiSsidChanged,
-    required this.onDeviceUpstreamWifiPassphraseChanged,
-    required this.onDeviceBeaconMulticastChanged,
     required this.onDeviceSleepModeChanged,
     required this.onLogLevelChanged,
     super.key,
@@ -220,10 +212,6 @@ class SettingsScreen extends StatefulWidget {
   final String rs485SensorType;
   final String deviceType;
   final String devicePassphrase;
-  final bool deviceUpstreamEnabled;
-  final String deviceUpstreamWifiSsid;
-  final String deviceUpstreamWifiPassphrase;
-  final String deviceBeaconMulticast;
   final bool deviceSleepModeEnabled;
   final EdgezDeviceLogLevel logLevel;
   final VoidCallback onConnectBle;
@@ -270,10 +258,6 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<String> onRs485SensorChanged;
   final ValueChanged<String> onDeviceTypeChanged;
   final ValueChanged<String> onDevicePassphraseChanged;
-  final ValueChanged<bool> onDeviceUpstreamEnabledChanged;
-  final ValueChanged<String> onDeviceUpstreamWifiSsidChanged;
-  final ValueChanged<String> onDeviceUpstreamWifiPassphraseChanged;
-  final ValueChanged<String> onDeviceBeaconMulticastChanged;
   final ValueChanged<bool> onDeviceSleepModeChanged;
   final ValueChanged<EdgezDeviceLogLevel> onLogLevelChanged;
 
@@ -792,53 +776,6 @@ class SettingsScreen extends StatefulWidget {
             ),
           ],
           if (deviceModeEnabled) ...<Widget>[
-            cardGap,
-            InfoCard(
-              title: l10n.upstreamNetwork,
-              children: <Widget>[
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(l10n.enableUpstreamNetwork),
-                  subtitle: Text(l10n.upstreamDescription),
-                  value: deviceUpstreamEnabled,
-                  onChanged: onDeviceUpstreamEnabledChanged,
-                ),
-                if (deviceUpstreamEnabled) ...<Widget>[
-                  SettingsTextField(
-                    label: l10n.upstreamWifiSsid,
-                    value: deviceUpstreamWifiSsid,
-                    onChanged: onDeviceUpstreamWifiSsidChanged,
-                  ),
-                  SettingsTextField(
-                    label: l10n.upstreamWifiPassphrase,
-                    value: deviceUpstreamWifiPassphrase,
-                    onChanged: onDeviceUpstreamWifiPassphraseChanged,
-                    obscureText: true,
-                  ),
-                  DropdownSetting<String>(
-                    label: l10n.beaconMulticast,
-                    value: deviceBeaconMulticast,
-                    values: const <String>[
-                      '',
-                      '224.0.0.1',
-                      '224.0.0.251',
-                      '239.255.255.250',
-                      '239.255.0.1',
-                      '239.192.0.1',
-                    ],
-                    titleFor: (value) => switch (value) {
-                      '' => l10n.notSet,
-                      '224.0.0.1' => '224.0.0.1 - all hosts',
-                      '224.0.0.251' => '224.0.0.251 - mDNS',
-                      '239.255.255.250' => '239.255.255.250 - SSDP',
-                      '239.255.0.1' => '239.255.0.1 - site-local',
-                      _ => '239.192.0.1 - organization-local',
-                    },
-                    onChanged: onDeviceBeaconMulticastChanged,
-                  ),
-                ],
-              ],
-            ),
             cardGap,
             InfoCard(
               title: l10n.sleepMode,

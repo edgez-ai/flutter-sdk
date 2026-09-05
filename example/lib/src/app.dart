@@ -157,10 +157,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   String rs485SensorType = '';
   String deviceType = 'relay';
   String devicePassphrase = '';
-  bool deviceUpstreamEnabled = false;
-  String deviceUpstreamWifiSsid = '';
-  String deviceUpstreamWifiPassphrase = '';
-  String deviceBeaconMulticast = '';
   bool deviceSleepModeEnabled = false;
   EdgezVoiceCallPhase lastVoiceCallPhase = EdgezVoiceCallPhase.idle;
   AppLifecycleState appLifecycleState = AppLifecycleState.resumed;
@@ -1125,13 +1121,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         uartI2cSensorType: uartI2cSensorType,
         rs485SensorType: rs485SensorType,
         passphrase: devicePassphrase,
-        upstreamWifiSsid:
-            deviceUpstreamEnabled ? deviceUpstreamWifiSsid.trim() : '',
-        upstreamWifiPassphrase:
-            deviceUpstreamEnabled ? deviceUpstreamWifiPassphrase : '',
-        beaconUnicast: deviceUpstreamEnabled
-            ? _parseIpv4Address(deviceBeaconMulticast)
-            : 0,
+        upstreamWifiSsid: '',
+        upstreamWifiPassphrase: '',
+        beaconUnicast: 0,
         deviceType: deviceType,
         sleepModeEnabled: deviceSleepModeEnabled,
         deviceGpsEnabled: deviceGpsEnabled,
@@ -1680,10 +1672,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   rs485SensorType: rs485SensorType,
                   deviceType: deviceType,
                   devicePassphrase: devicePassphrase,
-                  deviceUpstreamEnabled: deviceUpstreamEnabled,
-                  deviceUpstreamWifiSsid: deviceUpstreamWifiSsid,
-                  deviceUpstreamWifiPassphrase: deviceUpstreamWifiPassphrase,
-                  deviceBeaconMulticast: deviceBeaconMulticast,
                   deviceSleepModeEnabled: deviceSleepModeEnabled,
                   logLevel: deviceLogLevel,
                   onConnectBle: _connectBle,
@@ -1797,14 +1785,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       setState(() => deviceType = value),
                   onDevicePassphraseChanged: (value) =>
                       setState(() => devicePassphrase = value),
-                  onDeviceUpstreamEnabledChanged: (value) =>
-                      setState(() => deviceUpstreamEnabled = value),
-                  onDeviceUpstreamWifiSsidChanged: (value) =>
-                      setState(() => deviceUpstreamWifiSsid = value),
-                  onDeviceUpstreamWifiPassphraseChanged: (value) =>
-                      setState(() => deviceUpstreamWifiPassphrase = value),
-                  onDeviceBeaconMulticastChanged: (value) =>
-                      setState(() => deviceBeaconMulticast = value),
                   onDeviceSleepModeChanged: (value) =>
                       setState(() => deviceSleepModeEnabled = value),
                   onLogLevelChanged: (level) =>
@@ -1878,17 +1858,5 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         );
       },
     );
-  }
-
-  int _parseIpv4Address(String value) {
-    final parts = value.split('.');
-    if (parts.length != 4) return 0;
-    var result = 0;
-    for (final part in parts) {
-      final octet = int.tryParse(part);
-      if (octet == null || octet < 0 || octet > 255) return 0;
-      result = (result << 8) | octet;
-    }
-    return result;
   }
 }
