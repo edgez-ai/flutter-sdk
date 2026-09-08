@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
@@ -153,6 +154,28 @@ void main() {
       expect(devices.single.vendorId, 0x303a);
       expect(devices.single.label, contains('303a:1001'));
       expect(ble.callsFor('connectUsb').single.argumentMap['deviceId'], 7);
+    });
+
+    test('downloaded log retains BLE diagnostics with firmware logging off', () async {
+      final directory = await Directory.systemTemp.createTemp('edgez-ble-log-');
+      addTearDown(() => directory.delete(recursive: true));
+      final store = EdgezDeviceLogStore(
+        directoryProvider: () async => directory,
+        exportDirectoryProvider: () async => Directory('${directory.path}/exports'),
+      );
+      final session = EdgezMeshSession(sdk: sdk, deviceLogStore: store);
+      addTearDown(session.dispose);
+      await session.configureLogLevel(EdgezDeviceLogLevel.none);
+      ble.emitLog('BLE MTU mtu=23 status=0', diagnostic: true);
+      ble.emitLog('BLE control write rejected status=201', diagnostic: true);
+      ble.emitLog('Routine debug output');
+      await ble.flushEvents();
+
+      final text = await (await store.export()).readAsString();
+      expect(text, contains('APP: BLE MTU mtu=23 status=0'));
+      expect(text, contains('APP: BLE control write rejected status=201'));
+      expect(text, isNot(contains('Routine debug output')));
+      expect(session.state.debugLogs, hasLength(2));
     });
 
     test('sets device log level', () async {

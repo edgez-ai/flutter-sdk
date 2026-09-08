@@ -961,6 +961,7 @@ class EdgezMeshEvent {
     this.receivedAtUs = 0,
     this.talkgroupPort = 0,
     this.log = '',
+    this.diagnostic = false,
   });
 
   final EdgezMeshEventType type;
@@ -980,6 +981,8 @@ class EdgezMeshEvent {
   final int receivedAtUs;
   final int talkgroupPort;
   final String log;
+  /// Transport diagnostics are retained even when firmware logging is off.
+  final bool diagnostic;
 
   double get progress => totalBytes <= 0 ? 0 : sentBytes / totalBytes;
 
@@ -1016,6 +1019,7 @@ class EdgezMeshEvent {
       receivedAtUs: (map['receivedAtUs'] as num?)?.toInt() ?? 0,
       talkgroupPort: map['talkgroupPort'] as int? ?? 0,
       log: map['log'] as String? ?? '',
+      diagnostic: map['diagnostic'] as bool? ?? false,
     );
   }
 }

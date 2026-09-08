@@ -2638,6 +2638,8 @@ class EdgezFlutterSdkPlugin :
 
     @SuppressLint("MissingPermission")
     private fun connectGatt(device: BluetoothDevice) {
+        emit(mapOf("type" to "log", "log" to
+            "BLE host manufacturer=${Build.MANUFACTURER} model=${Build.MODEL} Android=${Build.VERSION.RELEASE} API=${Build.VERSION.SDK_INT}"))
         gatt = if (Build.VERSION.SDK_INT >= 23) {
             device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         } else {
@@ -2747,23 +2749,22 @@ class EdgezFlutterSdkPlugin :
         tx.put(payload)
 
         val frame = tx.array()
-        val supportsWriteWithoutResponse =
-            rx.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
-        val writeType =
-            if (writeWithoutResponse && supportsWriteWithoutResponse) {
-                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            } else {
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            }
-        val write = EdgezBleWrite(frame, writeType)
+        // Control acceptance depends on onCharacteristicWrite. Use acknowledged
+        // writes even if a caller requests no-response, so fragments cannot be
+        // silently truncated or advance without firmware accepting them.
+        val writes = edgezBleControlChunks(frame, negotiatedMtu).map {
+            EdgezBleWrite(it, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        }
+        emit(mapOf("type" to "log", "log" to
+            "BLE control TX queued bytes=${frame.size} mtu=$negotiatedMtu chunks=${writes.size} acknowledged=true requestedNoResponse=$writeWithoutResponse"))
         synchronized(this) {
-            txQueue.add(write)
+            txQueue.addAll(writes)
         }
         return if (writeNextFrame(activeGatt, rx)) {
             Result.success("BLE queued protobuf")
         } else {
             synchronized(this) {
-                txQueue.remove(write)
+                txQueue.removeAll(writes.toSet())
             }
             Result.failure(IllegalStateException("BLE write failed"))
         }
@@ -2818,17 +2819,31 @@ class EdgezFlutterSdkPlugin :
         }
 
         val ok = if (Build.VERSION.SDK_INT >= 33) {
-            currentGatt.writeCharacteristic(rx, frame.frame, frame.writeType) == BluetoothGatt.GATT_SUCCESS
+            val status = currentGatt.writeCharacteristic(rx, frame.frame, frame.writeType)
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                emit(mapOf("type" to "log", "log" to "BLE control write rejected status=$status bytes=${frame.frame.size} mtu=$negotiatedMtu"))
+            }
+            status == BluetoothGatt.GATT_SUCCESS
         } else {
             rx.writeType = frame.writeType
             rx.value = frame.frame
             currentGatt.writeCharacteristic(rx)
         }
         if (!ok) {
+            emit(mapOf("type" to "log", "log" to "BLE control write failed to start bytes=${frame.frame.size} mtu=$negotiatedMtu"))
             synchronized(this) {
                 txWriteInFlight = false
                 dataWriteInFlight = false
             }
+        } else {
+            mainHandler.postDelayed({
+                val stalled = synchronized(this) {
+                    gatt === currentGatt && txWriteInFlight && txQueue.peekFirst() === frame
+                }
+                if (stalled) {
+                    emit(mapOf("type" to "log", "log" to "BLE control write callback timed out after 10s bytes=${frame.frame.size} mtu=$negotiatedMtu; TX queue blocked"))
+                }
+            }, 10_000L)
         }
         return ok
     }
@@ -3360,6 +3375,7 @@ class EdgezFlutterSdkPlugin :
 
     private fun handleBytes(bytes: ByteArray) {
         if (rxLen + bytes.size > rxBuffer.size) {
+            emit(mapOf("type" to "log", "log" to "BLE control RX overflow buffered=$rxLen incoming=${bytes.size}"))
             rxLen = 0
         }
         System.arraycopy(bytes, 0, rxBuffer, rxLen, bytes.size)
@@ -3368,6 +3384,7 @@ class EdgezFlutterSdkPlugin :
         while (rxLen >= EDGEZ_HEADER_LEN) {
             val magicOffset = findMagicOffset(rxBuffer, rxLen)
             if (magicOffset < 0) {
+                emit(mapOf("type" to "log", "log" to "BLE control RX invalid header buffered=$rxLen"))
                 rxLen = 0
                 return
             }
@@ -3378,12 +3395,14 @@ class EdgezFlutterSdkPlugin :
             if (rxLen < EDGEZ_HEADER_LEN) return
             val payloadLen = (rxBuffer[2].toInt() and 0xff) or ((rxBuffer[3].toInt() and 0xff) shl 8)
             if (payloadLen <= 0 || payloadLen > EDGEZ_MAX_PAYLOAD) {
+                emit(mapOf("type" to "log", "log" to "BLE control RX invalid payload length=$payloadLen"))
                 rxLen = 0
                 return
             }
             val frameLen = EDGEZ_HEADER_LEN + payloadLen
             if (rxLen < frameLen) return
             val payload = rxBuffer.copyOfRange(EDGEZ_HEADER_LEN, frameLen)
+            emit(mapOf("type" to "log", "log" to "BLE control RX complete bytes=$payloadLen"))
             if (isRealtimePayload(payload)) {
                 handleVoiceBytes(payload)
             } else {
@@ -3788,8 +3807,14 @@ class EdgezFlutterSdkPlugin :
     private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
 
     private fun emit(event: Map<String, Any?>) {
+        // Transport diagnostics must remain available even when the app filters
+        // its log view or no Flutter event listener is attached.
+        if (event["type"] == "log") Log.i(LOG_TAG, event["log"].toString())
+        val message = event["log"] as? String ?: ""
+        val diagnostic = event["type"] == "log" &&
+            !message.startsWith("FW:") && message.contains("BLE")
         mainHandler.post {
-            eventSink?.success(event)
+            eventSink?.success(if (diagnostic) event + ("diagnostic" to true) else event)
         }
     }
 }

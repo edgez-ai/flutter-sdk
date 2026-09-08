@@ -1533,6 +1533,7 @@ class EdgezMeshSession extends ChangeNotifier {
                 ? event.log
                 : 'APP: ${event.log}';
         if (!source.startsWith('FW:') &&
+            !event.diagnostic &&
             _appLogLevel.wireValue < _appEventLevel(event.log).wireValue) {
           _setState(_state.copyWith(statusLine: event.log));
           return;

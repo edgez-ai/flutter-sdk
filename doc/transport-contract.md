@@ -57,6 +57,12 @@ different channel.
 - Realtime device-to-host: receive the logical realtime frame from `FFF8`.
 - A successful GATT write completion is transport acceptance.
 
+Control frames are split into ordered, acknowledged FFF1 writes of at most
+`min(MTU - 3, 512)` bytes. Firmware reassembles the `EZ` byte stream before
+dispatching a command. The four-byte envelope counts toward this limit, so a
+512-byte payload requires multiple writes even at MTU 517. Realtime FFF7 frames
+remain single writes and must fit the negotiated MTU.
+
 The BLE `EZ` frame is:
 
 ```text

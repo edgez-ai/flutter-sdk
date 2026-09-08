@@ -178,8 +178,10 @@ class MockBleTransport implements EdgezPlatformTransport {
     return Uint8List.fromList(frame.sublist(4));
   }
 
-  void emitLog(String message) {
-    _events.add(<Object?, Object?>{'type': 'log', 'log': message});
+  void emitLog(String message, {bool diagnostic = false}) {
+    _events.add(<Object?, Object?>{
+      'type': 'log', 'log': message, 'diagnostic': diagnostic,
+    });
   }
 
   void emitOtaProgress({required int sentBytes, required int totalBytes}) {
