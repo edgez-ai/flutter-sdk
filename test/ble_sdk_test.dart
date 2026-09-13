@@ -176,6 +176,20 @@ void main() {
       expect(text, contains('APP: BLE control write rejected status=201'));
       expect(text, isNot(contains('Routine debug output')));
       expect(session.state.debugLogs, hasLength(2));
+
+      ble.emitPacket(NetworkPacket(beacon: Beacon()));
+      ble.emitPacket(NetworkPacket(from: Int64(42), beacon: Beacon()));
+      ble.emitPacket(NetworkPacket(
+        from: Int64(43),
+        beacon: Beacon(userName: 'Remote beacon'),
+      ));
+      ble.emitRawPacketBytes(<int>[0x80]);
+      await ble.flushEvents();
+      final decodedLog = await (await store.export()).readAsString();
+      expect(decodedLog, contains('reason=zero-source'));
+      expect(decodedLog, contains('from=2a reason=empty-identity'));
+      expect(decodedLog, contains('Beacon accepted from=2b'));
+      expect(decodedLog, contains('Device packet decode failed'));
     });
 
     test('sets device log level', () async {
@@ -1258,6 +1272,8 @@ void main() {
 
       expect(session.state.nodes.values.where((node) => !node.isPublicChannel),
           isEmpty);
+      expect(session.state.debugLogs.join('\n'), contains('reason=local-user-identity'));
+      expect(session.state.debugLogs.join('\n'), contains('reason=empty-identity'));
       session.dispose();
     });
 

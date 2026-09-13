@@ -1566,8 +1566,9 @@ class EdgezMeshSession extends ChangeNotifier {
     return EdgezDeviceLogLevel.debug;
   }
 
-  void _recordAppDiagnostic(EdgezDeviceLogLevel level, String message) {
-    if (_appLogLevel.wireValue < level.wireValue) return;
+  void _recordAppDiagnostic(EdgezDeviceLogLevel level, String message,
+      {bool alwaysPersist = false}) {
+    if (!alwaysPersist && _appLogLevel.wireValue < level.wireValue) return;
     final timestamp = DateTime.now().toIso8601String().substring(11, 23);
     final logs = List<String>.of(_state.debugLogs)
       ..add('$timestamp APP: $message');
@@ -1598,10 +1599,26 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  void _recordDeviceDiagnostic(String message) {
+    _recordAppDiagnostic(EdgezDeviceLogLevel.debug, message,
+        alwaysPersist: true);
+  }
+
   void _handlePacket(List<int> packetBytes, {required int receivedAtUs}) {
     if (packetBytes.isEmpty) return;
     final packet = _parseNetworkPacket(packetBytes);
-    if (packet == null) return;
+    if (packet == null) {
+      _recordDeviceDiagnostic('Device packet decode failed bytes=${packetBytes.length}');
+      return;
+    }
+    _recordDeviceDiagnostic(
+      'Device packet bytes=${packetBytes.length} from=${packet.from.toRadixString(16)} '
+      'operation=${packet.operation.name} interface=${packet.interface.name} '
+      'status=${packet.hasStatus()} beacon=${packet.hasBeacon()} '
+      'topology=${packet.hasReport()} peers=${packet.hasReport() ? packet.report.peers.length : 0} '
+      'settings=${packet.hasDeviceSettings()} message=${packet.hasMsg()} '
+      'legacyPayload=${packet.hasPayload()}',
+    );
     _recordTransportTraffic(
       byteCount: packetBytes.length,
       streamKey: packet.hasMsg()
@@ -1633,6 +1650,13 @@ class EdgezMeshSession extends ChangeNotifier {
         firmwareVersion: packet.status.firmwareVersion,
         publicChannelMask: packet.status.publicChannelMask,
         supportsPublicChannelMask: packet.status.hasPublicChannelMask(),
+      );
+      _recordDeviceDiagnostic(
+        'Mesh status supported=${status.supported} initialized=${status.stackInitialized} '
+        'meshMode=${status.meshMode} linkUp=${status.linkUp} '
+        'routeReady=${status.routeReady} readyForReport=${status.readyForReport} '
+        'meshId=${status.meshId} license=${status.licenseStatus.name} '
+        'firmware=${status.firmwareVersion}',
       );
       _setState(
         _state.copyWith(
@@ -1849,12 +1873,22 @@ class EdgezMeshSession extends ChangeNotifier {
       packet.payload,
       passphrase: _lastMeshConfig?.passphrase ?? '',
     );
-    if (beacon != null) _handleBeacon(packet, beacon);
+    if (beacon != null) {
+      _handleBeacon(packet, beacon);
+    } else {
+      _recordDeviceDiagnostic(
+        'Legacy beacon decode failed from=${packet.from.toRadixString(16)} '
+        'bytes=${packet.payload.length}; payload format or mesh key may not match',
+      );
+    }
   }
 
   void _handleBeacon(proto.NetworkPacket packet, proto.Beacon beacon) {
     final nodeNum = packet.from.toInt();
-    if (nodeNum == 0) return;
+    if (nodeNum == 0) {
+      _recordDeviceDiagnostic('Beacon ignored reason=zero-source');
+      return;
+    }
 
     final now = DateTime.now().millisecondsSinceEpoch;
     final decodedUser = _decodeBeaconUserName(
@@ -1865,6 +1899,7 @@ class EdgezMeshSession extends ChangeNotifier {
         beacon.userIdLow.toInt() == 0 &&
         decodedUser.name.trim().isEmpty &&
         beacon.userPublicKey.isEmpty) {
+      _recordDeviceDiagnostic('Beacon ignored from=${nodeNum.toRadixString(16)} reason=empty-identity');
       return;
     }
     final userUuid =
@@ -1886,6 +1921,11 @@ class EdgezMeshSession extends ChangeNotifier {
                 localIdentity.userIdLow == beacon.userIdLow.toInt()));
     if ((localNode != null && localNode != 0 && localNode == nodeNum) ||
         isLocalIdentity) {
+      _recordDeviceDiagnostic(
+        'Beacon ignored from=${nodeNum.toRadixString(16)} '
+        'reason=${localNode == nodeNum ? 'local-device' : 'local-user-identity'} '
+        'deviceType=${beacon.deviceType.name}',
+      );
       final sensorData = _sensorData(beacon.sensorData);
       final latitude = sensorData?.latitude ??
           (beacon.hasLatitude() ? beacon.latitude : null);
@@ -1958,6 +1998,11 @@ class EdgezMeshSession extends ChangeNotifier {
       nodes.remove(previousEntry.key);
     }
     nodes[nodeNum] = node;
+    _recordDeviceDiagnostic(
+      'Beacon accepted from=${nodeNum.toRadixString(16)} '
+      'deviceType=${beacon.deviceType.name} channel=${beacon.channelNumber} '
+      'replacedNode=${previousEntry != null && previousEntry.key != nodeNum ? previousEntry.key.toRadixString(16) : 'none'}',
+    );
     final sensorSamples =
         Map<int, List<EdgezSensorSample>>.of(_state.sensorSamples);
     if (previousEntry != null && previousEntry.key != nodeNum) {
