@@ -234,7 +234,7 @@ class EdgezMeshSdk {
     return (result ?? const <Object?>[])
         .whereType<Map>()
         .map((item) => EdgezWifiNetwork.fromMap(item.cast<Object?, Object?>()))
-        .where((network) => network.ssid.startsWith('EZ-'))
+        .where((network) => network.ssid.startsWith('EdgeZ-'))
         .toList(growable: false);
   }
 

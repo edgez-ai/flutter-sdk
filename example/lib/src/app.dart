@@ -118,6 +118,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   EdgezPreferredTransport preferredTransport = EdgezPreferredTransport.wifi;
   EdgezBleDevice? selectedBleDevice;
   List<EdgezWifiNetwork> wifiNetworks = const <EdgezWifiNetwork>[];
+  EdgezWifiNetwork? selectedWifiNetwork;
   List<EdgezUsbDevice> usbDevices = const <EdgezUsbDevice>[];
   EdgezUsbDevice? selectedUsbDevice;
   EdgezOtaRelease? otaRelease;
@@ -495,6 +496,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       selectedBleDevice = preferredTransport == EdgezPreferredTransport.ble
           ? bleConfiguration.selectedDevice
           : null;
+      selectedWifiNetwork =
+          preferredTransport == EdgezPreferredTransport.wifi &&
+                  bleConfiguration.hasSelectedWifiNetwork
+              ? EdgezWifiNetwork(ssid: bleConfiguration.wifiSsid, rssi: 0)
+              : null;
       usbDevices = attachedUsbDevices;
       selectedUsbDevice = restoredUsbDevice;
       bleAutoConnect = bleConfiguration.autoConnect;
@@ -512,8 +518,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       await _connectBleDevice(bleConfiguration.deviceId);
     } else if (bleConfiguration.preferredTransport ==
             EdgezPreferredTransport.wifi &&
-        bleConfiguration.autoConnect) {
-      await _connectWifi();
+        bleConfiguration.autoConnect &&
+        bleConfiguration.hasSelectedWifiNetwork) {
+      await _connectWifi(
+        network: EdgezWifiNetwork(ssid: bleConfiguration.wifiSsid, rssi: 0),
+      );
     }
   }
 
@@ -765,15 +774,24 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   }
 
   Future<void> _connectWifi({EdgezWifiNetwork? network}) async {
+    final target = network ?? selectedWifiNetwork;
+    if (target == null) {
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('Select an EdgeZ-* Wi-Fi network first')),
+      );
+      return;
+    }
     await _saveAppSettings();
+    await bleConfigurationStore.saveSelectedWifiNetwork(target);
     preferredTransport = EdgezPreferredTransport.wifi;
+    selectedWifiNetwork = target;
     selectedBleDevice = null;
     selectedUsbDevice = null;
     await bleConfigurationStore
         .setPreferredTransport(EdgezPreferredTransport.wifi);
     if (mounted) setState(() {});
     try {
-      await session.connectWifi(ssid: network?.ssid ?? '');
+      await session.connectWifi(ssid: target.ssid);
     } catch (error) {
       if (!mounted) return;
       scaffoldMessengerKey.currentState?.showSnackBar(
@@ -1699,6 +1717,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   usbDevices: usbDevices,
                   drivers: drivers,
                   selectedBleDevice: selectedBleDevice,
+                  selectedWifiNetwork: selectedWifiNetwork,
                   selectedUsbDevice: selectedUsbDevice,
                   usbLinkStats: meshState.usbLinkStats,
                   meshStatus: meshState.status,
@@ -1751,7 +1770,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   bleEnabled: meshState.deviceSettings?.bleEnabled ?? true,
                   logLevel: deviceLogLevel,
                   onConnectBle: _connectBle,
-                  onConnectWifi: _connectWifi,
                   onConnectWifiNetwork: (network) =>
                       unawaited(_connectWifi(network: network)),
                   onRefreshWifiNetworks: _refreshWifiNetworks,

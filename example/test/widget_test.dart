@@ -361,11 +361,11 @@ void main() {
     expect(find.text('Selected device'), findsOneWidget);
     expect(find.text('EdgeZ Wi-Fi SoftAP'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Select'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Connect'));
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Select connection'), findsOneWidget);
     expect(find.text('Wi-Fi'), findsOneWidget);
-    expect(find.text('No EZ-* Wi-Fi networks found'), findsOneWidget);
+    expect(find.text('No EdgeZ-* Wi-Fi networks found'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();

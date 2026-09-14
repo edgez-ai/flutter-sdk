@@ -11,6 +11,7 @@ class EdgezBleConfiguration {
     this.autoConnect = false,
     this.shareLocation = false,
     this.preferredTransport = EdgezPreferredTransport.wifi,
+    this.wifiSsid = '',
     this.usbVendorId = 0,
     this.usbProductId = 0,
     this.usbDeviceName = '',
@@ -25,6 +26,7 @@ class EdgezBleConfiguration {
   final bool autoConnect;
   final bool shareLocation;
   final EdgezPreferredTransport preferredTransport;
+  final String wifiSsid;
   final int usbVendorId;
   final int usbProductId;
   final String usbDeviceName;
@@ -34,6 +36,7 @@ class EdgezBleConfiguration {
   final int meshFrequencyKhz;
 
   bool get hasSelectedDevice => deviceId.isNotEmpty;
+  bool get hasSelectedWifiNetwork => wifiSsid.startsWith('EdgeZ-');
 
   EdgezBleDevice? get selectedDevice => hasSelectedDevice
       ? EdgezBleDevice(
@@ -53,6 +56,7 @@ class EdgezBleConfigurationStore {
   static const _keyAutoConnect = 'edgez_ble_auto_connect';
   static const _keyShareLocation = 'edgez_share_location';
   static const _keyPreferredTransport = 'edgez_preferred_transport';
+  static const _keyWifiSsid = 'edgez_wifi_ssid';
   static const _keyUsbVendorId = 'edgez_usb_vendor_id';
   static const _keyUsbProductId = 'edgez_usb_product_id';
   static const _keyUsbDeviceName = 'edgez_usb_device_name';
@@ -73,6 +77,7 @@ class EdgezBleConfigurationStore {
             transport.name == preferences.getString(_keyPreferredTransport),
         orElse: () => EdgezPreferredTransport.wifi,
       ),
+      wifiSsid: preferences.getString(_keyWifiSsid) ?? '',
       usbVendorId: preferences.getInt(_keyUsbVendorId) ?? 0,
       usbProductId: preferences.getInt(_keyUsbProductId) ?? 0,
       usbDeviceName: preferences.getString(_keyUsbDeviceName) ?? '',
@@ -99,6 +104,12 @@ class EdgezBleConfigurationStore {
     await preferences.setInt(_keyUsbProductId, device.productId);
     await preferences.setString(_keyUsbDeviceName, device.name);
     await preferences.setString(_keyPreferredTransport, 'usb');
+  }
+
+  Future<void> saveSelectedWifiNetwork(EdgezWifiNetwork network) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(_keyWifiSsid, network.ssid);
+    await preferences.setString(_keyPreferredTransport, 'wifi');
   }
 
   Future<void> setPreferredTransport(EdgezPreferredTransport transport) async {

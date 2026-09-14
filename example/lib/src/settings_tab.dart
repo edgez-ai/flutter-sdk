@@ -72,6 +72,7 @@ class SettingsScreen extends StatefulWidget {
     required this.usbDevices,
     required this.drivers,
     required this.selectedBleDevice,
+    required this.selectedWifiNetwork,
     required this.selectedUsbDevice,
     required this.usbLinkStats,
     required this.meshStatus,
@@ -115,7 +116,6 @@ class SettingsScreen extends StatefulWidget {
     required this.bleEnabled,
     required this.logLevel,
     required this.onConnectBle,
-    required this.onConnectWifi,
     required this.onConnectWifiNetwork,
     required this.onRefreshWifiNetworks,
     required this.onStopBleScan,
@@ -183,6 +183,7 @@ class SettingsScreen extends StatefulWidget {
   final List<EdgezUsbDevice> usbDevices;
   final List<ExampleDriver> drivers;
   final EdgezBleDevice? selectedBleDevice;
+  final EdgezWifiNetwork? selectedWifiNetwork;
   final EdgezUsbDevice? selectedUsbDevice;
   final EdgezUsbLinkStats usbLinkStats;
   final EdgezMeshStatus? meshStatus;
@@ -226,7 +227,6 @@ class SettingsScreen extends StatefulWidget {
   final bool bleEnabled;
   final EdgezDeviceLogLevel logLevel;
   final VoidCallback onConnectBle;
-  final FutureOr<void> Function() onConnectWifi;
   final ValueChanged<EdgezWifiNetwork> onConnectWifiNetwork;
   final Future<void> Function() onRefreshWifiNetworks;
   final VoidCallback onStopBleScan;
@@ -365,7 +365,8 @@ class SettingsScreen extends StatefulWidget {
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                         Text(switch (activeConnection) {
-                          EdgezConnectionType.wifi => 'EdgeZ Wi-Fi SoftAP',
+                          EdgezConnectionType.wifi =>
+                            selectedWifiNetwork?.ssid ?? 'EdgeZ Wi-Fi SoftAP',
                           EdgezConnectionType.usb =>
                             selectedUsbDevice?.label ?? 'ESP32-S3 USB',
                           EdgezConnectionType.ble =>
@@ -373,6 +374,7 @@ class SettingsScreen extends StatefulWidget {
                           EdgezConnectionType.none =>
                             selectedUsbDevice?.label ??
                                 selectedBle?.label ??
+                                selectedWifiNetwork?.ssid ??
                                 'EdgeZ Wi-Fi SoftAP',
                         }),
                         if (activeConnection != EdgezConnectionType.usb &&
@@ -466,9 +468,11 @@ class SettingsScreen extends StatefulWidget {
                                 ? () => onConnectUsbDevice(selectedUsbDevice!)
                                 : selectedBle != null
                                     ? () => onConnectBleDevice(selectedBle.id)
-                                    : () => unawaited(
-                                          Future<void>.value(onConnectWifi()),
-                                        ),
+                                    : selectedWifiNetwork != null
+                                        ? () => onConnectWifiNetwork(
+                                              selectedWifiNetwork!,
+                                            )
+                                        : onSelectBle,
                     child: Text(
                       bleConnecting
                           ? l10n.connecting
@@ -842,7 +846,7 @@ class SettingsScreen extends StatefulWidget {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Wi-Fi SoftAP'),
-                  subtitle: const Text('Advertise the EZ-* Wi-Fi network'),
+                  subtitle: const Text('Advertise the EdgeZ-* Wi-Fi network'),
                   value: wifiSoftapEnabled,
                   onChanged: wifiSoftapEnabled && !bleEnabled
                       ? null
@@ -989,7 +993,7 @@ class SettingsScreen extends StatefulWidget {
           ),
           const SizedBox(height: 6),
           if (wifiNetworks.isEmpty)
-            const Text('No EZ-* Wi-Fi networks found')
+            const Text('No EdgeZ-* Wi-Fi networks found')
           else
             for (final network in wifiNetworks) ...<Widget>[
               Card(

@@ -19,6 +19,19 @@ void main() {
     expect(restored.preferredTransport, EdgezPreferredTransport.wifi);
   });
 
+  test('selected Wi-Fi network persists through the SDK store', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final store = EdgezBleConfigurationStore();
+    const network = EdgezWifiNetwork(ssid: 'EdgeZ-0011', rssi: -42);
+
+    await store.saveSelectedWifiNetwork(network);
+
+    final restored = await store.load();
+    expect(restored.preferredTransport, EdgezPreferredTransport.wifi);
+    expect(restored.wifiSsid, network.ssid);
+    expect(restored.hasSelectedWifiNetwork, isTrue);
+  });
+
   test('BLE configuration persists through the SDK store', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final store = EdgezBleConfigurationStore();
@@ -144,18 +157,18 @@ void main() {
     test('lists only EdgeZ Wi-Fi networks and connects the selected SSID',
         () async {
       ble.results['listWifiNetworks'] = <Object?>[
-        <Object?, Object?>{'ssid': 'EZ-001122', 'rssi': -42},
+        <Object?, Object?>{'ssid': 'EdgeZ-0011', 'rssi': -42},
         <Object?, Object?>{'ssid': 'Home', 'rssi': -20},
       ];
 
       final networks = await sdk.listWifiNetworks();
       expect(networks, hasLength(1));
-      expect(networks.single.ssid, 'EZ-001122');
+      expect(networks.single.ssid, 'EdgeZ-0011');
       expect(networks.single.rssi, -42);
 
       await sdk.connectWifi(ssid: networks.single.ssid);
       final call = ble.calls.lastWhere((call) => call.method == 'connectWifi');
-      expect(call.argumentMap['ssid'], 'EZ-001122');
+      expect(call.argumentMap['ssid'], 'EdgeZ-0011');
     });
 
     test('requests the BATMAN routing table from the connected device',

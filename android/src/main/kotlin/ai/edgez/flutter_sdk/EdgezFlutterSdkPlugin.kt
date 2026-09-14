@@ -63,6 +63,7 @@ import java.io.File
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.SecureRandom
@@ -1063,7 +1064,7 @@ class EdgezFlutterSdkPlugin :
                 wifi.scanResults
                     .asSequence()
                     .map { scan -> scan.SSID to scan.level }
-                    .filter { (ssid, _) -> ssid.startsWith("EZ-") }
+                    .filter { (ssid, _) -> ssid.startsWith("EdgeZ-") }
                     .groupBy({ it.first }, { it.second })
                     .map { (ssid, levels) ->
                         mapOf("ssid" to ssid, "rssi" to (levels.maxOrNull() ?: 0))
@@ -1081,8 +1082,8 @@ class EdgezFlutterSdkPlugin :
             return
         }
         val requestedSsid = ssid.trim()
-        if (requestedSsid.isNotEmpty() && !requestedSsid.startsWith("EZ-")) {
-            result.error("wifi_ssid_invalid", "Only EdgeZ Wi-Fi networks (EZ-*) are supported", null)
+        if (requestedSsid.isNotEmpty() && !requestedSsid.startsWith("EdgeZ-")) {
+            result.error("wifi_ssid_invalid", "Only EdgeZ-* Wi-Fi networks are supported", null)
             return
         }
         cancelPendingUsbConnection()
@@ -1091,9 +1092,25 @@ class EdgezFlutterSdkPlugin :
         closeUsb(false)
         closeWifi(false)
 
-        if (requestedSsid.isNotEmpty() && Build.VERSION.SDK_INT >= 29 &&
-            currentWifiSsid() != requestedSsid) {
+        if (requestedSsid.isNotEmpty() && Build.VERSION.SDK_INT >= 29) {
             requestEdgezWifiNetwork(requestedSsid, host, port, result)
+            return
+        }
+        if (requestedSsid.isNotEmpty() && currentWifiSsid() != requestedSsid) {
+            result.error(
+                "wifi_network_not_selected",
+                "Connect Android to $requestedSsid before opening the EdgeZ control channel",
+                null,
+            )
+            return
+        }
+        if (requestedSsid.isEmpty() && host.isBlank() &&
+            !currentWifiSsid().startsWith("EdgeZ-")) {
+            result.error(
+                "wifi_ssid_required",
+                "Select an EdgeZ-* Wi-Fi network before connecting",
+                null,
+            )
             return
         }
         connectWifiSocket(null, requestedSsid, host, port, result)
@@ -1202,7 +1219,12 @@ class EdgezFlutterSdkPlugin :
         val connectivity = context.getSystemService(ConnectivityManager::class.java)
         return connectivity.getLinkProperties(network)
             ?.routes
-            ?.firstNotNullOfOrNull { route -> route.gateway?.hostAddress }
+            ?.firstOrNull { route ->
+                route.isDefaultRoute && route.gateway is Inet4Address &&
+                    route.gateway?.isLoopbackAddress == false
+            }
+            ?.gateway
+            ?.hostAddress
             ?: "192.168.4.1"
     }
 
@@ -1211,8 +1233,12 @@ class EdgezFlutterSdkPlugin :
         @Suppress("DEPRECATION")
         val gateway = wifi.dhcpInfo.gateway
         check(gateway != 0) { "Current Wi-Fi network has no IPv4 gateway" }
-        return listOf(0, 8, 16, 24)
+        val address = listOf(0, 8, 16, 24)
             .joinToString(".") { shift -> ((gateway ushr shift) and 0xff).toString() }
+        check(!address.startsWith("127.")) {
+            "Current Wi-Fi gateway is loopback; select an EdgeZ-* Wi-Fi network"
+        }
+        return address
     }
 
     private fun startWifiReader(socket: Socket) {
