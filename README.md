@@ -8,6 +8,8 @@ This package is the Flutter-facing SDK boundary for the EdgeZ HaLow mesh app.
 For a structured feature overview and application setup, start with the
 [`doc/` documentation hub](doc/README.md) and the
 [`integration guide`](doc/integration-guide.md).
+Applications upgrading from SDK `v0.3.2` or `v0.3.3` should also follow the
+[`migration guide`](doc/migration-from-0.3.md).
 Planned offline maps and libp2p cross-boundary mixed-mesh support are tracked in
 the [`roadmap`](doc/roadmap.md).
 

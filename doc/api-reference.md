@@ -18,7 +18,7 @@ read-only `state` snapshot.
 
 | Group | Members |
 | --- | --- |
-| Connection | `listWifiNetworks`, `connectWifi`, `startBleScan`, `stopBleScan`, `connectBle`, `disconnect` |
+| Connection | `connectWifi`, `startBleScan`, `stopBleScan`, `connectBle`, `connectUsb`, `disconnect` (`listWifiNetworks` is available through `session.sdk`) |
 | Mesh | `initializeMesh`, `restoreCachedMeshData`, `removeNode` |
 | Messaging | `sendTextMessage`, `startVoiceMessage`, `finishVoiceMessage`, `cancelVoiceMessage`, `playVoiceMessage` |
 | Live voice | `startVoiceCall`, `acceptVoiceCall`, `endVoiceCall` |
