@@ -603,6 +603,10 @@ void main() {
 
       expect(session.state.connection, EdgezConnectionType.usb);
       expect(session.state.bleReady, isTrue);
+      expect(
+        ble.callsFor('sendPacket').first.argumentMap['label'],
+        'SDK license authorization',
+      );
       final initPacket = ble.callsFor('initializeMesh').single.packet;
       expect(initPacket.init.meshId, 'usb-mesh');
       expect(initPacket.init.meshFrequencyKhz, 902500);
@@ -652,9 +656,47 @@ void main() {
 
       expect(session.state.connection, EdgezConnectionType.wifi);
       expect(session.state.bleReady, isTrue);
+      expect(
+        ble.callsFor('sendPacket').first.argumentMap['label'],
+        'SDK license authorization',
+      );
       final initPacket = ble.callsFor('initializeMesh').single.packet;
       expect(initPacket.init.meshId, 'wifi-mesh');
       expect(initPacket.init.meshFrequencyKhz, 902500);
+      session.dispose();
+    });
+
+    test('session retries INIT while Wi-Fi status says HaLow is not booted',
+        () async {
+      final session = EdgezMeshSession(
+        sdk: sdk,
+        halowBootRetryDelay: const Duration(milliseconds: 10),
+      );
+      final identity = await _newIdentity('Wi-Fi retry user', 32, 42);
+      await session.initializeMesh(EdgezMeshConfig(
+        identity: identity,
+        meshId: 'wifi-retry-mesh',
+        passphrase: 'wifi-retry-secret',
+      ));
+      await session.connectWifi();
+      ble.emitConnection(EdgezConnectionType.wifi);
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+      expect(ble.callsFor('initializeMesh'), hasLength(1));
+
+      ble.emitPacket(NetworkPacket(
+        status: HaLowInterfaceStatus(
+          supported: true,
+          stackInitialized: false,
+        ),
+      ));
+      await ble.flushEvents();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await ble.flushEvents();
+      await ble.flushEvents();
+
+      expect(ble.callsFor('initializeMesh'), hasLength(2));
       session.dispose();
     });
 

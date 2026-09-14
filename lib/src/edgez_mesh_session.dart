@@ -1439,8 +1439,9 @@ class EdgezMeshSession extends ChangeNotifier {
         // payload, so send LG2 when either control stream becomes writable.
         unawaited(_applyConfiguredDeviceLogLevel());
         if (!_provisioning) {
-          if (_state.connection == EdgezConnectionType.usb) {
-            unawaited(_authorizeAndInitializeUsb());
+          if (_state.connection == EdgezConnectionType.usb ||
+              _state.connection == EdgezConnectionType.wifi) {
+            unawaited(_authorizeAndInitializeStream());
           } else {
             // A fast native reconnect does not always expose the intermediate
             // disconnected event to Dart. Always resend the idempotent INIT
@@ -2777,14 +2778,17 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _authorizeAndInitializeUsb() async {
+  Future<void> _authorizeAndInitializeStream() async {
+    final transport = _state.connection == EdgezConnectionType.wifi
+        ? 'Wi-Fi'
+        : 'USB';
     try {
       _setState(
-        _state.copyWith(statusLine: 'Authorizing SDK release over USB'),
+        _state.copyWith(statusLine: 'Authorizing SDK release over $transport'),
       );
       // Firmware explicitly supports an init containing only the signed SDK
       // release credential. Complete that handshake before sending mesh config
-      // or status/settings requests on a newly opened UART session.
+      // or status/settings requests on a newly opened byte-stream session.
       await sdk.authorizeSession();
       _setState(
         _state.copyWith(statusLine: 'SDK release sent; initializing mesh'),
@@ -2792,7 +2796,9 @@ class EdgezMeshSession extends ChangeNotifier {
       await _sendInitIfReady(force: true);
     } catch (error) {
       _setState(
-        _state.copyWith(statusLine: 'USB SDK authorization failed: $error'),
+        _state.copyWith(
+          statusLine: '$transport SDK authorization failed: $error',
+        ),
       );
     }
   }
@@ -2898,7 +2904,7 @@ class EdgezMeshSession extends ChangeNotifier {
       }
       return;
     }
-    if (_state.connection != EdgezConnectionType.ble ||
+    if (_state.connection == EdgezConnectionType.none ||
         !_bleReady ||
         _provisioning ||
         _lastMeshConfig == null ||
@@ -2911,13 +2917,14 @@ class EdgezMeshSession extends ChangeNotifier {
     _halowBootRetryTimer = Timer(halowBootRetryDelay, () {
       _halowBootRetryTimer = null;
       final current = _state.status;
-      if (_state.connection == EdgezConnectionType.ble &&
+      if (_state.connection != EdgezConnectionType.none &&
           _bleReady &&
           current != null &&
           !current.stackInitialized) {
         _recordAppDiagnostic(
           EdgezDeviceLogLevel.warning,
-          'HaLow remains uninitialized; retrying INIT over BLE',
+          'HaLow remains uninitialized; retrying INIT over '
+              '${_state.connection.name.toUpperCase()}',
         );
         unawaited(_sendInitIfReady(force: true));
       }
