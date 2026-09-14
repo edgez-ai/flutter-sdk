@@ -241,6 +241,21 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('connectUsb', {'deviceId': deviceId});
   }
 
+  /// Connects to the post-provision CoAP service exposed on the ESP32 Wi-Fi
+  /// network. BLE provisioning remains available through [connectBle].
+  Future<void> connectCoap({
+    required String host,
+    int port = 5683,
+    EdgezUserIdentity? identity,
+  }) {
+    return _transport.invokeMethod<void>('connectCoap', {
+      'host': host,
+      'port': port,
+      'userIdHigh': identity?.userIdHigh ?? 0,
+      'userIdLow': identity?.userIdLow ?? 0,
+    });
+  }
+
   Future<void> disconnect() {
     return _transport.invokeMethod<void>('disconnect');
   }

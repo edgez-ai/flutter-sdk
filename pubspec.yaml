@@ -23,6 +23,7 @@ flutter:
         pluginClass: EdgezFlutterSdkPlugin
 
 dependencies:
+  coap: ^9.2.1
   cryptography: ^2.7.0
   fixnum: ^1.1.1
   flutter:

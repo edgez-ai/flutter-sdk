@@ -1,7 +1,8 @@
 enum EdgezConnectionType {
   none,
   ble,
-  usb;
+  usb,
+  coap;
 
   static EdgezConnectionType fromWire(String? value) {
     return EdgezConnectionType.values.firstWhere(
