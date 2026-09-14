@@ -228,6 +228,28 @@ class EdgezMeshSdk {
     return _transport.invokeMethod<void>('connectBle', {'deviceId': deviceId});
   }
 
+  Future<List<EdgezWifiNetwork>> listWifiNetworks() async {
+    final result =
+        await _transport.invokeMethod<List<Object?>>('listWifiNetworks');
+    return (result ?? const <Object?>[])
+        .whereType<Map>()
+        .map((item) => EdgezWifiNetwork.fromMap(item.cast<Object?, Object?>()))
+        .where((network) => network.ssid.startsWith('EZ-'))
+        .toList(growable: false);
+  }
+
+  Future<void> connectWifi({
+    String ssid = '',
+    String host = '',
+    int port = 4242,
+  }) {
+    return _transport.invokeMethod<void>('connectWifi', {
+      'ssid': ssid,
+      'host': host,
+      'port': port,
+    });
+  }
+
   Future<List<EdgezUsbDevice>> listUsbDevices() async {
     final result =
         await _transport.invokeMethod<List<Object?>>('listUsbDevices');

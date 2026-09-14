@@ -115,7 +115,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   List<ExampleDriver> drivers = ExampleDriverCatalog.bundled;
   MarketplaceDriverInstallRequest? pendingDriverInstall;
   bool bleAutoConnect = false;
-  EdgezPreferredTransport preferredTransport = EdgezPreferredTransport.ble;
+  EdgezPreferredTransport preferredTransport = EdgezPreferredTransport.wifi;
   EdgezBleDevice? selectedBleDevice;
   List<EdgezUsbDevice> usbDevices = const <EdgezUsbDevice>[];
   EdgezUsbDevice? selectedUsbDevice;
@@ -509,6 +509,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         bleConfiguration.autoConnect &&
         bleConfiguration.hasSelectedDevice) {
       await _connectBleDevice(bleConfiguration.deviceId);
+    } else if (bleConfiguration.preferredTransport ==
+            EdgezPreferredTransport.wifi &&
+        bleConfiguration.autoConnect) {
+      await _connectWifi();
     }
   }
 
@@ -757,6 +761,24 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         .setPreferredTransport(EdgezPreferredTransport.ble);
     if (mounted) setState(() {});
     await session.startBleScan();
+  }
+
+  Future<void> _connectWifi() async {
+    await _saveAppSettings();
+    preferredTransport = EdgezPreferredTransport.wifi;
+    selectedBleDevice = null;
+    selectedUsbDevice = null;
+    await bleConfigurationStore
+        .setPreferredTransport(EdgezPreferredTransport.wifi);
+    if (mounted) setState(() {});
+    try {
+      await session.connectWifi();
+    } catch (error) {
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Wi-Fi connection failed: $error')),
+      );
+    }
   }
 
   Future<void> _stopBleScan() async {
@@ -1675,6 +1697,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceSleepModeEnabled: deviceSleepModeEnabled,
                   logLevel: deviceLogLevel,
                   onConnectBle: _connectBle,
+                  onConnectWifi: _connectWifi,
                   onStopBleScan: _stopBleScan,
                   onConnectBleDevice: _connectBleDevice,
                   onSelectBleDevice: (device) {

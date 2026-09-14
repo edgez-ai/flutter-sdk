@@ -106,7 +106,7 @@ class EdgezMeshState {
       otaSentBytes: 0,
       otaTotalBytes: 0,
       voiceCall: const EdgezVoiceCallState(),
-      statusLine: 'Connect with BLE, then save mesh settings.',
+      statusLine: 'Connect with Wi-Fi or BLE, then save mesh settings.',
       bleReady: false,
       usbLinkStats: const EdgezUsbLinkStats(),
       bleConnecting: false,
@@ -763,6 +763,44 @@ class EdgezMeshSession extends ChangeNotifier {
     }
   }
 
+  Future<void> connectWifi({
+    String ssid = '',
+    String host = '',
+    int port = 4242,
+  }) async {
+    _deviceStatusTimeout?.cancel();
+    _halowBootRetryTimer?.cancel();
+    _halowBootRetryTimer = null;
+    _lastInitKey = null;
+    if (_state.connection != EdgezConnectionType.none) {
+      await sdk.disconnect();
+    }
+    await sdk.stopBleScan();
+    _bleReady = false;
+    _setState(
+      _state.copyWith(
+        bleConnecting: true,
+        clearStatus: true,
+        clearDeviceSettings: true,
+        bleReady: false,
+        statusLine: ssid.isEmpty
+            ? 'Connecting over Wi-Fi'
+            : 'Connecting to Wi-Fi $ssid',
+      ),
+    );
+    try {
+      await sdk.connectWifi(ssid: ssid, host: host, port: port);
+    } catch (error) {
+      _setState(
+        _state.copyWith(
+          bleConnecting: false,
+          statusLine: 'Wi-Fi connect failed: $error',
+        ),
+      );
+      rethrow;
+    }
+  }
+
   Future<void> connectUsb(EdgezUsbDevice device) async {
     _deviceStatusTimeout?.cancel();
     // Opening a CP2102 commonly resets the ESP32. Never reuse initialization
@@ -1355,6 +1393,8 @@ class EdgezMeshSession extends ChangeNotifier {
                 ? const EdgezVoiceCallState()
                 : _state.voiceCall,
             statusLine: switch (event.connection) {
+              EdgezConnectionType.wifi =>
+                'Wi-Fi link connected; setting up control channel',
               EdgezConnectionType.ble =>
                 'BLE link connected; setting up control channel',
               EdgezConnectionType.usb => 'USB high-speed link connected',
@@ -1386,7 +1426,7 @@ class EdgezMeshSession extends ChangeNotifier {
         _setState(_state.copyWith(
           statusLine: _state.connection == EdgezConnectionType.usb
               ? 'USB protocol ready; initializing mesh'
-              : 'BLE control channel ready; requesting device status',
+              : '${_state.connection == EdgezConnectionType.wifi ? 'Wi-Fi' : 'BLE'} control channel ready; requesting device status',
           bleReady: true,
           clearStatus: true,
         ));
@@ -1608,7 +1648,8 @@ class EdgezMeshSession extends ChangeNotifier {
     if (packetBytes.isEmpty) return;
     final packet = _parseNetworkPacket(packetBytes);
     if (packet == null) {
-      _recordDeviceDiagnostic('Device packet decode failed bytes=${packetBytes.length}');
+      _recordDeviceDiagnostic(
+          'Device packet decode failed bytes=${packetBytes.length}');
       return;
     }
     _recordDeviceDiagnostic(
@@ -1899,7 +1940,8 @@ class EdgezMeshSession extends ChangeNotifier {
         beacon.userIdLow.toInt() == 0 &&
         decodedUser.name.trim().isEmpty &&
         beacon.userPublicKey.isEmpty) {
-      _recordDeviceDiagnostic('Beacon ignored from=${nodeNum.toRadixString(16)} reason=empty-identity');
+      _recordDeviceDiagnostic(
+          'Beacon ignored from=${nodeNum.toRadixString(16)} reason=empty-identity');
       return;
     }
     final userUuid =

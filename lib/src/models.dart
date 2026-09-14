@@ -1,5 +1,6 @@
 enum EdgezConnectionType {
   none,
+  wifi,
   ble,
   usb;
 
@@ -177,6 +178,20 @@ class EdgezBleDevice {
       name: map['name'] as String? ?? '',
       rssi: map['rssi'] as int? ?? 0,
       lastSeenMs: map['lastSeenMs'] as int? ?? 0,
+    );
+  }
+}
+
+class EdgezWifiNetwork {
+  const EdgezWifiNetwork({required this.ssid, required this.rssi});
+
+  final String ssid;
+  final int rssi;
+
+  factory EdgezWifiNetwork.fromMap(Map<Object?, Object?> map) {
+    return EdgezWifiNetwork(
+      ssid: map['ssid'] as String? ?? '',
+      rssi: map['rssi'] as int? ?? 0,
     );
   }
 }
@@ -981,6 +996,7 @@ class EdgezMeshEvent {
   final int receivedAtUs;
   final int talkgroupPort;
   final String log;
+
   /// Transport diagnostics are retained even when firmware logging is off.
   final bool diagnostic;
 

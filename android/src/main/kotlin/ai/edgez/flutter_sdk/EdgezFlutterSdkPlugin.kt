@@ -31,6 +31,12 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.wifi.WifiManager
+import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -57,6 +63,8 @@ import java.io.File
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.security.SecureRandom
 import java.util.ArrayDeque
 import java.util.UUID
@@ -67,8 +75,12 @@ private const val BLE_PERMISSION_REQUEST = 9007
 private const val MICROPHONE_PERMISSION_REQUEST = 9008
 private const val LOCATION_PERMISSION_REQUEST = 9009
 private const val NOTIFICATION_PERMISSION_REQUEST = 9010
+private const val WIFI_PERMISSION_REQUEST = 9011
 private const val USB_PERMISSION_ACTION = "ai.edgez.flutter_sdk.USB_PERMISSION"
 private const val USB_IO_TIMEOUT_MS = 10_000
+private const val WIFI_CONNECT_TIMEOUT_MS = 10_000
+private const val WIFI_DEFAULT_PORT = 4242
+private const val WIFI_DEFAULT_PASSWORD = "edgez123"
 private const val USB_GAP_MIN_MS = 1L
 private const val USB_GAP_INITIAL_MS = 3L
 private const val USB_GAP_MAX_MS = 10L
@@ -192,6 +204,7 @@ class EdgezFlutterSdkPlugin :
     private val otaAbortRequested = AtomicBoolean(false)
     private val otaInProgress = AtomicBoolean(false)
     private var pendingScanResult: MethodChannel.Result? = null
+    private var pendingWifiScanResult: MethodChannel.Result? = null
     private var pendingMicrophoneResult: MethodChannel.Result? = null
     private var pendingLocationResult: MethodChannel.Result? = null
     private val mapLocationPermissionCallbacks = mutableListOf<(Boolean) -> Unit>()
@@ -224,6 +237,10 @@ class EdgezFlutterSdkPlugin :
     private var receivedVoiceFrames = 0
     private var scanGeneration = 0
     private var usbConnection: UsbDeviceConnection? = null
+    private var wifiSocket: Socket? = null
+    private var wifiNetworkCallback: ConnectivityManager.NetworkCallback? = null
+    private val wifiRunning = AtomicBoolean(false)
+    private val wifiWriteLock = Object()
     private var usbSerialPort: UsbSerialPort? = null
     private var usbConsolePort: UsbSerialPort? = null
     private val usbConsoleLineBuffer = StringBuilder()
@@ -274,6 +291,7 @@ class EdgezFlutterSdkPlugin :
 
     private fun activeTransportName(): String = when {
         gatt != null -> "ble"
+        wifiSocket != null -> "wifi"
         usbConnection != null -> "usb"
         else -> "none"
     }
@@ -412,6 +430,7 @@ class EdgezFlutterSdkPlugin :
         stopBleScan()
         closeGatt()
         closeUsb(false)
+        closeWifi(false)
         discardVoiceRecording()
         liveVoiceAudio?.stop()
         liveVoiceAudio = null
@@ -636,6 +655,7 @@ class EdgezFlutterSdkPlugin :
             null
         }
         closeUsb(false)
+        closeWifi(false)
         closeGatt()
         val connection = usbManager.openDevice(device)
             ?: throw IllegalStateException("Unable to open USB device")
@@ -700,6 +720,7 @@ class EdgezFlutterSdkPlugin :
         endpoints: Triple<UsbInterface, UsbEndpoint, UsbEndpoint>,
     ) {
         closeUsb(false)
+        closeWifi(false)
         closeGatt()
         val connection = usbManager.openDevice(device)
             ?: throw IllegalStateException("Unable to open USB vendor device")
@@ -1030,6 +1051,208 @@ class EdgezFlutterSdkPlugin :
         emit(event)
     }
 
+    @SuppressLint("MissingPermission")
+    private fun listWifiNetworks(result: MethodChannel.Result) {
+        if (requestWifiPermissions(result)) return
+        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        @Suppress("DEPRECATION")
+        wifi.startScan()
+        mainHandler.postDelayed({
+            runCatching {
+                @Suppress("DEPRECATION")
+                wifi.scanResults
+                    .asSequence()
+                    .map { scan -> scan.SSID to scan.level }
+                    .filter { (ssid, _) -> ssid.startsWith("EZ-") }
+                    .groupBy({ it.first }, { it.second })
+                    .map { (ssid, levels) ->
+                        mapOf("ssid" to ssid, "rssi" to (levels.maxOrNull() ?: 0))
+                    }
+                    .sortedBy { it["ssid"] as String }
+            }.onSuccess(result::success).onFailure { error ->
+                result.error("wifi_scan_failed", error.message ?: "Wi-Fi scan failed", null)
+            }
+        }, 1_500L)
+    }
+
+    private fun connectWifi(ssid: String, host: String, port: Int, result: MethodChannel.Result) {
+        if (port !in 1..65535) {
+            result.error("wifi_address_invalid", "A valid Wi-Fi host and port are required", null)
+            return
+        }
+        val requestedSsid = ssid.trim()
+        if (requestedSsid.isNotEmpty() && !requestedSsid.startsWith("EZ-")) {
+            result.error("wifi_ssid_invalid", "Only EdgeZ Wi-Fi networks (EZ-*) are supported", null)
+            return
+        }
+        cancelPendingUsbConnection()
+        stopBleScan()
+        closeGatt()
+        closeUsb(false)
+        closeWifi(false)
+
+        if (requestedSsid.isNotEmpty() && Build.VERSION.SDK_INT >= 29 &&
+            currentWifiSsid() != requestedSsid) {
+            requestEdgezWifiNetwork(requestedSsid, host, port, result)
+            return
+        }
+        connectWifiSocket(null, requestedSsid, host, port, result)
+    }
+
+    private fun connectWifiSocket(
+        network: Network?,
+        ssid: String,
+        host: String,
+        port: Int,
+        result: MethodChannel.Result,
+    ) {
+        thread(name = "edgez-wifi-connect") {
+            var candidate: Socket? = null
+            runCatching {
+                val resolvedHost = host.trim().ifEmpty {
+                    network?.let(::wifiGateway) ?: currentWifiGateway()
+                }
+                val socket = network?.socketFactory?.createSocket() ?: Socket()
+                candidate = socket
+                socket.tcpNoDelay = true
+                socket.keepAlive = true
+                socket.connect(InetSocketAddress(resolvedHost, port), WIFI_CONNECT_TIMEOUT_MS)
+                wifiSocket = socket
+                wifiRunning.set(true)
+                usbRxLen = 0
+                startWifiReader(socket)
+                mainHandler.post {
+                    emit(mapOf("type" to "connection", "connection" to "wifi"))
+                    emit(mapOf("type" to "ready", "mtu" to EDGEZ_MAX_PAYLOAD))
+                    emit(
+                        mapOf(
+                            "type" to "log",
+                            "log" to "Wi-Fi ${ssid.ifEmpty { "control" }} connected to $resolvedHost:$port",
+                        ),
+                    )
+                    result.success(null)
+                }
+            }.onFailure { error ->
+                runCatching { candidate?.close() }
+                closeWifi(false)
+                mainHandler.post {
+                    result.error("wifi_connect_failed", error.message ?: "Wi-Fi connection failed", null)
+                }
+            }
+        }
+    }
+
+    private fun requestEdgezWifiNetwork(
+        ssid: String,
+        host: String,
+        port: Int,
+        result: MethodChannel.Result,
+    ) {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val specifier = WifiNetworkSpecifier.Builder()
+            .setSsid(ssid)
+            .setWpa2Passphrase(WIFI_DEFAULT_PASSWORD)
+            .build()
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .setNetworkSpecifier(specifier)
+            .build()
+        val completed = AtomicBoolean(false)
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (!completed.compareAndSet(false, true)) return
+                connectWifiSocket(network, ssid, host, port, result)
+            }
+
+            override fun onUnavailable() {
+                if (!completed.compareAndSet(false, true)) return
+                wifiNetworkCallback = null
+                result.error("wifi_unavailable", "$ssid was not selected or is unavailable", null)
+            }
+
+            override fun onLost(network: Network) {
+                if (wifiSocket != null) closeWifi(true)
+            }
+        }
+        wifiNetworkCallback = callback
+        connectivity.requestNetwork(request, callback)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun currentWifiSsid(): String {
+        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        @Suppress("DEPRECATION")
+        return wifi.connectionInfo.ssid.trim('"')
+    }
+
+    private fun wifiGateway(network: Network): String {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        return connectivity.getLinkProperties(network)
+            ?.routes
+            ?.firstNotNullOfOrNull { route -> route.gateway?.hostAddress }
+            ?: "192.168.4.1"
+    }
+
+    private fun currentWifiGateway(): String {
+        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        @Suppress("DEPRECATION")
+        val gateway = wifi.dhcpInfo.gateway
+        check(gateway != 0) { "Current Wi-Fi network has no IPv4 gateway" }
+        return listOf(0, 8, 16, 24)
+            .joinToString(".") { shift -> ((gateway ushr shift) and 0xff).toString() }
+    }
+
+    private fun startWifiReader(socket: Socket) {
+        thread(name = "edgez-wifi-rx") {
+            val buffer = ByteArray(16 * 1024)
+            try {
+                while (wifiRunning.get() && wifiSocket === socket) {
+                    val count = socket.getInputStream().read(buffer)
+                    if (count < 0) break
+                    if (count > 0) handleUsbBytes(buffer.copyOf(count))
+                }
+            } catch (error: Throwable) {
+                if (wifiRunning.get()) {
+                    emit(mapOf("type" to "log", "log" to "Wi-Fi reader stopped: ${error.message}"))
+                }
+            } finally {
+                if (wifiSocket === socket) closeWifi(true)
+            }
+        }
+    }
+
+    private fun writeWifiFrame(payload: ByteArray): Result<String> = runCatching {
+        require(payload.isNotEmpty() && payload.size <= EDGEZ_MAX_PAYLOAD) {
+            "Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD"
+        }
+        val frame = buildSerialStreamFrame(payload)
+        synchronized(wifiWriteLock) {
+            val socket = wifiSocket ?: throw IllegalStateException("Wi-Fi is not connected")
+            socket.getOutputStream().write(frame)
+            socket.getOutputStream().flush()
+        }
+        "Wi-Fi frame sent"
+    }
+
+    private fun closeWifi(emitDisconnected: Boolean) {
+        val socket = wifiSocket
+        val wasConnected = socket != null
+        wifiRunning.set(false)
+        wifiSocket = null
+        runCatching { socket?.close() }
+        wifiNetworkCallback?.let { callback ->
+            val connectivity = context.getSystemService(ConnectivityManager::class.java)
+            runCatching { connectivity.unregisterNetworkCallback(callback) }
+        }
+        wifiNetworkCallback = null
+        usbRxLen = 0
+        if (wasConnected && emitDisconnected) {
+            emit(mapOf("type" to "connection", "connection" to "none"))
+            emit(mapOf("type" to "log", "log" to "Wi-Fi control disconnected"))
+        }
+    }
+
     private fun closeUsb(emitDisconnected: Boolean) {
         val wasConnected = usbConnection != null
         // A graceful app-side disconnect can start the firmware's one-minute
@@ -1244,8 +1467,15 @@ class EdgezFlutterSdkPlugin :
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "listWifiNetworks" -> listWifiNetworks(result)
             "listUsbDevices" -> result.success(listUsbDevices())
             "connectUsb" -> connectUsb(call.argument<Int>("deviceId"), result)
+            "connectWifi" -> connectWifi(
+                call.argument<String>("ssid").orEmpty(),
+                call.argument<String>("host").orEmpty(),
+                call.argument<Int>("port") ?: WIFI_DEFAULT_PORT,
+                result,
+            )
             "setDeviceLogLevel" -> {
                 val level = call.argument<Int>("level") ?: 2
                 val tag = call.argument<String>("tag").orEmpty()
@@ -1254,8 +1484,9 @@ class EdgezFlutterSdkPlugin :
                     result.error("invalid_log_level", "Log level must be between 0 and 5", null)
                 } else if (tagBytes.size > LEGACY_USB_MAX_PAYLOAD) {
                     result.error("invalid_log_tag", "Log tag is too long", null)
-                } else if (gatt == null && (!usbProtocolReady || usbConnection == null)) {
-                    result.error("transport_not_ready", "BLE/USB stream is not ready", null)
+                } else if (gatt == null && wifiSocket == null &&
+                    (!usbProtocolReady || usbConnection == null)) {
+                    result.error("transport_not_ready", "BLE/Wi-Fi/USB stream is not ready", null)
                 } else {
                     preferredDeviceLogLevel = level
                     sendRealtimePacket(
@@ -1513,6 +1744,7 @@ class EdgezFlutterSdkPlugin :
                 cancelPendingUsbConnection()
                 closeGatt()
                 closeUsb(false)
+                closeWifi(false)
                 emit(mapOf("type" to "connection", "connection" to "none"))
                 result.success(null)
             }
@@ -1632,6 +1864,17 @@ class EdgezFlutterSdkPlugin :
                 } else {
                     result.error("ble_permission_denied", "BLE permission denied", null)
                     emit(mapOf("type" to "log", "log" to "BLE permission denied"))
+                }
+                return true
+            }
+            WIFI_PERMISSION_REQUEST -> {
+                val result = pendingWifiScanResult ?: return true
+                pendingWifiScanResult = null
+                if (grantResults.isNotEmpty() &&
+                    grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                    listWifiNetworks(result)
+                } else {
+                    result.error("wifi_permission_denied", "Nearby Wi-Fi permission denied", null)
                 }
                 return true
             }
@@ -2382,10 +2625,10 @@ class EdgezFlutterSdkPlugin :
         val frame = protocolMagic + packet
         val activeGatt = gatt
         if (activeGatt == null) {
-            return if (usbConnection != null) {
-                enqueueUsbRealtimeFrame(frame, dropStale)
-            } else {
-                Result.failure(IllegalStateException("BLE and USB are not connected"))
+            return when {
+                wifiSocket != null -> writeWifiFrame(frame)
+                usbConnection != null -> enqueueUsbRealtimeFrame(frame, dropStale)
+                else -> Result.failure(IllegalStateException("BLE, Wi-Fi, and USB are not connected"))
             }
         }
         val voice = voiceRxCharacteristic ?: return Result.failure(
@@ -2444,6 +2687,9 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun waitForApplicationTxDrain(timeoutMs: Int): Result<String> {
+        if (gatt == null && wifiSocket != null) {
+            return Result.success("Wi-Fi realtime TX complete")
+        }
         if (gatt == null && usbConnection != null) {
             return waitForUsbRealtimeTxDrain(timeoutMs)
         }
@@ -2492,6 +2738,32 @@ class EdgezFlutterSdkPlugin :
         pendingScanResult = result
         currentActivity.requestPermissions(requiredBlePermissions(), BLE_PERMISSION_REQUEST)
         emit(mapOf("type" to "log", "log" to "Requesting BLE permission: ${requiredBlePermissions().joinToString()}"))
+        return true
+    }
+
+    private fun requiredWifiPermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= 33) {
+            arrayOf(
+                Manifest.permission.NEARBY_WIFI_DEVICES,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            )
+        } else {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private fun requestWifiPermissions(result: MethodChannel.Result): Boolean {
+        val missing = requiredWifiPermissions().filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return false
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error("wifi_permission_required", "Nearby Wi-Fi permission required", null)
+            return true
+        }
+        pendingWifiScanResult = result
+        currentActivity.requestPermissions(missing.toTypedArray(), WIFI_PERMISSION_REQUEST)
         return true
     }
 
@@ -2609,6 +2881,7 @@ class EdgezFlutterSdkPlugin :
         cancelPendingUsbConnection()
         stopBleScan()
         closeUsb(false)
+        closeWifi(false)
         closeGatt()
         runCatching {
             EdgezBleForegroundService.start(context, "")
@@ -2731,10 +3004,10 @@ class EdgezFlutterSdkPlugin :
     ): Result<String> {
         val activeGatt = gatt
         if (activeGatt == null) {
-            return if (usbConnection != null) {
-                writeUsbFrame(payload)
-            } else {
-                Result.failure(IllegalStateException("BLE and USB are not connected"))
+            return when {
+                wifiSocket != null -> writeWifiFrame(payload)
+                usbConnection != null -> writeUsbFrame(payload)
+                else -> Result.failure(IllegalStateException("BLE, Wi-Fi, and USB are not connected"))
             }
         }
         val rx = rxCharacteristic ?: return Result.failure(IllegalStateException("BLE control service is not ready"))
@@ -2771,6 +3044,9 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun waitForControlTxDrain(timeoutMs: Int): Result<String> {
+        if (gatt == null && wifiSocket != null) {
+            return Result.success("Wi-Fi control TX complete")
+        }
         if (gatt == null && usbConnection != null) {
             return waitForApplicationTxDrain(timeoutMs)
         }
@@ -3494,12 +3770,12 @@ class EdgezFlutterSdkPlugin :
         // A valid framed payload is also proof that the firmware UART parser is
         // running, even when heartbeat diagnostics are disabled in the future.
         markUsbProtocolReady()
-        Log.i(LOG_TAG, "EdgeZ RX route=usb bytes=${payload.size}")
+        Log.i(LOG_TAG, "EdgeZ RX route=${activeTransportName()} bytes=${payload.size}")
         if (isRealtimePayload(payload)) {
             handleVoiceBytes(payload)
             return
         }
-        logGpsPacket(payload, "usb")
+        logGpsPacket(payload, activeTransportName())
         emit(
             mapOf(
                 "type" to "packet",

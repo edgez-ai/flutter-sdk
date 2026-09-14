@@ -13,6 +13,12 @@ import 'support/mock_ble_transport.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('Wi-Fi is the default connection transport', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final restored = await EdgezBleConfigurationStore().load();
+    expect(restored.preferredTransport, EdgezPreferredTransport.wifi);
+  });
+
   test('BLE configuration persists through the SDK store', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final store = EdgezBleConfigurationStore();
@@ -126,6 +132,14 @@ void main() {
       );
     });
 
+    test('connects to the current Wi-Fi gateway by default', () async {
+      await sdk.connectWifi();
+      final call =
+          ble.calls.singleWhere((call) => call.method == 'connectWifi');
+      expect(call.argumentMap['host'], '');
+      expect(call.argumentMap['port'], 4242);
+    });
+
     test('requests the BATMAN routing table from the connected device',
         () async {
       await sdk.requestRoutingTable(fromNode: 0x112233445566);
@@ -156,12 +170,14 @@ void main() {
       expect(ble.callsFor('connectUsb').single.argumentMap['deviceId'], 7);
     });
 
-    test('downloaded log retains BLE diagnostics with firmware logging off', () async {
+    test('downloaded log retains BLE diagnostics with firmware logging off',
+        () async {
       final directory = await Directory.systemTemp.createTemp('edgez-ble-log-');
       addTearDown(() => directory.delete(recursive: true));
       final store = EdgezDeviceLogStore(
         directoryProvider: () async => directory,
-        exportDirectoryProvider: () async => Directory('${directory.path}/exports'),
+        exportDirectoryProvider: () async =>
+            Directory('${directory.path}/exports'),
       );
       final session = EdgezMeshSession(sdk: sdk, deviceLogStore: store);
       addTearDown(session.dispose);
@@ -565,6 +581,35 @@ void main() {
       await ble.flushEvents();
       expect(ble.callsFor('initializeMesh'), hasLength(2));
 
+      session.dispose();
+    });
+
+    test('session initializes mesh over Wi-Fi when TCP becomes ready',
+        () async {
+      final session = EdgezMeshSession(sdk: sdk);
+      final identity = await _newIdentity('Wi-Fi user', 31, 41);
+      await session.initializeMesh(
+        EdgezMeshConfig(
+          identity: identity,
+          countryCode: 'US',
+          meshId: 'wifi-mesh',
+          passphrase: 'wifi-secret',
+          meshBandwidthMhz: 1,
+          meshFrequencyKhz: 902500,
+        ),
+      );
+
+      await session.connectWifi();
+      ble.emitConnection(EdgezConnectionType.wifi);
+      ble.emitReady();
+      await ble.flushEvents();
+      await ble.flushEvents();
+
+      expect(session.state.connection, EdgezConnectionType.wifi);
+      expect(session.state.bleReady, isTrue);
+      final initPacket = ble.callsFor('initializeMesh').single.packet;
+      expect(initPacket.init.meshId, 'wifi-mesh');
+      expect(initPacket.init.meshFrequencyKhz, 902500);
       session.dispose();
     });
 
@@ -1272,8 +1317,10 @@ void main() {
 
       expect(session.state.nodes.values.where((node) => !node.isPublicChannel),
           isEmpty);
-      expect(session.state.debugLogs.join('\n'), contains('reason=local-user-identity'));
-      expect(session.state.debugLogs.join('\n'), contains('reason=empty-identity'));
+      expect(session.state.debugLogs.join('\n'),
+          contains('reason=local-user-identity'));
+      expect(session.state.debugLogs.join('\n'),
+          contains('reason=empty-identity'));
       session.dispose();
     });
 

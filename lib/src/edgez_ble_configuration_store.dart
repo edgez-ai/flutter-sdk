@@ -2,7 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 
-enum EdgezPreferredTransport { ble, usb }
+enum EdgezPreferredTransport { wifi, ble, usb }
 
 class EdgezBleConfiguration {
   const EdgezBleConfiguration({
@@ -10,7 +10,7 @@ class EdgezBleConfiguration {
     this.deviceName = '',
     this.autoConnect = false,
     this.shareLocation = false,
-    this.preferredTransport = EdgezPreferredTransport.ble,
+    this.preferredTransport = EdgezPreferredTransport.wifi,
     this.usbVendorId = 0,
     this.usbProductId = 0,
     this.usbDeviceName = '',
@@ -68,9 +68,11 @@ class EdgezBleConfigurationStore {
       deviceName: preferences.getString(_keyDeviceName) ?? '',
       autoConnect: preferences.getBool(_keyAutoConnect) ?? false,
       shareLocation: preferences.getBool(_keyShareLocation) ?? false,
-      preferredTransport: preferences.getString(_keyPreferredTransport) == 'usb'
-          ? EdgezPreferredTransport.usb
-          : EdgezPreferredTransport.ble,
+      preferredTransport: EdgezPreferredTransport.values.firstWhere(
+        (transport) =>
+            transport.name == preferences.getString(_keyPreferredTransport),
+        orElse: () => EdgezPreferredTransport.wifi,
+      ),
       usbVendorId: preferences.getInt(_keyUsbVendorId) ?? 0,
       usbProductId: preferences.getInt(_keyUsbProductId) ?? 0,
       usbDeviceName: preferences.getString(_keyUsbDeviceName) ?? '',

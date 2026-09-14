@@ -40,7 +40,7 @@ receive.
 
 | Capability | SDK surface | Example reference | Notes |
 | --- | --- | --- | --- |
-| BLE discovery and connection | `EdgezMeshSession.startBleScan`, `connectBle`, `disconnect` | [`app.dart`](../example/lib/src/app.dart), [`settings_tab.dart`](../example/lib/src/settings_tab.dart) | Discovered devices appear in `state.bleDevices`. |
+| Wi-Fi, BLE, and USB connection | `EdgezMeshSession.connectWifi`, `startBleScan`, `connectBle`, `connectUsb`, `disconnect` | [`app.dart`](../example/lib/src/app.dart), [`settings_tab.dart`](../example/lib/src/settings_tab.dart) | Wi-Fi uses the current network gateway; discovered BLE devices appear in `state.bleDevices`. |
 | Mesh initialization | `initializeMesh(EdgezMeshConfig)` | [`app.dart`](../example/lib/src/app.dart) | The session remembers config and sends it when the native BLE service reports ready. |
 | Identity and keys | `EdgezIdentityStore` | [`app.dart`](../example/lib/src/app.dart) | Creates and persists an X25519-compatible identity and supports key regeneration. |
 | Mesh and license status | `state.status`, `state.bleReady` | [`shared_widgets.dart`](../example/lib/src/shared_widgets.dart) | Includes link readiness, firmware version, local MAC, and license state. |
