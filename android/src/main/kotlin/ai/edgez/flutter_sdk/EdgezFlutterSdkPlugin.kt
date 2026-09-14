@@ -82,6 +82,7 @@ private const val USB_IO_TIMEOUT_MS = 10_000
 private const val WIFI_CONNECT_TIMEOUT_MS = 10_000
 private const val WIFI_DEFAULT_PORT = 4242
 private const val WIFI_DEFAULT_PASSWORD = "edgez123"
+private const val WIFI_TX_QUEUE_FRAMES = 1024
 private const val USB_GAP_MIN_MS = 1L
 private const val USB_GAP_INITIAL_MS = 3L
 private const val USB_GAP_MAX_MS = 10L
@@ -254,6 +255,10 @@ class EdgezFlutterSdkPlugin :
     private var wifiNetworkCallback: ConnectivityManager.NetworkCallback? = null
     private val wifiRunning = AtomicBoolean(false)
     private val wifiWriteLock = Object()
+    private val wifiTxLock = Object()
+    private val wifiTxQueue = ArrayDeque<ByteArray>()
+    private var wifiTxWriteInFlight = false
+    private var wifiTxWriteFailure: Throwable? = null
     private var usbSerialPort: UsbSerialPort? = null
     private var usbConsolePort: UsbSerialPort? = null
     private val usbConsoleLineBuffer = StringBuilder()
@@ -1149,6 +1154,7 @@ class EdgezFlutterSdkPlugin :
                 wifiSocket = socket
                 wifiRunning.set(true)
                 usbRxLen = 0
+                startWifiWriter(socket)
                 startWifiReader(socket)
                 mainHandler.post {
                     emit(mapOf("type" to "connection", "connection" to "wifi"))
@@ -1272,17 +1278,99 @@ class EdgezFlutterSdkPlugin :
         }
     }
 
+    private fun startWifiWriter(socket: Socket) {
+        synchronized(wifiTxLock) {
+            wifiTxQueue.clear()
+            wifiTxWriteInFlight = false
+            wifiTxWriteFailure = null
+        }
+        thread(name = "edgez-wifi-tx") {
+            try {
+                while (wifiRunning.get() && wifiSocket === socket) {
+                    val frame = synchronized(wifiTxLock) {
+                        while (wifiTxQueue.isEmpty() &&
+                            wifiRunning.get() &&
+                            wifiSocket === socket
+                        ) {
+                            wifiTxLock.wait()
+                        }
+                        if (!wifiRunning.get() || wifiSocket !== socket) {
+                            return@thread
+                        }
+                        wifiTxWriteInFlight = true
+                        wifiTxQueue.removeFirst()
+                    }
+                    try {
+                        synchronized(wifiWriteLock) {
+                            socket.getOutputStream().write(frame)
+                            socket.getOutputStream().flush()
+                        }
+                    } finally {
+                        synchronized(wifiTxLock) {
+                            wifiTxWriteInFlight = false
+                            wifiTxLock.notifyAll()
+                        }
+                    }
+                }
+            } catch (error: Throwable) {
+                synchronized(wifiTxLock) {
+                    wifiTxWriteFailure = error
+                    wifiTxWriteInFlight = false
+                    wifiTxLock.notifyAll()
+                }
+                if (wifiRunning.get() && wifiSocket === socket) {
+                    Log.e(LOG_TAG, "Wi-Fi writer stopped", error)
+                    emit(
+                        mapOf(
+                            "type" to "log",
+                            "log" to "Wi-Fi writer stopped: ${error.message ?: error.javaClass.simpleName}",
+                        ),
+                    )
+                    closeWifi(true)
+                }
+            }
+        }
+    }
+
     private fun writeWifiFrame(payload: ByteArray): Result<String> = runCatching {
         require(payload.isNotEmpty() && payload.size <= EDGEZ_MAX_PAYLOAD) {
             "Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD"
         }
         val frame = buildSerialStreamFrame(payload)
-        synchronized(wifiWriteLock) {
-            val socket = wifiSocket ?: throw IllegalStateException("Wi-Fi is not connected")
-            socket.getOutputStream().write(frame)
-            socket.getOutputStream().flush()
+        val socket = wifiSocket ?: throw IllegalStateException("Wi-Fi is not connected")
+        synchronized(wifiTxLock) {
+            check(wifiRunning.get() && wifiSocket === socket) {
+                "Wi-Fi is not connected"
+            }
+            wifiTxWriteFailure?.let { throw it }
+            check(wifiTxQueue.size < WIFI_TX_QUEUE_FRAMES) {
+                "Wi-Fi TX queue is full"
+            }
+            wifiTxQueue.addLast(frame)
+            wifiTxLock.notifyAll()
         }
-        "Wi-Fi frame sent"
+        "Wi-Fi frame queued"
+    }
+
+    private fun waitForWifiTxDrain(timeoutMs: Int): Result<String> = runCatching {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        synchronized(wifiTxLock) {
+            while ((wifiTxWriteInFlight || wifiTxQueue.isNotEmpty()) &&
+                wifiRunning.get()
+            ) {
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) break
+                wifiTxLock.wait(remaining)
+            }
+            wifiTxWriteFailure?.let { throw it }
+            check(!wifiTxWriteInFlight && wifiTxQueue.isEmpty()) {
+                "Wi-Fi control TX did not drain after ${timeoutMs}ms"
+            }
+            check(wifiRunning.get() && wifiSocket != null) {
+                "Wi-Fi disconnected before control TX completed"
+            }
+        }
+        "Wi-Fi control TX complete"
     }
 
     private fun closeWifi(emitDisconnected: Boolean) {
@@ -1290,6 +1378,10 @@ class EdgezFlutterSdkPlugin :
         val wasConnected = socket != null
         wifiRunning.set(false)
         wifiSocket = null
+        synchronized(wifiTxLock) {
+            wifiTxQueue.clear()
+            wifiTxLock.notifyAll()
+        }
         runCatching { socket?.close() }
         wifiNetworkCallback?.let { callback ->
             val connectivity = context.getSystemService(ConnectivityManager::class.java)
@@ -3184,7 +3276,7 @@ class EdgezFlutterSdkPlugin :
 
     private fun waitForControlTxDrain(timeoutMs: Int): Result<String> {
         if (gatt == null && wifiSocket != null) {
-            return Result.success("Wi-Fi control TX complete")
+            return waitForWifiTxDrain(timeoutMs)
         }
         if (gatt == null && usbConnection != null) {
             return waitForApplicationTxDrain(timeoutMs)
