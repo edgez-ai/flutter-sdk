@@ -68,6 +68,7 @@ class SettingsScreen extends StatefulWidget {
     required this.voiceTargetLanguages,
     required this.deviceModeEnabled,
     required this.bleDevices,
+    required this.wifiNetworks,
     required this.usbDevices,
     required this.drivers,
     required this.selectedBleDevice,
@@ -113,6 +114,8 @@ class SettingsScreen extends StatefulWidget {
     required this.logLevel,
     required this.onConnectBle,
     required this.onConnectWifi,
+    required this.onConnectWifiNetwork,
+    required this.onRefreshWifiNetworks,
     required this.onStopBleScan,
     required this.onConnectBleDevice,
     required this.onSelectBleDevice,
@@ -172,6 +175,7 @@ class SettingsScreen extends StatefulWidget {
   final List<String> voiceTargetLanguages;
   final bool deviceModeEnabled;
   final List<EdgezBleDevice> bleDevices;
+  final List<EdgezWifiNetwork> wifiNetworks;
   final List<EdgezUsbDevice> usbDevices;
   final List<ExampleDriver> drivers;
   final EdgezBleDevice? selectedBleDevice;
@@ -217,6 +221,8 @@ class SettingsScreen extends StatefulWidget {
   final EdgezDeviceLogLevel logLevel;
   final VoidCallback onConnectBle;
   final FutureOr<void> Function() onConnectWifi;
+  final ValueChanged<EdgezWifiNetwork> onConnectWifiNetwork;
+  final Future<void> Function() onRefreshWifiNetworks;
   final VoidCallback onStopBleScan;
   final ValueChanged<String> onConnectBleDevice;
   final ValueChanged<EdgezBleDevice> onSelectBleDevice;
@@ -904,7 +910,8 @@ class SettingsScreen extends StatefulWidget {
     required ValueChanged<EdgezBleDevice> onSelectBle,
     required ValueChanged<EdgezUsbDevice> onSelectUsb,
     required Future<void> Function() onRefreshUsb,
-    required FutureOr<void> Function() onConnectWifi,
+    required ValueChanged<EdgezWifiNetwork> onConnectWifi,
+    required Future<void> Function() onRefreshWifi,
   }) {
     return SafeArea(
       child: ListView(
@@ -923,6 +930,51 @@ class SettingsScreen extends StatefulWidget {
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const Spacer(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(statusLine, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'Wi-Fi',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                onPressed: () => unawaited(onRefreshWifi()),
+                tooltip: 'Refresh Wi-Fi networks',
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (wifiNetworks.isEmpty)
+            const Text('No EZ-* Wi-Fi networks found')
+          else
+            for (final network in wifiNetworks) ...<Widget>[
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.wifi),
+                  title: Text(network.ssid),
+                  subtitle: Text('RSSI ${network.rssi}'),
+                  trailing: const Icon(Icons.arrow_forward),
+                  onTap: () => onConnectWifi(network),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'USB',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
               IconButton(
                 onPressed: () => unawaited(onRefreshUsb()),
                 tooltip: AppLocalizations.of(context).refreshUsb,
@@ -930,25 +982,6 @@ class SettingsScreen extends StatefulWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(statusLine, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 12),
-          Text('Wi-Fi', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.wifi),
-              title: const Text('Connect through EdgeZ SoftAP'),
-              subtitle: const Text(
-                'Join the EZ-<MAC> Wi-Fi network first, then connect here. '
-                'The device gateway is detected automatically.',
-              ),
-              trailing: const Icon(Icons.arrow_forward),
-              onTap: () => unawaited(Future<void>.value(onConnectWifi())),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text('USB', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           if (usbDevices.isEmpty)
             Text(AppLocalizations.of(context).noUsbDevices)
@@ -1061,10 +1094,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           setState(() => _showDeviceSelection = false);
         },
         onRefreshUsb: widget.onRefreshUsbDevices,
-        onConnectWifi: () async {
+        onRefreshWifi: widget.onRefreshWifiNetworks,
+        onConnectWifi: (network) {
           widget.onStopBleScan();
-          await widget.onConnectWifi();
-          if (mounted) setState(() => _showDeviceSelection = false);
+          widget.onConnectWifiNetwork(network);
+          setState(() => _showDeviceSelection = false);
         },
       );
     }
@@ -1078,6 +1112,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       onSelectBle: () {
         widget.onConnectBle();
         widget.onRefreshUsbDevices();
+        widget.onRefreshWifiNetworks();
         setState(() => _showDeviceSelection = true);
       },
     );

@@ -117,6 +117,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   bool bleAutoConnect = false;
   EdgezPreferredTransport preferredTransport = EdgezPreferredTransport.wifi;
   EdgezBleDevice? selectedBleDevice;
+  List<EdgezWifiNetwork> wifiNetworks = const <EdgezWifiNetwork>[];
   List<EdgezUsbDevice> usbDevices = const <EdgezUsbDevice>[];
   EdgezUsbDevice? selectedUsbDevice;
   EdgezOtaRelease? otaRelease;
@@ -763,7 +764,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     await session.startBleScan();
   }
 
-  Future<void> _connectWifi() async {
+  Future<void> _connectWifi({EdgezWifiNetwork? network}) async {
     await _saveAppSettings();
     preferredTransport = EdgezPreferredTransport.wifi;
     selectedBleDevice = null;
@@ -772,11 +773,24 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         .setPreferredTransport(EdgezPreferredTransport.wifi);
     if (mounted) setState(() {});
     try {
-      await session.connectWifi();
+      await session.connectWifi(ssid: network?.ssid ?? '');
     } catch (error) {
       if (!mounted) return;
       scaffoldMessengerKey.currentState?.showSnackBar(
         SnackBar(content: Text('Wi-Fi connection failed: $error')),
+      );
+    }
+  }
+
+  Future<void> _refreshWifiNetworks() async {
+    try {
+      final networks = await session.sdk.listWifiNetworks();
+      if (!mounted) return;
+      setState(() => wifiNetworks = networks);
+    } catch (error) {
+      if (!mounted) return;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Wi-Fi scan failed: $error')),
       );
     }
   }
@@ -1645,6 +1659,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   voiceTargetLanguages: supportedVoiceTranslationLanguages,
                   deviceModeEnabled: deviceModeEnabled,
                   bleDevices: meshState.sortedBleDevices,
+                  wifiNetworks: wifiNetworks,
                   usbDevices: usbDevices,
                   drivers: drivers,
                   selectedBleDevice: selectedBleDevice,
@@ -1698,6 +1713,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   logLevel: deviceLogLevel,
                   onConnectBle: _connectBle,
                   onConnectWifi: _connectWifi,
+                  onConnectWifiNetwork: (network) =>
+                      unawaited(_connectWifi(network: network)),
+                  onRefreshWifiNetworks: _refreshWifiNetworks,
                   onStopBleScan: _stopBleScan,
                   onConnectBleDevice: _connectBleDevice,
                   onSelectBleDevice: (device) {
