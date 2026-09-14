@@ -483,7 +483,7 @@ class SettingsScreen extends StatefulWidget {
                   ),
                 ],
               ),
-              if (activeConnection == EdgezConnectionType.ble) ...<Widget>[
+              if (activeConnection != EdgezConnectionType.none) ...<Widget>[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,

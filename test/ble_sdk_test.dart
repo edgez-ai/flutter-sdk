@@ -382,6 +382,20 @@ void main() {
       session.dispose();
     });
 
+    test('marks OTA ready over the Wi-Fi byte stream', () async {
+      ble.results['isOtaReady'] = true;
+      final session = EdgezMeshSession(sdk: sdk);
+
+      ble.emitConnection(EdgezConnectionType.wifi);
+      ble.emitReady();
+      await ble.flushEvents();
+
+      expect(session.state.connection, EdgezConnectionType.wifi);
+      expect(session.state.otaReady, isTrue);
+      expect(ble.callsFor('isOtaReady'), hasLength(1));
+      session.dispose();
+    });
+
     test('turns mocked BLE events into SDK events', () async {
       final received = <EdgezMeshEvent>[];
       final subscription = sdk.events.listen(received.add);

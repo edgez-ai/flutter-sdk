@@ -1407,7 +1407,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       return;
     }
     if (!session.state.otaReady) {
-      setState(() => otaMessage = 'Reconnect to a device with BLE OTA support');
+      setState(() => otaMessage = 'Reconnect to a device with OTA support');
       return;
     }
     setState(() {

@@ -545,7 +545,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get otaUnsupported =>
-      'Le micrologiciel connecté n’expose pas encore la mise à jour BLE OTA.';
+      'Le micrologiciel connecté n’expose pas encore la mise à jour OTA.';
 
   @override
   String identifier(String value) {

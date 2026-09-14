@@ -125,7 +125,14 @@ private const val OTA_END: Byte = 3
 private const val OTA_ABORT: Byte = 4
 private const val OTA_DATA_HEADER_SIZE = 5
 private const val OTA_DATA_MAX_CHUNK_SIZE = 220
+private const val OTA_STREAM_DATA_MAX_CHUNK_SIZE =
+    EDGEZ_MAX_PAYLOAD - 3 - OTA_DATA_HEADER_SIZE
 private const val OTA_WRITE_TIMEOUT_MS = 15_000L
+private const val OTA_STATUS_READY = 1
+private const val OTA_STATUS_ERROR = 2
+private const val OTA_STATUS_COMPLETE = 3
+private const val OTA_STATUS_ABORTED = 4
+private const val OTA_STATUS_DATA_ACCEPTED = 5
 // Samsung's Bluetooth stack can take just over a second to finish the control
 // CCCD write while its post-bond service discovery is still settling.
 private const val CONTROL_SERVICE_READY_FALLBACK_MS = 2_500L
@@ -134,6 +141,7 @@ private const val SERVICE_DISCOVERY_TIMEOUT_MS = 5_000L
 private const val MAX_SERVICE_DISCOVERY_ATTEMPTS = 2
 private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 2)
 private val EDGEZ_SPEED_PROTOCOL_MAGIC = byteArrayOf('S'.code.toByte(), 'T'.code.toByte(), 2)
+private val EDGEZ_OTA_PROTOCOL_MAGIC = byteArrayOf('F'.code.toByte(), 'W'.code.toByte(), 2)
 private val OPENMANET_COMMS_MAGIC = byteArrayOf('O'.code.toByte(), 'M'.code.toByte(), 'C'.code.toByte(), 1)
 private const val OPENMANET_COMMS_TX_HEADER_SIZE = 6
 private const val OPENMANET_COMMS_RX_HEADER_SIZE = 12
@@ -202,6 +210,10 @@ class EdgezFlutterSdkPlugin :
     private var negotiatedMtu = 23
     private val otaWriteLock = Object()
     private var otaWriteStatus: Int? = null
+    private val streamOtaLock = Object()
+    private var streamOtaStatus: Int? = null
+    private var streamOtaValue = 0
+    private var streamOtaTransportClosed = false
     private val otaAbortRequested = AtomicBoolean(false)
     private val otaInProgress = AtomicBoolean(false)
     private var pendingScanResult: MethodChannel.Result? = null
@@ -1285,6 +1297,7 @@ class EdgezFlutterSdkPlugin :
         }
         wifiNetworkCallback = null
         usbRxLen = 0
+        if (wasConnected) notifyStreamOtaDisconnected()
         if (wasConnected && emitDisconnected) {
             emit(mapOf("type" to "connection", "connection" to "none"))
             emit(mapOf("type" to "log", "log" to "Wi-Fi control disconnected"))
@@ -1357,6 +1370,7 @@ class EdgezFlutterSdkPlugin :
             usbApplicationFramesAcked = 0
             usbStatsLock.notifyAll()
         }
+        if (wasConnected) notifyStreamOtaDisconnected()
         if (wasConnected && emitDisconnected) {
             emit(mapOf("type" to "connection", "connection" to "none"))
             emit(mapOf("type" to "log", "log" to "USB device disconnected"))
@@ -1626,7 +1640,11 @@ class EdgezFlutterSdkPlugin :
             }
             "playVoiceMessage" -> playVoiceMessage(call, result)
             "decodeVoiceMessageToWav" -> decodeVoiceMessageToWav(call, result)
-            "isOtaReady" -> result.success(gatt != null && otaCharacteristic != null)
+            "isOtaReady" -> result.success(
+                (gatt != null && otaCharacteristic != null) ||
+                    wifiSocket != null ||
+                    (usbProtocolReady && usbConnection != null),
+            )
             "performOta" -> performOta(call, result)
             "abortOta" -> {
                 otaAbortRequested.set(true)
@@ -2476,8 +2494,10 @@ class EdgezFlutterSdkPlugin :
             result.error("ota_image_invalid", "OTA image is empty", null)
             return
         }
-        if (gatt == null || otaCharacteristic == null) {
-            result.error("ota_unavailable", "BLE OTA characteristic FFF5 is unavailable", null)
+        val bleOtaReady = gatt != null && otaCharacteristic != null
+        val streamOtaReady = wifiSocket != null || (usbProtocolReady && usbConnection != null)
+        if (!bleOtaReady && !streamOtaReady) {
+            result.error("ota_unavailable", "The active device transport does not support OTA", null)
             return
         }
         if (!otaInProgress.compareAndSet(false, true)) {
@@ -2485,11 +2505,15 @@ class EdgezFlutterSdkPlugin :
             return
         }
         otaAbortRequested.set(false)
-        thread(name = "edgez-ble-ota") {
+        thread(name = "edgez-ota") {
             runCatching {
                 writeOtaPacket(otaPacket(OTA_BEGIN, image.size))
-                val chunkSize = (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE)
-                    .coerceIn(20, OTA_DATA_MAX_CHUNK_SIZE)
+                val chunkSize = if (bleOtaReady) {
+                    (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE)
+                        .coerceIn(20, OTA_DATA_MAX_CHUNK_SIZE)
+                } else {
+                    OTA_STREAM_DATA_MAX_CHUNK_SIZE
+                }
                 var sent = 0
                 while (sent < image.size) {
                     check(!otaAbortRequested.get()) { "Firmware update cancelled" }
@@ -2538,7 +2562,11 @@ class EdgezFlutterSdkPlugin :
 
     @SuppressLint("MissingPermission")
     private fun writeOtaPacket(packet: ByteArray) {
-        val activeGatt = gatt ?: throw IllegalStateException("BLE is not connected")
+        val activeGatt = gatt
+        if (activeGatt == null) {
+            writeStreamOtaPacket(packet)
+            return
+        }
         val characteristic = otaCharacteristic
             ?: throw IllegalStateException("BLE OTA characteristic FFF5 is unavailable")
         synchronized(otaWriteLock) {
@@ -2563,6 +2591,79 @@ class EdgezFlutterSdkPlugin :
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 throw IllegalStateException("BLE OTA write failed: $status")
             }
+        }
+    }
+
+    private fun writeStreamOtaPacket(packet: ByteArray) {
+        check(packet.isNotEmpty()) { "OTA packet is empty" }
+        synchronized(streamOtaLock) {
+            streamOtaStatus = null
+            streamOtaValue = 0
+            streamOtaTransportClosed = false
+            sendRealtimePacket(
+                protocolMagic = EDGEZ_OTA_PROTOCOL_MAGIC,
+                packet = packet,
+                dropStale = false,
+                preferWriteWithoutResponse = false,
+            ).getOrThrow()
+
+            val deadline = System.currentTimeMillis() + OTA_WRITE_TIMEOUT_MS
+            while (streamOtaStatus == null && !streamOtaTransportClosed &&
+                System.currentTimeMillis() < deadline
+            ) {
+                streamOtaLock.wait((deadline - System.currentTimeMillis()).coerceAtLeast(1))
+            }
+            val status = streamOtaStatus
+            if (status == null) {
+                check(!streamOtaTransportClosed) { "OTA stream disconnected" }
+                throw IllegalStateException("OTA stream response timed out")
+            }
+            if (status == OTA_STATUS_ERROR) {
+                throw IllegalStateException("Device rejected OTA command ${packet[0]}: $streamOtaValue")
+            }
+            val expectedStatus = when (packet[0]) {
+                OTA_BEGIN -> OTA_STATUS_READY
+                OTA_DATA -> OTA_STATUS_DATA_ACCEPTED
+                OTA_END -> OTA_STATUS_COMPLETE
+                OTA_ABORT -> OTA_STATUS_ABORTED
+                else -> throw IllegalArgumentException("Unknown OTA command ${packet[0]}")
+            }
+            check(status == expectedStatus) {
+                "Unexpected OTA stream status $status for command ${packet[0]}"
+            }
+            if (packet[0] == OTA_DATA) {
+                val offset = ByteBuffer.wrap(packet, 1, 4).order(ByteOrder.LITTLE_ENDIAN).int
+                check(streamOtaValue == offset + packet.size - OTA_DATA_HEADER_SIZE) {
+                    "OTA stream acknowledged $streamOtaValue bytes, expected ${offset + packet.size - OTA_DATA_HEADER_SIZE}"
+                }
+            }
+        }
+    }
+
+    private fun handleStreamOtaStatus(payload: ByteArray): Boolean {
+        if (payload.size != EDGEZ_OTA_PROTOCOL_MAGIC.size + 5 ||
+            !payload.copyOfRange(0, EDGEZ_OTA_PROTOCOL_MAGIC.size)
+                .contentEquals(EDGEZ_OTA_PROTOCOL_MAGIC)
+        ) {
+            return false
+        }
+        val status = payload[EDGEZ_OTA_PROTOCOL_MAGIC.size].toInt() and 0xff
+        val value = ByteBuffer.wrap(payload, EDGEZ_OTA_PROTOCOL_MAGIC.size + 1, 4)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .int
+        synchronized(streamOtaLock) {
+            streamOtaStatus = status
+            streamOtaValue = value
+            streamOtaLock.notifyAll()
+        }
+        emit(mapOf("type" to "log", "log" to "Stream OTA status=$status value=$value"))
+        return true
+    }
+
+    private fun notifyStreamOtaDisconnected() {
+        synchronized(streamOtaLock) {
+            streamOtaTransportClosed = true
+            streamOtaLock.notifyAll()
         }
     }
 
@@ -3805,6 +3906,7 @@ class EdgezFlutterSdkPlugin :
 
     private fun dispatchUsbPayload(payload: ByteArray) {
         if (handleLogStreamFrame(payload)) return
+        if (handleStreamOtaStatus(payload)) return
         // A valid framed payload is also proof that the firmware UART parser is
         // running, even when heartbeat diagnostics are disabled in the future.
         markUsbProtocolReady()

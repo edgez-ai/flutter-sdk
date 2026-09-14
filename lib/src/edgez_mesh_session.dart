@@ -1627,13 +1627,15 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> _refreshOtaReadiness() async {
+    final connection = _state.connection;
+    if (connection == EdgezConnectionType.none) return;
     try {
       final ready = await sdk.isOtaReady();
-      if (_state.connection == EdgezConnectionType.ble) {
+      if (_state.connection == connection) {
         _setState(_state.copyWith(otaReady: ready));
       }
     } catch (_) {
-      if (_state.connection == EdgezConnectionType.ble) {
+      if (_state.connection == connection) {
         _setState(_state.copyWith(otaReady: false));
       }
     }

@@ -20,7 +20,7 @@ The SDK owns BLE transport and mesh operations:
 - text and voice message send APIs
 - background message notifications and lock-screen incoming-call notifications
 - device settings send APIs
-- BLE firmware OTA with acknowledged writes, progress events, and cancellation
+- firmware OTA over BLE, USB CDC, or Wi-Fi with acknowledgements, progress events, and cancellation
 
 Production builds use `EdgezChannelTransport`, which bridges the SDK to the
 Android BLE plugin through Flutter method and event channels. Tests can inject
@@ -135,10 +135,11 @@ Currently, only the Heltec HT-HC33 is supported.
 
 ## Firmware OTA
 
-The Android transport follows the same OTA protocol as `edgez-android-app`:
-it discovers characteristics FFF5/FFF6, sends begin/data/end commands using
-acknowledged BLE writes, limits data chunks for the ESP32 NimBLE ACL buffer,
-and emits `EdgezMeshEventType.otaProgress` events.
+The Android transport sends the same begin/data/end OTA commands over every
+connection. BLE uses characteristics FFF5/FFF6 for compatibility; USB CDC and
+Wi-Fi TCP carry `FW2` packets in the shared framed byte stream and wait for a
+device acknowledgement after each chunk. Every route emits
+`EdgezMeshEventType.otaProgress` events.
 
 Use `EdgezOtaRelease.fromJson` to validate the firmware manifest and compare its
 version with the connected device. After downloading and validating the image

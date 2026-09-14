@@ -543,7 +543,7 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
-  String get otaUnsupported => 'El firmware conectado aún no ofrece BLE OTA.';
+  String get otaUnsupported => 'El firmware conectado aún no ofrece OTA.';
 
   @override
   String identifier(String value) {
