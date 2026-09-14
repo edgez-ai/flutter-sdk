@@ -864,6 +864,14 @@ const DeviceSettings$json = {
       '5': 8,
       '10': 'deviceGpsEnabled'
     },
+    {
+      '1': 'wifi_softap_enabled',
+      '3': 29,
+      '4': 1,
+      '5': 8,
+      '10': 'wifiSoftapEnabled'
+    },
+    {'1': 'ble_enabled', '3': 30, '4': 1, '5': 8, '10': 'bleEnabled'},
   ],
 };
 
@@ -889,7 +897,9 @@ final $typed_data.Uint8List deviceSettingsDescriptor = $convert.base64Decode(
     '5oYWxvdy5EZXZpY2VUeXBlUgpkZXZpY2VUeXBlEiwKEnNsZWVwX21vZGVfZW5hYmxlZBgZIAEo'
     'CFIQc2xlZXBNb2RlRW5hYmxlZBIsChJtZXNoX2ZyZXF1ZW5jeV9raHoYGiABKA1SEG1lc2hGcm'
     'VxdWVuY3lLaHoSLAoSbWVzaF9iYW5kd2lkdGhfbWh6GBsgASgNUhBtZXNoQmFuZHdpZHRoTWh6'
-    'EiwKEmRldmljZV9ncHNfZW5hYmxlZBgcIAEoCFIQZGV2aWNlR3BzRW5hYmxlZA==');
+    'EiwKEmRldmljZV9ncHNfZW5hYmxlZBgcIAEoCFIQZGV2aWNlR3BzRW5hYmxlZBIuChN3aWZpX3'
+    'NvZnRhcF9lbmFibGVkGB0gASgIUhF3aWZpU29mdGFwRW5hYmxlZBIfCgtibGVfZW5hYmxlZBge'
+    'IAEoCFIKYmxlRW5hYmxlZA==');
 
 @$core.Deprecated('Use scriptConfigDescriptor instead')
 const ScriptConfig$json = {

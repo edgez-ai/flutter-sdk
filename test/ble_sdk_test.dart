@@ -138,6 +138,24 @@ void main() {
           ble.calls.singleWhere((call) => call.method == 'connectWifi');
       expect(call.argumentMap['host'], '');
       expect(call.argumentMap['port'], 4242);
+      expect(call.argumentMap['ssid'], '');
+    });
+
+    test('lists only EdgeZ Wi-Fi networks and connects the selected SSID',
+        () async {
+      ble.results['listWifiNetworks'] = <Object?>[
+        <Object?, Object?>{'ssid': 'EZ-001122', 'rssi': -42},
+        <Object?, Object?>{'ssid': 'Home', 'rssi': -20},
+      ];
+
+      final networks = await sdk.listWifiNetworks();
+      expect(networks, hasLength(1));
+      expect(networks.single.ssid, 'EZ-001122');
+      expect(networks.single.rssi, -42);
+
+      await sdk.connectWifi(ssid: networks.single.ssid);
+      final call = ble.calls.lastWhere((call) => call.method == 'connectWifi');
+      expect(call.argumentMap['ssid'], 'EZ-001122');
     });
 
     test('requests the BATMAN routing table from the connected device',

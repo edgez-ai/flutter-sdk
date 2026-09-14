@@ -1163,11 +1163,47 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         deviceType: deviceType,
         sleepModeEnabled: deviceSleepModeEnabled,
         deviceGpsEnabled: deviceGpsEnabled,
+        wifiSoftapEnabled:
+            session.state.deviceSettings?.wifiSoftapEnabled ?? true,
+        bleEnabled: session.state.deviceSettings?.bleEnabled ?? true,
         meshFrequencyKhz: defaultMeshFrequencyKhz,
         meshBandwidthMhz: meshBandwidthMhz,
       ),
       scripts: scripts,
     );
+  }
+
+  Future<void> _setControlTransports({
+    bool? wifiSoftapEnabled,
+    bool? bleEnabled,
+  }) async {
+    final current = session.state.deviceSettings;
+    if (current == null) {
+      await session.requestDeviceSettings();
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('Reading device connection settings')),
+      );
+      return;
+    }
+    final updated = current.copyWith(
+      wifiSoftapEnabled: wifiSoftapEnabled,
+      bleEnabled: bleEnabled,
+    );
+    if (!updated.wifiSoftapEnabled && !updated.bleEnabled) {
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text('Wi-Fi SoftAP or Bluetooth LE must remain enabled'),
+        ),
+      );
+      return;
+    }
+    try {
+      await session.sendDeviceSettings(updated);
+    } catch (error) {
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('Unable to update connection radios: $error')),
+      );
+    }
   }
 
   Future<void> _refreshDeviceLocation() async {
@@ -1710,6 +1746,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceType: deviceType,
                   devicePassphrase: devicePassphrase,
                   deviceSleepModeEnabled: deviceSleepModeEnabled,
+                  wifiSoftapEnabled:
+                      meshState.deviceSettings?.wifiSoftapEnabled ?? true,
+                  bleEnabled: meshState.deviceSettings?.bleEnabled ?? true,
                   logLevel: deviceLogLevel,
                   onConnectBle: _connectBle,
                   onConnectWifi: _connectWifi,
@@ -1828,6 +1867,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       setState(() => devicePassphrase = value),
                   onDeviceSleepModeChanged: (value) =>
                       setState(() => deviceSleepModeEnabled = value),
+                  onWifiSoftapEnabledChanged: (value) => unawaited(
+                    _setControlTransports(wifiSoftapEnabled: value),
+                  ),
+                  onBleEnabledChanged: (value) => unawaited(
+                    _setControlTransports(bleEnabled: value),
+                  ),
                   onLogLevelChanged: (level) =>
                       unawaited(_setDeviceLogLevel(level)),
                 ),

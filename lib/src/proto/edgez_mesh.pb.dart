@@ -1787,6 +1787,8 @@ class DeviceSettings extends $pb.GeneratedMessage {
     $core.int? meshFrequencyKhz,
     $core.int? meshBandwidthMhz,
     $core.bool? deviceGpsEnabled,
+    $core.bool? wifiSoftapEnabled,
+    $core.bool? bleEnabled,
   }) {
     final result = create();
     if (action != null) result.action = action;
@@ -1818,6 +1820,8 @@ class DeviceSettings extends $pb.GeneratedMessage {
     if (meshFrequencyKhz != null) result.meshFrequencyKhz = meshFrequencyKhz;
     if (meshBandwidthMhz != null) result.meshBandwidthMhz = meshBandwidthMhz;
     if (deviceGpsEnabled != null) result.deviceGpsEnabled = deviceGpsEnabled;
+    if (wifiSoftapEnabled != null) result.wifiSoftapEnabled = wifiSoftapEnabled;
+    if (bleEnabled != null) result.bleEnabled = bleEnabled;
     return result;
   }
 
@@ -1876,6 +1880,8 @@ class DeviceSettings extends $pb.GeneratedMessage {
     ..aI(27, _omitFieldNames ? '' : 'meshBandwidthMhz',
         fieldType: $pb.PbFieldType.OU3)
     ..aOB(28, _omitFieldNames ? '' : 'deviceGpsEnabled')
+    ..aOB(29, _omitFieldNames ? '' : 'wifiSoftapEnabled')
+    ..aOB(30, _omitFieldNames ? '' : 'bleEnabled')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2143,6 +2149,24 @@ class DeviceSettings extends $pb.GeneratedMessage {
   $core.bool hasDeviceGpsEnabled() => $_has(26);
   @$pb.TagNumber(28)
   void clearDeviceGpsEnabled() => $_clearField(28);
+
+  @$pb.TagNumber(29)
+  $core.bool get wifiSoftapEnabled => $_getBF(27);
+  @$pb.TagNumber(29)
+  set wifiSoftapEnabled($core.bool value) => $_setBool(27, value);
+  @$pb.TagNumber(29)
+  $core.bool hasWifiSoftapEnabled() => $_has(27);
+  @$pb.TagNumber(29)
+  void clearWifiSoftapEnabled() => $_clearField(29);
+
+  @$pb.TagNumber(30)
+  $core.bool get bleEnabled => $_getBF(28);
+  @$pb.TagNumber(30)
+  set bleEnabled($core.bool value) => $_setBool(28, value);
+  @$pb.TagNumber(30)
+  $core.bool hasBleEnabled() => $_has(28);
+  @$pb.TagNumber(30)
+  void clearBleEnabled() => $_clearField(30);
 }
 
 class ScriptConfig extends $pb.GeneratedMessage {

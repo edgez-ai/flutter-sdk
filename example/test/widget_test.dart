@@ -47,6 +47,9 @@ void main() {
     await tester.ensureVisible(find.text('Others'));
     await tester.tap(find.text('Others'));
     await tester.pumpAndSettle();
+    expect(find.text('Connection radios'), findsOneWidget);
+    expect(find.text('Wi-Fi SoftAP'), findsOneWidget);
+    expect(find.text('Bluetooth LE'), findsOneWidget);
     await tester.ensureVisible(find.text('Language').first);
     await tester.tap(find.byType(DropdownButtonFormField<AppLanguage>));
     await tester.pumpAndSettle();
@@ -348,18 +351,21 @@ void main() {
     expect(find.text('Device connection'), findsOneWidget);
   });
 
-  testWidgets('connection selector offers BLE and USB devices', (tester) async {
+  testWidgets('connection selector offers Wi-Fi, BLE, and USB devices',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(const EdgezExampleApp());
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
 
     expect(find.text('Selected device'), findsOneWidget);
-    expect(find.text('No device selected'), findsOneWidget);
+    expect(find.text('EdgeZ Wi-Fi SoftAP'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
     await tester.tap(find.widgetWithText(OutlinedButton, 'Select'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Select BLE or USB device'), findsOneWidget);
-    expect(find.text('Scanning for EdgeZ devices'), findsOneWidget);
+    expect(find.text('Select connection'), findsOneWidget);
+    expect(find.text('Wi-Fi'), findsOneWidget);
+    expect(find.text('No EZ-* Wi-Fi networks found'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();

@@ -111,6 +111,8 @@ class SettingsScreen extends StatefulWidget {
     required this.deviceType,
     required this.devicePassphrase,
     required this.deviceSleepModeEnabled,
+    required this.wifiSoftapEnabled,
+    required this.bleEnabled,
     required this.logLevel,
     required this.onConnectBle,
     required this.onConnectWifi,
@@ -160,6 +162,8 @@ class SettingsScreen extends StatefulWidget {
     required this.onDeviceTypeChanged,
     required this.onDevicePassphraseChanged,
     required this.onDeviceSleepModeChanged,
+    required this.onWifiSoftapEnabledChanged,
+    required this.onBleEnabledChanged,
     required this.onLogLevelChanged,
     super.key,
   });
@@ -218,6 +222,8 @@ class SettingsScreen extends StatefulWidget {
   final String deviceType;
   final String devicePassphrase;
   final bool deviceSleepModeEnabled;
+  final bool wifiSoftapEnabled;
+  final bool bleEnabled;
   final EdgezDeviceLogLevel logLevel;
   final VoidCallback onConnectBle;
   final FutureOr<void> Function() onConnectWifi;
@@ -267,6 +273,8 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<String> onDeviceTypeChanged;
   final ValueChanged<String> onDevicePassphraseChanged;
   final ValueChanged<bool> onDeviceSleepModeChanged;
+  final ValueChanged<bool> onWifiSoftapEnabledChanged;
+  final ValueChanged<bool> onBleEnabledChanged;
   final ValueChanged<EdgezDeviceLogLevel> onLogLevelChanged;
 
   @override
@@ -821,6 +829,35 @@ class SettingsScreen extends StatefulWidget {
                     unawaited(Future<void>.value(onSaveDeviceSettings())),
                 child: Text(l10n.save),
               ),
+            ),
+          ],
+          if (selectedTab == _SettingsTab.others) ...<Widget>[
+            cardGap,
+            InfoCard(
+              title: 'Connection radios',
+              children: <Widget>[
+                const Text(
+                  'Keep at least one connection method enabled so the device remains reachable.',
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Wi-Fi SoftAP'),
+                  subtitle: const Text('Advertise the EZ-* Wi-Fi network'),
+                  value: wifiSoftapEnabled,
+                  onChanged: wifiSoftapEnabled && !bleEnabled
+                      ? null
+                      : onWifiSoftapEnabledChanged,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Bluetooth LE'),
+                  subtitle: const Text('Allow BLE connections and BLE OTA'),
+                  value: bleEnabled,
+                  onChanged: bleEnabled && !wifiSoftapEnabled
+                      ? null
+                      : onBleEnabledChanged,
+                ),
+              ],
             ),
           ],
           if (!deviceModeEnabled &&

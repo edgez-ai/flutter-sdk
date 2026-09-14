@@ -399,6 +399,8 @@ class EdgezDeviceSettings {
     this.deviceType = 'relay',
     this.sleepModeEnabled = false,
     this.deviceGpsEnabled = false,
+    this.wifiSoftapEnabled = true,
+    this.bleEnabled = true,
     this.meshFrequencyKhz = 0,
     this.meshBandwidthMhz = 0,
     this.userIdHigh = 0,
@@ -427,6 +429,8 @@ class EdgezDeviceSettings {
   final String deviceType;
   final bool sleepModeEnabled;
   final bool deviceGpsEnabled;
+  final bool wifiSoftapEnabled;
+  final bool bleEnabled;
   final int meshFrequencyKhz;
   final int meshBandwidthMhz;
   final int userIdHigh;
@@ -455,6 +459,8 @@ class EdgezDeviceSettings {
         'deviceType': deviceType,
         'sleepModeEnabled': sleepModeEnabled,
         'deviceGpsEnabled': deviceGpsEnabled,
+        'wifiSoftapEnabled': wifiSoftapEnabled,
+        'bleEnabled': bleEnabled,
         'meshFrequencyKhz': meshFrequencyKhz,
         'meshBandwidthMhz': meshBandwidthMhz,
         'userIdHigh': userIdHigh,
@@ -465,6 +471,8 @@ class EdgezDeviceSettings {
 
   EdgezDeviceSettings copyWith({
     bool? deviceGpsEnabled,
+    bool? wifiSoftapEnabled,
+    bool? bleEnabled,
     int? meshFrequencyKhz,
     int? meshBandwidthMhz,
   }) {
@@ -489,6 +497,8 @@ class EdgezDeviceSettings {
       deviceType: deviceType,
       sleepModeEnabled: sleepModeEnabled,
       deviceGpsEnabled: deviceGpsEnabled ?? this.deviceGpsEnabled,
+      wifiSoftapEnabled: wifiSoftapEnabled ?? this.wifiSoftapEnabled,
+      bleEnabled: bleEnabled ?? this.bleEnabled,
       meshFrequencyKhz: meshFrequencyKhz ?? this.meshFrequencyKhz,
       meshBandwidthMhz: meshBandwidthMhz ?? this.meshBandwidthMhz,
       userIdHigh: userIdHigh,

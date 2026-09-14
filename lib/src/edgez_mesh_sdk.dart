@@ -1481,6 +1481,11 @@ class EdgezMeshSdk {
     required EdgezDeviceSettings settings,
     EdgezUserIdentity? identity,
   }) {
+    if (!settings.wifiSoftapEnabled && !settings.bleEnabled) {
+      throw ArgumentError(
+        'Wi-Fi SoftAP or Bluetooth LE must remain enabled',
+      );
+    }
     final deviceSettings = proto.DeviceSettings(
       action: proto.DeviceSettingsAction.DEVICE_SETTINGS_SET,
       deviceModeEnabled: settings.deviceModeEnabled,
@@ -1502,6 +1507,8 @@ class EdgezMeshSdk {
       deviceType: _deviceType(settings.deviceType),
       sleepModeEnabled: settings.sleepModeEnabled,
       deviceGpsEnabled: settings.deviceGpsEnabled,
+      wifiSoftapEnabled: settings.wifiSoftapEnabled,
+      bleEnabled: settings.bleEnabled,
       meshFrequencyKhz: max(0, settings.meshFrequencyKhz),
       meshBandwidthMhz: settings.meshBandwidthMhz.clamp(0, 8),
     );

@@ -236,6 +236,8 @@ void main() {
       deviceType: 'sensor',
       sleepModeEnabled: true,
       deviceGpsEnabled: true,
+      wifiSoftapEnabled: false,
+      bleEnabled: true,
       meshFrequencyKhz: 915000,
       meshBandwidthMhz: 4,
     );
@@ -251,11 +253,25 @@ void main() {
     expect(packet.deviceSettings.deviceType, DeviceType.DEVICE_TYPE_SENSOR);
     expect(packet.deviceSettings.sleepModeEnabled, isTrue);
     expect(packet.deviceSettings.deviceGpsEnabled, isTrue);
+    expect(packet.deviceSettings.wifiSoftapEnabled, isFalse);
+    expect(packet.deviceSettings.bleEnabled, isTrue);
     expect(packet.deviceSettings.meshFrequencyKhz, 915000);
     expect(packet.deviceSettings.meshBandwidthMhz, 4);
     expect(
       (calls.single.arguments as Map<Object?, Object?>)['waitForDrainMs'],
       3000,
+    );
+  });
+
+  test('device settings cannot disable both connection radios', () {
+    expect(
+      () => sdk.sendDeviceSettings(
+        settings: const EdgezDeviceSettings(
+          wifiSoftapEnabled: false,
+          bleEnabled: false,
+        ),
+      ),
+      throwsArgumentError,
     );
   });
 

@@ -1713,6 +1713,8 @@ class EdgezMeshSession extends ChangeNotifier {
 
     if (packet.hasDeviceSettings()) {
       final settings = packet.deviceSettings;
+      final legacyConnectionDefaults =
+          !settings.wifiSoftapEnabled && !settings.bleEnabled;
       final pending = _pendingDeviceSettingsCommit;
       if (pending != null &&
           !pending.completer.isCompleted &&
@@ -1744,6 +1746,9 @@ class EdgezMeshSession extends ChangeNotifier {
           deviceType: _deviceTypeLabel(settings.deviceType).toLowerCase(),
           sleepModeEnabled: settings.sleepModeEnabled,
           deviceGpsEnabled: settings.deviceGpsEnabled,
+          wifiSoftapEnabled:
+              legacyConnectionDefaults || settings.wifiSoftapEnabled,
+          bleEnabled: legacyConnectionDefaults || settings.bleEnabled,
           meshFrequencyKhz: settings.meshFrequencyKhz,
           meshBandwidthMhz: settings.meshBandwidthMhz,
           userIdHigh: settings.userIdHigh.toInt(),
@@ -3384,7 +3389,9 @@ class _PendingDeviceSettingsCommit {
         actual.meshBandwidthMhz == expected.meshBandwidthMhz &&
         actual.beaconIntervalSeconds ==
             expected.beaconIntervalSeconds.clamp(5, 3600) &&
-        actual.maxHop == normalizedMaxHop;
+        actual.maxHop == normalizedMaxHop &&
+        actual.wifiSoftapEnabled == expected.wifiSoftapEnabled &&
+        actual.bleEnabled == expected.bleEnabled;
   }
 }
 

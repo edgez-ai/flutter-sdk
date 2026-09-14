@@ -1168,7 +1168,9 @@ class EdgezFlutterSdkPlugin :
             override fun onUnavailable() {
                 if (!completed.compareAndSet(false, true)) return
                 wifiNetworkCallback = null
-                result.error("wifi_unavailable", "$ssid was not selected or is unavailable", null)
+                mainHandler.post {
+                    result.error("wifi_unavailable", "$ssid was not selected or is unavailable", null)
+                }
             }
 
             override fun onLost(network: Network) {
@@ -1176,7 +1178,17 @@ class EdgezFlutterSdkPlugin :
             }
         }
         wifiNetworkCallback = callback
-        connectivity.requestNetwork(request, callback)
+        runCatching { connectivity.requestNetwork(request, callback) }
+            .onFailure { error ->
+                wifiNetworkCallback = null
+                mainHandler.post {
+                    result.error(
+                        "wifi_request_failed",
+                        error.message ?: "Could not request $ssid",
+                        null,
+                    )
+                }
+            }
     }
 
     @SuppressLint("MissingPermission")
