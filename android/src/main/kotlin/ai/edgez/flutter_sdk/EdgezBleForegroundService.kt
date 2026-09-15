@@ -13,6 +13,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -25,16 +26,26 @@ class EdgezBleForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val deviceLabel = intent?.getStringExtra(EXTRA_DEVICE_LABEL).orEmpty()
-        startForeground(
-            BACKGROUND_NOTIFICATION_ID,
-            buildBackgroundNotification(this, deviceLabel),
-        )
+        try {
+            startForeground(
+                BACKGROUND_NOTIFICATION_ID,
+                buildBackgroundNotification(this, deviceLabel),
+            )
+        } catch (error: SecurityException) {
+            // A host app built against Android 14+ may have an outdated merged
+            // manifest. Do not let the sticky service enter a process crash
+            // loop when the connected-device FGS permission is unavailable.
+            Log.e(TAG, "Connected-device foreground service is not permitted", error)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        private const val TAG = "EdgezBleService"
         private const val ACTION_START = "ai.edgez.flutter_sdk.action.START_BLE_BACKGROUND"
         private const val EXTRA_DEVICE_LABEL = "deviceLabel"
         private const val BACKGROUND_CHANNEL_ID = "edgez_ble_connection"
