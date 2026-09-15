@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import 'edgez_mesh_sdk.dart';
 import 'edgez_device_log_store.dart';
+import 'edgez_ota.dart';
 import 'models.dart';
 import 'proto/edgez_mesh.pb.dart' as proto;
 
@@ -483,6 +484,40 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<bool> get isOtaReady => sdk.isOtaReady();
+
+  Future<void> cacheOtaFirmware(EdgezOtaRelease release) =>
+      sdk.cacheOtaFirmware(
+        version: release.version,
+        size: release.size,
+        url: release.url,
+      );
+
+  Future<void> performCachedOta(EdgezOtaRelease release) async {
+    _setState(_state.copyWith(
+      otaInProgress: true,
+      otaSentBytes: 0,
+      otaTotalBytes: release.size,
+      statusLine: 'Starting cached firmware update',
+    ));
+    try {
+      final message = await sdk.performCachedOta(
+        version: release.version,
+        size: release.size,
+      );
+      _setState(_state.copyWith(
+        otaInProgress: false,
+        otaSentBytes: release.size,
+        otaTotalBytes: release.size,
+        statusLine: message,
+      ));
+    } catch (error) {
+      _setState(_state.copyWith(
+        otaInProgress: false,
+        statusLine: 'Firmware update failed: $error',
+      ));
+      rethrow;
+    }
+  }
 
   Future<void> performOta(List<int> firmwareImage) async {
     _setState(

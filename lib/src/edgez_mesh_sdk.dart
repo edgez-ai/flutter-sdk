@@ -302,6 +302,40 @@ class EdgezMeshSdk {
     return await _transport.invokeMethod<bool>('isOtaReady') ?? false;
   }
 
+  Future<void> cacheOtaFirmware({
+    required String version,
+    required int size,
+    required String url,
+  }) async {
+    await _transport.invokeMethod<String>('cacheOtaFirmware', {
+      'version': version,
+      'size': size,
+      'url': url,
+    });
+  }
+
+  Future<bool> hasCachedOtaFirmware({
+    required String version,
+    required int size,
+  }) async {
+    return await _transport.invokeMethod<bool>('hasCachedOtaFirmware', {
+          'version': version,
+          'size': size,
+        }) ??
+        false;
+  }
+
+  Future<String> performCachedOta({
+    required String version,
+    required int size,
+  }) async {
+    return await _transport.invokeMethod<String>('performCachedOta', {
+          'version': version,
+          'size': size,
+        }) ??
+        'Firmware uploaded; the device is restarting';
+  }
+
   Future<String> performOta(List<int> firmwareImage) async {
     if (firmwareImage.isEmpty) throw StateError('OTA image is empty');
     return await _transport.invokeMethod<String>(

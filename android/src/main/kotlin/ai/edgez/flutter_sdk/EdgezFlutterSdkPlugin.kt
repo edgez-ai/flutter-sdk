@@ -59,6 +59,8 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -1734,11 +1736,10 @@ class EdgezFlutterSdkPlugin :
             }
             "playVoiceMessage" -> playVoiceMessage(call, result)
             "decodeVoiceMessageToWav" -> decodeVoiceMessageToWav(call, result)
-            "isOtaReady" -> result.success(
-                (gatt != null && otaCharacteristic != null) ||
-                    wifiSocket != null ||
-                    (usbProtocolReady && usbConnection != null),
-            )
+            "isOtaReady" -> result.success(wifiSocket != null)
+            "cacheOtaFirmware" -> cacheOtaFirmware(call, result)
+            "hasCachedOtaFirmware" -> result.success(hasCachedOtaFirmware(call))
+            "performCachedOta" -> performCachedOta(call, result)
             "performOta" -> performOta(call, result)
             "abortOta" -> {
                 otaAbortRequested.set(true)
@@ -2582,16 +2583,93 @@ class EdgezFlutterSdkPlugin :
         }.array()
     }
 
+    private val otaCacheDirectory: File
+        get() = File(context.filesDir, "edgez-ota")
+
+    private val otaCacheImage: File
+        get() = File(otaCacheDirectory, "firmware.bin")
+
+    private val otaCacheMetadata: File
+        get() = File(otaCacheDirectory, "firmware.meta")
+
+    private fun otaCacheKey(call: MethodCall): String {
+        val version = call.argument<String>("version").orEmpty().trim()
+        val size = call.argument<Int>("size") ?: 0
+        return "$version\n$size"
+    }
+
+    private fun hasCachedOtaFirmware(call: MethodCall): Boolean =
+        otaCacheImage.isFile &&
+            otaCacheMetadata.isFile &&
+            otaCacheMetadata.readText() == otaCacheKey(call) &&
+            otaCacheImage.length() == (call.argument<Int>("size") ?: 0).toLong()
+
+    private fun cacheOtaFirmware(call: MethodCall, result: MethodChannel.Result) {
+        val url = call.argument<String>("url").orEmpty()
+        val version = call.argument<String>("version").orEmpty().trim()
+        val size = call.argument<Int>("size") ?: 0
+        if (version.isEmpty() || size <= 0 || !(url.startsWith("https://") || url.startsWith("http://"))) {
+            result.error("ota_cache_invalid", "Firmware cache metadata is invalid", null)
+            return
+        }
+        if (hasCachedOtaFirmware(call)) {
+            result.success(otaCacheImage.absolutePath)
+            return
+        }
+        thread(name = "edgez-ota-cache") {
+            runCatching {
+                val request = Request.Builder().url(url).get().build()
+                val bytes = OkHttpClient.Builder()
+                    .callTimeout(java.time.Duration.ofSeconds(60))
+                    .build()
+                    .newCall(request)
+                    .execute()
+                    .use { response ->
+                        check(response.isSuccessful) {
+                            "Firmware download failed: HTTP ${response.code}"
+                        }
+                        response.body.bytes()
+                    }
+                check(bytes.size == size) {
+                    "Firmware size mismatch: ${bytes.size}/$size"
+                }
+                otaCacheDirectory.mkdirs()
+                val temporary = File(otaCacheDirectory, "firmware.tmp")
+                temporary.writeBytes(bytes)
+                check(temporary.renameTo(otaCacheImage) || run {
+                    otaCacheImage.delete() && temporary.renameTo(otaCacheImage)
+                }) { "Could not commit firmware cache" }
+                otaCacheMetadata.writeText("$version\n$size")
+                otaCacheImage.absolutePath
+            }.fold(
+                onSuccess = { path -> mainHandler.post { result.success(path) } },
+                onFailure = { error -> mainHandler.post {
+                    result.error("ota_cache_failed", error.message ?: "Firmware caching failed", null)
+                } },
+            )
+        }
+    }
+
+    private fun performCachedOta(call: MethodCall, result: MethodChannel.Result) {
+        if (!hasCachedOtaFirmware(call)) {
+            result.error("ota_cache_missing", "The requested firmware is not cached", null)
+            return
+        }
+        startOta(otaCacheImage.readBytes(), result)
+    }
+
     private fun performOta(call: MethodCall, result: MethodChannel.Result) {
         val image = call.argument<ByteArray>("image")
         if (image == null || image.isEmpty()) {
             result.error("ota_image_invalid", "OTA image is empty", null)
             return
         }
-        val bleOtaReady = gatt != null && otaCharacteristic != null
-        val streamOtaReady = wifiSocket != null || (usbProtocolReady && usbConnection != null)
-        if (!bleOtaReady && !streamOtaReady) {
-            result.error("ota_unavailable", "The active device transport does not support OTA", null)
+        startOta(image, result)
+    }
+
+    private fun startOta(image: ByteArray, result: MethodChannel.Result) {
+        if (wifiSocket == null) {
+            result.error("ota_unavailable", "Connect to the device over Wi-Fi before OTA", null)
             return
         }
         if (!otaInProgress.compareAndSet(false, true)) {
@@ -2602,12 +2680,7 @@ class EdgezFlutterSdkPlugin :
         thread(name = "edgez-ota") {
             runCatching {
                 writeOtaPacket(otaPacket(OTA_BEGIN, image.size))
-                val chunkSize = if (bleOtaReady) {
-                    (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE)
-                        .coerceIn(20, OTA_DATA_MAX_CHUNK_SIZE)
-                } else {
-                    OTA_STREAM_DATA_MAX_CHUNK_SIZE
-                }
+                val chunkSize = OTA_STREAM_DATA_MAX_CHUNK_SIZE
                 var sent = 0
                 while (sent < image.size) {
                     check(!otaAbortRequested.get()) { "Firmware update cancelled" }
@@ -2654,38 +2727,8 @@ class EdgezFlutterSdkPlugin :
             .put(image, offset, length)
             .array()
 
-    @SuppressLint("MissingPermission")
     private fun writeOtaPacket(packet: ByteArray) {
-        val activeGatt = gatt
-        if (activeGatt == null) {
-            writeStreamOtaPacket(packet)
-            return
-        }
-        val characteristic = otaCharacteristic
-            ?: throw IllegalStateException("BLE OTA characteristic FFF5 is unavailable")
-        synchronized(otaWriteLock) {
-            otaWriteStatus = null
-            val started = if (Build.VERSION.SDK_INT >= 33) {
-                activeGatt.writeCharacteristic(
-                    characteristic,
-                    packet,
-                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
-                ) == BluetoothGatt.GATT_SUCCESS
-            } else {
-                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                characteristic.value = packet
-                activeGatt.writeCharacteristic(characteristic)
-            }
-            if (!started) throw IllegalStateException("BLE OTA write could not start")
-            val deadline = System.currentTimeMillis() + OTA_WRITE_TIMEOUT_MS
-            while (otaWriteStatus == null && System.currentTimeMillis() < deadline) {
-                otaWriteLock.wait((deadline - System.currentTimeMillis()).coerceAtLeast(1))
-            }
-            val status = otaWriteStatus ?: throw IllegalStateException("BLE OTA write timed out")
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                throw IllegalStateException("BLE OTA write failed: $status")
-            }
-        }
+        writeStreamOtaPacket(packet)
     }
 
     private fun writeStreamOtaPacket(packet: ByteArray) {
@@ -2694,12 +2737,8 @@ class EdgezFlutterSdkPlugin :
             streamOtaStatus = null
             streamOtaValue = 0
             streamOtaTransportClosed = false
-            sendRealtimePacket(
-                protocolMagic = EDGEZ_OTA_PROTOCOL_MAGIC,
-                packet = packet,
-                dropStale = false,
-                preferWriteWithoutResponse = false,
-            ).getOrThrow()
+            check(wifiSocket != null) { "Wi-Fi control channel is not connected" }
+            writeWifiFrame(EDGEZ_OTA_PROTOCOL_MAGIC + packet).getOrThrow()
 
             val deadline = System.currentTimeMillis() + OTA_WRITE_TIMEOUT_MS
             while (streamOtaStatus == null && !streamOtaTransportClosed &&

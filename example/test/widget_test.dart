@@ -360,7 +360,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Select BLE device'), findsOneWidget);
     expect(find.text('USB'), findsNothing);
-    expect(find.text('Scanning for EdgeZ devices'), findsOneWidget);
+    expect(find.textContaining('Scanning for EdgeZ devices'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();

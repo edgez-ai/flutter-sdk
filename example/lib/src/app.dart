@@ -1292,6 +1292,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       final json = jsonDecode(await utf8.decoder.bind(response).join())
           as Map<String, dynamic>;
       final release = EdgezOtaRelease.fromJson(json);
+      if (release.isNewerThan(
+        session.state.status?.firmwareVersion ?? '',
+      )) {
+        await session.cacheOtaFirmware(release);
+      }
       if (!mounted) return;
       setState(() {
         otaRelease = release;
@@ -1322,29 +1327,10 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     }
     setState(() {
       otaInstallInProgress = true;
-      otaMessage = 'Downloading ${release.version}...';
+      otaMessage = 'Installing cached firmware ${release.version}...';
     });
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 15);
     try {
-      final request = await client.getUrl(Uri.parse(release.url));
-      final response =
-          await request.close().timeout(const Duration(seconds: 30));
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError(
-            'Firmware download failed: HTTP ${response.statusCode}');
-      }
-      final image =
-          await response.timeout(const Duration(seconds: 30)).fold<List<int>>(
-        <int>[],
-        (bytes, chunk) => bytes..addAll(chunk),
-      );
-      if (image.length != release.size) {
-        throw StateError(
-          'Firmware size mismatch: ${image.length}/${release.size}',
-        );
-      }
-      await session.performOta(image);
+      await session.performCachedOta(release);
       if (mounted) {
         setState(
             () => otaMessage = 'Firmware uploaded. The device is restarting.');
@@ -1352,7 +1338,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
     } catch (error) {
       if (mounted) setState(() => otaMessage = '$error');
     } finally {
-      client.close(force: true);
       if (mounted) setState(() => otaInstallInProgress = false);
     }
   }
