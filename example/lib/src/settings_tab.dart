@@ -447,29 +447,27 @@ class SettingsScreen extends StatefulWidget {
                   ),
                 ],
               ),
-              if (activeConnection == EdgezConnectionType.ble) ...<Widget>[
+              ...<Widget>[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: <Widget>[
-                    OutlinedButton(
-                      onPressed:
-                          meshStatus?.firmwareVersion.isNotEmpty == true &&
-                                  !otaCheckInProgress &&
-                                  !otaInProgress
-                              ? () => unawaited(
-                                    Future<void>.value(
-                                      onCheckForOtaUpdate(),
-                                    ),
-                                  )
-                              : null,
-                      child: Text(
-                        otaCheckInProgress
-                            ? l10n.checking
-                            : l10n.checkForUpdate,
+                    if (!otaUpdateAvailable)
+                      OutlinedButton(
+                        onPressed: !otaCheckInProgress && !otaInProgress
+                            ? () => unawaited(
+                                  Future<void>.value(
+                                    onCheckForOtaUpdate(),
+                                  ),
+                                )
+                            : null,
+                        child: Text(
+                          otaCheckInProgress
+                              ? l10n.checking
+                              : l10n.checkForUpdate,
+                        ),
                       ),
-                    ),
                     if (otaUpdateAvailable)
                       FilledButton(
                         onPressed: !otaInProgress && otaReady
@@ -493,7 +491,9 @@ class SettingsScreen extends StatefulWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
-                if (otaUpdateAvailable && !otaReady) ...<Widget>[
+                if (otaUpdateAvailable &&
+                    !otaReady &&
+                    activeConnection != EdgezConnectionType.none) ...<Widget>[
                   const SizedBox(height: 4),
                   Text(
                     l10n.otaUnsupported,

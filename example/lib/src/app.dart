@@ -1616,10 +1616,12 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   meshStatus: meshState.status,
                   bleAutoConnect: bleAutoConnect,
                   statusLine: meshState.statusLine,
-                  otaUpdateAvailable: otaRelease?.isNewerThan(
-                        meshState.status?.firmwareVersion ?? '',
-                      ) ??
-                      false,
+                  otaUpdateAvailable:
+                      meshState.status?.firmwareVersion.isNotEmpty == true &&
+                          (otaRelease?.isNewerThan(
+                                meshState.status!.firmwareVersion,
+                              ) ??
+                              false),
                   otaReady: meshState.otaReady,
                   otaCheckInProgress: otaCheckInProgress,
                   otaInProgress:

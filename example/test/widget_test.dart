@@ -355,6 +355,14 @@ void main() {
 
     expect(find.text('Selected device'), findsOneWidget);
     expect(find.text('No device selected'), findsOneWidget);
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'Check for update'),
+          )
+          .onPressed,
+      isNotNull,
+    );
     expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
     await tester.tap(find.widgetWithText(OutlinedButton, 'Select'));
     await tester.pump(const Duration(milliseconds: 100));

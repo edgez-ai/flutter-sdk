@@ -23,6 +23,9 @@ import kotlin.math.sqrt
 private const val CALL_SAMPLE_RATE = 8_000
 private const val CALL_FRAME_MS = 40
 private const val CALL_SAMPLES_PER_FRAME = CALL_SAMPLE_RATE * CALL_FRAME_MS / 1_000
+// Two-bit adaptive PCM keeps the live PTT stream near 17 kbit/s including its
+// per-frame predictor header. The previous four-bit frames were about 33 kbit/s.
+private const val LOW_BITRATE_ADPCM_MARKER = 0x22
 private const val PLAYBACK_PREFILL_FRAMES = 2
 private const val PLAYBACK_REPRIME_GAP_MS = CALL_FRAME_MS * 4L
 
@@ -98,11 +101,11 @@ internal class EdgezLiveVoiceAudio(
                     ) {
                         val decision = voiceDetector.analyze(pcm)
                         if (decision.speechStarted) {
-                            preRollFrame?.let { frame -> onEncodedFrame(encodeImaAdpcm(frame)) }
+                            preRollFrame?.let { frame -> onEncodedFrame(encodeLowBitrateAdpcm(frame)) }
                             preRollFrame = null
                         }
                         if (decision.shouldSend) {
-                            onEncodedFrame(encodeImaAdpcm(pcm))
+                            onEncodedFrame(encodeLowBitrateAdpcm(pcm))
                         } else {
                             preRollFrame = pcm.copyOf()
                         }
@@ -134,7 +137,9 @@ internal class EdgezLiveVoiceAudio(
 
     @Synchronized
     fun play(encoded: ByteArray) {
-        val pcm = decodeImaAdpcm(encoded, CALL_SAMPLES_PER_FRAME) ?: return
+        // Accept both the new two-bit frames and legacy four-bit IMA ADPCM so
+        // rolling SDK upgrades can still receive an older peer's audio.
+        val pcm = decodeLiveVoiceAdpcm(encoded, CALL_SAMPLES_PER_FRAME) ?: return
         configureCallAudio()
         val track = player ?: buildPlaybackTrack().also { player = it }
         val now = SystemClock.elapsedRealtime()
@@ -322,6 +327,7 @@ private class VoiceActivityDetector(
 private val IMA_INDEX_TABLE = intArrayOf(
     -1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8,
 )
+private val LOW_BITRATE_INDEX_TABLE = intArrayOf(-1, 2, -1, 2)
 private val IMA_STEP_TABLE = intArrayOf(
     7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31,
     34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143,
@@ -332,35 +338,86 @@ private val IMA_STEP_TABLE = intArrayOf(
     27086, 29794, 32767,
 )
 
-private fun encodeImaAdpcm(samples: ShortArray): ByteArray {
+/**
+ * Encodes four samples per byte using a two-bit adaptive differential code.
+ *
+ * Each code contains one sign bit and one magnitude bit. The predictor and
+ * step-index header let every 40 ms packet decode independently, which is
+ * important because realtime mesh traffic is intentionally allowed to drop
+ * stale packets under congestion.
+ */
+private fun encodeLowBitrateAdpcm(samples: ShortArray): ByteArray {
     if (samples.isEmpty()) return ByteArray(0)
     var predictor = samples[0].toInt()
     val probes = minOf(samples.size - 1, 16)
     val averageDelta = if (probes > 0) {
-        (1..probes).sumOf { kotlin.math.abs(samples[it].toInt() - samples[it - 1].toInt()) } / probes
+        (1..probes).sumOf {
+            kotlin.math.abs(samples[it].toInt() - samples[it - 1].toInt())
+        } / probes
     } else 0
     var stepIndex = IMA_STEP_TABLE.indexOfFirst { it >= averageDelta }
         .let { if (it < 0) IMA_STEP_TABLE.lastIndex else it }
-    val output = ByteArray(4 + samples.size / 2)
+    val packedSampleCount = samples.size - 1
+    val output = ByteArray(4 + (packedSampleCount + 3) / 4)
     output[0] = predictor.toByte()
     output[1] = (predictor shr 8).toByte()
     output[2] = stepIndex.toByte()
+    output[3] = LOW_BITRATE_ADPCM_MARKER.toByte()
     for (sampleIndex in 1 until samples.size) {
         val step = IMA_STEP_TABLE[stepIndex]
         var difference = samples[sampleIndex].toInt() - predictor
         var code = 0
-        if (difference < 0) { code = 8; difference = -difference }
-        var delta = step shr 3
-        if (difference >= step) { code = code or 4; difference -= step; delta += step }
-        if (difference >= step shr 1) { code = code or 2; difference -= step shr 1; delta += step shr 1 }
-        if (difference >= step shr 2) { code = code or 1; delta += step shr 2 }
-        predictor = (predictor + if (code and 8 != 0) -delta else delta)
+        if (difference < 0) {
+            code = 2
+            difference = -difference
+        }
+        var delta = step shr 1
+        if (difference >= step) {
+            code = code or 1
+            delta += step
+        }
+        predictor = (predictor + if (code and 2 != 0) -delta else delta)
             .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-        stepIndex = (stepIndex + IMA_INDEX_TABLE[code]).coerceIn(0, IMA_STEP_TABLE.lastIndex)
-        val nibble = sampleIndex - 1
-        val index = 4 + nibble / 2
-        output[index] = if (nibble and 1 == 0) code.toByte()
-        else (output[index].toInt() or (code shl 4)).toByte()
+        stepIndex = (stepIndex + LOW_BITRATE_INDEX_TABLE[code])
+            .coerceIn(0, IMA_STEP_TABLE.lastIndex)
+        val packedIndex = sampleIndex - 1
+        val byteIndex = 4 + packedIndex / 4
+        val shift = (packedIndex and 3) * 2
+        output[byteIndex] = (output[byteIndex].toInt() or (code shl shift)).toByte()
+    }
+    return output
+}
+
+private fun decodeLiveVoiceAdpcm(bytes: ByteArray, sampleCount: Int): ShortArray? {
+    return if (bytes.size >= 4 &&
+        (bytes[3].toInt() and 0xff) == LOW_BITRATE_ADPCM_MARKER
+    ) {
+        decodeLowBitrateAdpcm(bytes, sampleCount)
+    } else {
+        decodeImaAdpcm(bytes, sampleCount)
+    }
+}
+
+private fun decodeLowBitrateAdpcm(bytes: ByteArray, sampleCount: Int): ShortArray? {
+    if (sampleCount <= 0 || bytes.size < 4 + sampleCount / 4) return null
+    var predictor = ((bytes[0].toInt() and 0xff) or (bytes[1].toInt() shl 8))
+        .toShort().toInt()
+    var stepIndex = bytes[2].toInt() and 0xff
+    if (stepIndex > IMA_STEP_TABLE.lastIndex) return null
+    val output = ShortArray(sampleCount)
+    output[0] = predictor.toShort()
+    for (sampleIndex in 1 until sampleCount) {
+        val packedIndex = sampleIndex - 1
+        val packed = bytes[4 + packedIndex / 4].toInt() and 0xff
+        val code = (packed shr ((packedIndex and 3) * 2)) and 0x03
+        val step = IMA_STEP_TABLE[stepIndex]
+        var delta = step shr 1
+        if (code and 1 != 0) delta += step
+        predictor = (predictor + if (code and 2 != 0) -delta else delta)
+            .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+        stepIndex = (stepIndex + LOW_BITRATE_INDEX_TABLE[code])
+            .coerceIn(0, IMA_STEP_TABLE.lastIndex)
+        output[sampleIndex] = predictor.toShort()
     }
     return output
 }
