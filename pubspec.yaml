@@ -1,12 +1,11 @@
 name: edgez_flutter_sdk
-description: Android Flutter SDK for EdgeZ HaLow mesh devices, BLE transport, encrypted messaging, voice calls, provisioning, and OTA updates.
+description: Android Flutter SDK for EdgeZ HaLow mesh devices, Wi-Fi transport, encrypted messaging, voice calls, provisioning, and OTA updates.
 version: 0.3.1
 homepage: https://www.edgez.ai
 repository: https://github.com/edgez-ai/flutter-sdk
 issue_tracker: https://github.com/edgez-ai/flutter-sdk/issues
 topics:
-  - bluetooth
-  - ble
+  - wifi
   - mesh
   - halow
   - iot

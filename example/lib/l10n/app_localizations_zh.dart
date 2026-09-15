@@ -536,7 +536,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get otaUnsupported => '当前连接的固件尚不支持 OTA。';
+  String get otaUnsupported => '当前连接的固件尚不支持 BLE OTA。';
 
   @override
   String identifier(String value) {

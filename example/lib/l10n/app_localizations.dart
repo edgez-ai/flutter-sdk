@@ -1147,7 +1147,7 @@ abstract class AppLocalizations {
   /// No description provided for @otaUnsupported.
   ///
   /// In en, this message translates to:
-  /// **'This connected firmware does not expose OTA yet.'**
+  /// **'This connected firmware does not expose BLE OTA yet.'**
   String get otaUnsupported;
 
   /// No description provided for @identifier.

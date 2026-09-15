@@ -115,10 +115,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
   List<ExampleDriver> drivers = ExampleDriverCatalog.bundled;
   MarketplaceDriverInstallRequest? pendingDriverInstall;
   bool bleAutoConnect = false;
-  EdgezPreferredTransport preferredTransport = EdgezPreferredTransport.wifi;
+  EdgezPreferredTransport preferredTransport = EdgezPreferredTransport.ble;
   EdgezBleDevice? selectedBleDevice;
-  List<EdgezWifiNetwork> wifiNetworks = const <EdgezWifiNetwork>[];
-  EdgezWifiNetwork? selectedWifiNetwork;
   List<EdgezUsbDevice> usbDevices = const <EdgezUsbDevice>[];
   EdgezUsbDevice? selectedUsbDevice;
   EdgezOtaRelease? otaRelease;
@@ -496,11 +494,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       selectedBleDevice = preferredTransport == EdgezPreferredTransport.ble
           ? bleConfiguration.selectedDevice
           : null;
-      selectedWifiNetwork =
-          preferredTransport == EdgezPreferredTransport.wifi &&
-                  bleConfiguration.hasSelectedWifiNetwork
-              ? EdgezWifiNetwork(ssid: bleConfiguration.wifiSsid, rssi: 0)
-              : null;
       usbDevices = attachedUsbDevices;
       selectedUsbDevice = restoredUsbDevice;
       bleAutoConnect = bleConfiguration.autoConnect;
@@ -516,13 +509,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         bleConfiguration.autoConnect &&
         bleConfiguration.hasSelectedDevice) {
       await _connectBleDevice(bleConfiguration.deviceId);
-    } else if (bleConfiguration.preferredTransport ==
-            EdgezPreferredTransport.wifi &&
-        bleConfiguration.autoConnect &&
-        bleConfiguration.hasSelectedWifiNetwork) {
-      await _connectWifi(
-        network: EdgezWifiNetwork(ssid: bleConfiguration.wifiSsid, rssi: 0),
-      );
     }
   }
 
@@ -771,46 +757,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         .setPreferredTransport(EdgezPreferredTransport.ble);
     if (mounted) setState(() {});
     await session.startBleScan();
-  }
-
-  Future<void> _connectWifi({EdgezWifiNetwork? network}) async {
-    final target = network ?? selectedWifiNetwork;
-    if (target == null) {
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        const SnackBar(content: Text('Select an EdgeZ-* Wi-Fi network first')),
-      );
-      return;
-    }
-    await _saveAppSettings();
-    await bleConfigurationStore.saveSelectedWifiNetwork(target);
-    preferredTransport = EdgezPreferredTransport.wifi;
-    selectedWifiNetwork = target;
-    selectedBleDevice = null;
-    selectedUsbDevice = null;
-    await bleConfigurationStore
-        .setPreferredTransport(EdgezPreferredTransport.wifi);
-    if (mounted) setState(() {});
-    try {
-      await session.connectWifi(ssid: target.ssid);
-    } catch (error) {
-      if (!mounted) return;
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('Wi-Fi connection failed: $error')),
-      );
-    }
-  }
-
-  Future<void> _refreshWifiNetworks() async {
-    try {
-      final networks = await session.sdk.listWifiNetworks();
-      if (!mounted) return;
-      setState(() => wifiNetworks = networks);
-    } catch (error) {
-      if (!mounted) return;
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('Wi-Fi scan failed: $error')),
-      );
-    }
   }
 
   Future<void> _stopBleScan() async {
@@ -1181,47 +1127,11 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
         deviceType: deviceType,
         sleepModeEnabled: deviceSleepModeEnabled,
         deviceGpsEnabled: deviceGpsEnabled,
-        wifiSoftapEnabled:
-            session.state.deviceSettings?.wifiSoftapEnabled ?? true,
-        bleEnabled: session.state.deviceSettings?.bleEnabled ?? true,
         meshFrequencyKhz: defaultMeshFrequencyKhz,
         meshBandwidthMhz: meshBandwidthMhz,
       ),
       scripts: scripts,
     );
-  }
-
-  Future<void> _setControlTransports({
-    bool? wifiSoftapEnabled,
-    bool? bleEnabled,
-  }) async {
-    final current = session.state.deviceSettings;
-    if (current == null) {
-      await session.requestDeviceSettings();
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        const SnackBar(content: Text('Reading device connection settings')),
-      );
-      return;
-    }
-    final updated = current.copyWith(
-      wifiSoftapEnabled: wifiSoftapEnabled,
-      bleEnabled: bleEnabled,
-    );
-    if (!updated.wifiSoftapEnabled && !updated.bleEnabled) {
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        const SnackBar(
-          content: Text('Wi-Fi SoftAP or Bluetooth LE must remain enabled'),
-        ),
-      );
-      return;
-    }
-    try {
-      await session.sendDeviceSettings(updated);
-    } catch (error) {
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('Unable to update connection radios: $error')),
-      );
-    }
   }
 
   Future<void> _refreshDeviceLocation() async {
@@ -1407,7 +1317,7 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
       return;
     }
     if (!session.state.otaReady) {
-      setState(() => otaMessage = 'Reconnect to a device with OTA support');
+      setState(() => otaMessage = 'Reconnect to a device with BLE OTA support');
       return;
     }
     setState(() {
@@ -1713,11 +1623,9 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   voiceTargetLanguages: supportedVoiceTranslationLanguages,
                   deviceModeEnabled: deviceModeEnabled,
                   bleDevices: meshState.sortedBleDevices,
-                  wifiNetworks: wifiNetworks,
                   usbDevices: usbDevices,
                   drivers: drivers,
                   selectedBleDevice: selectedBleDevice,
-                  selectedWifiNetwork: selectedWifiNetwork,
                   selectedUsbDevice: selectedUsbDevice,
                   usbLinkStats: meshState.usbLinkStats,
                   meshStatus: meshState.status,
@@ -1765,14 +1673,8 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                   deviceType: deviceType,
                   devicePassphrase: devicePassphrase,
                   deviceSleepModeEnabled: deviceSleepModeEnabled,
-                  wifiSoftapEnabled:
-                      meshState.deviceSettings?.wifiSoftapEnabled ?? true,
-                  bleEnabled: meshState.deviceSettings?.bleEnabled ?? true,
                   logLevel: deviceLogLevel,
                   onConnectBle: _connectBle,
-                  onConnectWifiNetwork: (network) =>
-                      unawaited(_connectWifi(network: network)),
-                  onRefreshWifiNetworks: _refreshWifiNetworks,
                   onStopBleScan: _stopBleScan,
                   onConnectBleDevice: _connectBleDevice,
                   onSelectBleDevice: (device) {
@@ -1885,12 +1787,6 @@ class _EdgezExampleAppState extends State<EdgezExampleApp>
                       setState(() => devicePassphrase = value),
                   onDeviceSleepModeChanged: (value) =>
                       setState(() => deviceSleepModeEnabled = value),
-                  onWifiSoftapEnabledChanged: (value) => unawaited(
-                    _setControlTransports(wifiSoftapEnabled: value),
-                  ),
-                  onBleEnabledChanged: (value) => unawaited(
-                    _setControlTransports(bleEnabled: value),
-                  ),
                   onLogLevelChanged: (level) =>
                       unawaited(_setDeviceLogLevel(level)),
                 ),

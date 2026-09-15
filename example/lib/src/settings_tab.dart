@@ -68,11 +68,9 @@ class SettingsScreen extends StatefulWidget {
     required this.voiceTargetLanguages,
     required this.deviceModeEnabled,
     required this.bleDevices,
-    required this.wifiNetworks,
     required this.usbDevices,
     required this.drivers,
     required this.selectedBleDevice,
-    required this.selectedWifiNetwork,
     required this.selectedUsbDevice,
     required this.usbLinkStats,
     required this.meshStatus,
@@ -112,12 +110,8 @@ class SettingsScreen extends StatefulWidget {
     required this.deviceType,
     required this.devicePassphrase,
     required this.deviceSleepModeEnabled,
-    required this.wifiSoftapEnabled,
-    required this.bleEnabled,
     required this.logLevel,
     required this.onConnectBle,
-    required this.onConnectWifiNetwork,
-    required this.onRefreshWifiNetworks,
     required this.onStopBleScan,
     required this.onConnectBleDevice,
     required this.onSelectBleDevice,
@@ -162,8 +156,6 @@ class SettingsScreen extends StatefulWidget {
     required this.onDeviceTypeChanged,
     required this.onDevicePassphraseChanged,
     required this.onDeviceSleepModeChanged,
-    required this.onWifiSoftapEnabledChanged,
-    required this.onBleEnabledChanged,
     required this.onLogLevelChanged,
     super.key,
   });
@@ -179,11 +171,9 @@ class SettingsScreen extends StatefulWidget {
   final List<String> voiceTargetLanguages;
   final bool deviceModeEnabled;
   final List<EdgezBleDevice> bleDevices;
-  final List<EdgezWifiNetwork> wifiNetworks;
   final List<EdgezUsbDevice> usbDevices;
   final List<ExampleDriver> drivers;
   final EdgezBleDevice? selectedBleDevice;
-  final EdgezWifiNetwork? selectedWifiNetwork;
   final EdgezUsbDevice? selectedUsbDevice;
   final EdgezUsbLinkStats usbLinkStats;
   final EdgezMeshStatus? meshStatus;
@@ -223,12 +213,8 @@ class SettingsScreen extends StatefulWidget {
   final String deviceType;
   final String devicePassphrase;
   final bool deviceSleepModeEnabled;
-  final bool wifiSoftapEnabled;
-  final bool bleEnabled;
   final EdgezDeviceLogLevel logLevel;
   final VoidCallback onConnectBle;
-  final ValueChanged<EdgezWifiNetwork> onConnectWifiNetwork;
-  final Future<void> Function() onRefreshWifiNetworks;
   final VoidCallback onStopBleScan;
   final ValueChanged<String> onConnectBleDevice;
   final ValueChanged<EdgezBleDevice> onSelectBleDevice;
@@ -273,8 +259,6 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<String> onDeviceTypeChanged;
   final ValueChanged<String> onDevicePassphraseChanged;
   final ValueChanged<bool> onDeviceSleepModeChanged;
-  final ValueChanged<bool> onWifiSoftapEnabledChanged;
-  final ValueChanged<bool> onBleEnabledChanged;
   final ValueChanged<EdgezDeviceLogLevel> onLogLevelChanged;
 
   @override
@@ -364,19 +348,9 @@ class SettingsScreen extends StatefulWidget {
                           l10n.selectedDevice,
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
-                        Text(switch (activeConnection) {
-                          EdgezConnectionType.wifi =>
-                            selectedWifiNetwork?.ssid ?? 'EdgeZ Wi-Fi SoftAP',
-                          EdgezConnectionType.usb =>
-                            selectedUsbDevice?.label ?? 'ESP32-S3 USB',
-                          EdgezConnectionType.ble =>
-                            selectedBle?.label ?? l10n.noDeviceSelected,
-                          EdgezConnectionType.none =>
-                            selectedUsbDevice?.label ??
-                                selectedBle?.label ??
-                                selectedWifiNetwork?.ssid ??
-                                'EdgeZ Wi-Fi SoftAP',
-                        }),
+                        Text(activeConnection == EdgezConnectionType.usb
+                            ? selectedUsbDevice?.label ?? 'ESP32-S3 USB'
+                            : selectedBle?.label ?? l10n.noDeviceSelected),
                         if (activeConnection != EdgezConnectionType.usb &&
                             selectedBle != null)
                           Text(
@@ -385,8 +359,6 @@ class SettingsScreen extends StatefulWidget {
                           ),
                         Text(
                           switch (activeConnection) {
-                            EdgezConnectionType.wifi =>
-                              'Wi-Fi connected; control channel ready',
                             EdgezConnectionType.usb => l10n.usbConnected,
                             EdgezConnectionType.ble => bleReady
                                 ? l10n.bleControlReady
@@ -440,9 +412,7 @@ class SettingsScreen extends StatefulWidget {
                                     )) {
                                       (_, true, _) => l10n.waitingBle,
                                       (EdgezConnectionType.none, false, _) =>
-                                        'Connect over Wi-Fi, BLE, or USB',
-                                      (EdgezConnectionType.wifi, false, _) =>
-                                        l10n.waitingDeviceStatus,
+                                        l10n.connectBleDevice,
                                       (EdgezConnectionType.ble, false, false) =>
                                         l10n.waitingBleControl,
                                       (EdgezConnectionType.ble, false, true) =>
@@ -464,15 +434,9 @@ class SettingsScreen extends StatefulWidget {
                         ? null
                         : activeConnection != EdgezConnectionType.none
                             ? onDisconnect
-                            : selectedUsbDevice != null
-                                ? () => onConnectUsbDevice(selectedUsbDevice!)
-                                : selectedBle != null
-                                    ? () => onConnectBleDevice(selectedBle.id)
-                                    : selectedWifiNetwork != null
-                                        ? () => onConnectWifiNetwork(
-                                              selectedWifiNetwork!,
-                                            )
-                                        : onSelectBle,
+                            : selectedBle == null
+                                ? null
+                                : () => onConnectBleDevice(selectedBle.id),
                     child: Text(
                       bleConnecting
                           ? l10n.connecting
@@ -483,7 +447,7 @@ class SettingsScreen extends StatefulWidget {
                   ),
                 ],
               ),
-              if (activeConnection != EdgezConnectionType.none) ...<Widget>[
+              if (activeConnection == EdgezConnectionType.ble) ...<Widget>[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
@@ -835,35 +799,6 @@ class SettingsScreen extends StatefulWidget {
               ),
             ),
           ],
-          if (selectedTab == _SettingsTab.others) ...<Widget>[
-            cardGap,
-            InfoCard(
-              title: 'Connection radios',
-              children: <Widget>[
-                const Text(
-                  'Keep at least one connection method enabled so the device remains reachable.',
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Wi-Fi SoftAP'),
-                  subtitle: const Text('Advertise the EdgeZ-* Wi-Fi network'),
-                  value: wifiSoftapEnabled,
-                  onChanged: wifiSoftapEnabled && !bleEnabled
-                      ? null
-                      : onWifiSoftapEnabledChanged,
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Bluetooth LE'),
-                  subtitle: const Text('Allow BLE connections and BLE OTA'),
-                  value: bleEnabled,
-                  onChanged: bleEnabled && !wifiSoftapEnabled
-                      ? null
-                      : onBleEnabledChanged,
-                ),
-              ],
-            ),
-          ],
           if (!deviceModeEnabled &&
               selectedTab == _SettingsTab.others) ...<Widget>[
             cardGap,
@@ -951,8 +886,6 @@ class SettingsScreen extends StatefulWidget {
     required ValueChanged<EdgezBleDevice> onSelectBle,
     required ValueChanged<EdgezUsbDevice> onSelectUsb,
     required Future<void> Function() onRefreshUsb,
-    required ValueChanged<EdgezWifiNetwork> onConnectWifi,
-    required Future<void> Function() onRefreshWifi,
   }) {
     return SafeArea(
       child: ListView(
@@ -967,55 +900,10 @@ class SettingsScreen extends StatefulWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'Select connection',
+                AppLocalizations.of(context).selectBleOrUsb,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const Spacer(),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(statusLine, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 12),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'Wi-Fi',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                onPressed: () => unawaited(onRefreshWifi()),
-                tooltip: 'Refresh Wi-Fi networks',
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          if (wifiNetworks.isEmpty)
-            const Text('No EdgeZ-* Wi-Fi networks found')
-          else
-            for (final network in wifiNetworks) ...<Widget>[
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.wifi),
-                  title: Text(network.ssid),
-                  subtitle: Text('RSSI ${network.rssi}'),
-                  trailing: const Icon(Icons.arrow_forward),
-                  onTap: () => onConnectWifi(network),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-          const SizedBox(height: 12),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'USB',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
               IconButton(
                 onPressed: () => unawaited(onRefreshUsb()),
                 tooltip: AppLocalizations.of(context).refreshUsb,
@@ -1023,6 +911,10 @@ class SettingsScreen extends StatefulWidget {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Text(statusLine, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 12),
+          Text('USB', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           if (usbDevices.isEmpty)
             Text(AppLocalizations.of(context).noUsbDevices)
@@ -1135,12 +1027,6 @@ class _SettingsScreenState extends State<SettingsScreen>
           setState(() => _showDeviceSelection = false);
         },
         onRefreshUsb: widget.onRefreshUsbDevices,
-        onRefreshWifi: widget.onRefreshWifiNetworks,
-        onConnectWifi: (network) {
-          widget.onStopBleScan();
-          widget.onConnectWifiNetwork(network);
-          setState(() => _showDeviceSelection = false);
-        },
       );
     }
     return widget._buildContent(
@@ -1153,7 +1039,6 @@ class _SettingsScreenState extends State<SettingsScreen>
       onSelectBle: () {
         widget.onConnectBle();
         widget.onRefreshUsbDevices();
-        widget.onRefreshWifiNetworks();
         setState(() => _showDeviceSelection = true);
       },
     );
