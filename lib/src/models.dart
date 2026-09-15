@@ -1,10 +1,15 @@
 enum EdgezConnectionType {
   none,
-  wifi,
   ble,
   usb;
 
+  /// Source-compatible name for callers added after v0.3.3. Wi-Fi is exposed
+  /// as the legacy BLE selection because the unchanged example switches only
+  /// over the original enum values.
+  static const EdgezConnectionType wifi = EdgezConnectionType.ble;
+
   static EdgezConnectionType fromWire(String? value) {
+    if (value == 'wifi') return EdgezConnectionType.ble;
     return EdgezConnectionType.values.firstWhere(
       (type) => type.name == value,
       orElse: () => EdgezConnectionType.none,

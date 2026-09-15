@@ -286,6 +286,8 @@ class EdgezMeshSession extends ChangeNotifier {
   var _initRetryRequested = false;
   var _bleRecoveryInFlight = false;
   var _bleStatusReconnectAttempts = 0;
+  // The v0.3.3-facing API retains BLE names, but those calls now open Wi-Fi.
+  var _wifiTransportRequested = false;
   String? _lastBleDeviceId;
   var _locationUpdateInFlight = false;
   var _publicChannelSyncInFlight = false;
@@ -720,6 +722,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _halowBootRetryTimer?.cancel();
     _halowBootRetryTimer = null;
     _lastBleDeviceId = deviceId;
+    _wifiTransportRequested = true;
     _bleStatusReconnectAttempts = 0;
     // SDK release authorization lives in firmware RAM. A reconnect may follow
     // a device reset, so the init/auth packet must be sent again even when the
@@ -772,6 +775,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _halowBootRetryTimer?.cancel();
     _halowBootRetryTimer = null;
     _lastInitKey = null;
+    _wifiTransportRequested = true;
     if (_state.connection != EdgezConnectionType.none) {
       await sdk.disconnect();
     }
@@ -806,6 +810,7 @@ class EdgezMeshSession extends ChangeNotifier {
     // Opening a CP2102 commonly resets the ESP32. Never reuse initialization
     // deduplication state from BLE or an earlier USB connection.
     _lastInitKey = null;
+    _wifiTransportRequested = false;
     _recordAppDiagnostic(
       EdgezDeviceLogLevel.debug,
       'USB reconnect requested device=${device.id} previous=${_state.connection.name}',
@@ -1393,10 +1398,8 @@ class EdgezMeshSession extends ChangeNotifier {
                 ? const EdgezVoiceCallState()
                 : _state.voiceCall,
             statusLine: switch (event.connection) {
-              EdgezConnectionType.wifi =>
-                'Wi-Fi link connected; setting up control channel',
               EdgezConnectionType.ble =>
-                'BLE link connected; setting up control channel',
+                'Device Wi-Fi connected; setting up control channel',
               EdgezConnectionType.usb => 'USB high-speed link connected',
               EdgezConnectionType.none => 'Device disconnected',
             },
@@ -1426,7 +1429,7 @@ class EdgezMeshSession extends ChangeNotifier {
         _setState(_state.copyWith(
           statusLine: _state.connection == EdgezConnectionType.usb
               ? 'USB protocol ready; initializing mesh'
-              : '${_state.connection == EdgezConnectionType.wifi ? 'Wi-Fi' : 'BLE'} control channel ready; requesting device status',
+              : 'Device Wi-Fi control channel ready; requesting device status',
           bleReady: true,
           clearStatus: true,
         ));
@@ -1440,7 +1443,7 @@ class EdgezMeshSession extends ChangeNotifier {
         unawaited(_applyConfiguredDeviceLogLevel());
         if (!_provisioning) {
           if (_state.connection == EdgezConnectionType.usb ||
-              _state.connection == EdgezConnectionType.wifi) {
+              _wifiTransportRequested) {
             unawaited(_authorizeAndInitializeStream());
           } else {
             // A fast native reconnect does not always expose the intermediate
@@ -2779,9 +2782,7 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> _authorizeAndInitializeStream() async {
-    final transport = _state.connection == EdgezConnectionType.wifi
-        ? 'Wi-Fi'
-        : 'USB';
+    final transport = _wifiTransportRequested ? 'Wi-Fi' : 'USB';
     try {
       _setState(
         _state.copyWith(statusLine: 'Authorizing SDK release over $transport'),
@@ -2924,7 +2925,7 @@ class EdgezMeshSession extends ChangeNotifier {
         _recordAppDiagnostic(
           EdgezDeviceLogLevel.warning,
           'HaLow remains uninitialized; retrying INIT over '
-              '${_state.connection.name.toUpperCase()}',
+          '${_state.connection.name.toUpperCase()}',
         );
         unawaited(_sendInitIfReady(force: true));
       }

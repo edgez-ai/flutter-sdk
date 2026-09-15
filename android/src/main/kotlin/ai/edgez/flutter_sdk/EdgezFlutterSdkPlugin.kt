@@ -1157,7 +1157,9 @@ class EdgezFlutterSdkPlugin :
                 startWifiWriter(socket)
                 startWifiReader(socket)
                 mainHandler.post {
-                    emit(mapOf("type" to "connection", "connection" to "wifi"))
+                    // Keep the v0.3.3 public connection enum source-compatible.
+                    // The underlying transport is Wi-Fi; "ble" is only its legacy UI label.
+                    emit(mapOf("type" to "connection", "connection" to "ble"))
                     emit(mapOf("type" to "ready", "mtu" to EDGEZ_MAX_PAYLOAD))
                     emit(
                         mapOf(
