@@ -218,7 +218,12 @@ void main() {
   });
 
   test('release metadata keeps compatibility and release identity', () {
-    expect(EdgezSdkReleaseCredential.current.signature, isEmpty);
+    expect(EdgezSdkReleaseCredential.current.compatibility, '^0.5.0');
+    expect(
+      EdgezSdkReleaseCredential.current.releaseId,
+      'edgez_flutter_sdk@0.4.0',
+    );
+    expect(EdgezSdkReleaseCredential.current.signature, hasLength(64));
     expect(
       _testReleaseCredential.signingPayload,
       'EDGEZ-FLUTTER-SDK-RELEASE-V1:'
