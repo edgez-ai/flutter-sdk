@@ -3008,136 +3008,46 @@ class EdgezFlutterSdkPlugin :
         }
     }
 
-    @SuppressLint("MissingPermission")
     private fun startBleScan(result: MethodChannel.Result) {
-        if (requestBlePermissions(result)) return
-        val adapter = bluetoothAdapter
-        if (adapter == null) {
-            result.error("ble_unavailable", "Bluetooth unavailable", null)
-            return
-        }
-        if (!adapter.isEnabled) {
-            result.error("ble_disabled", "Bluetooth is disabled", null)
-            return
-        }
-        val scanner = adapter.bluetoothLeScanner
-        if (scanner == null) {
-            result.error("ble_scanner_unavailable", "BLE scanner unavailable", null)
-            return
-        }
-        if (!isLocationEnabled()) {
-            emit(mapOf("type" to "log", "log" to "Location services are off; Android may hide BLE scan results"))
-        }
-
-        stopBleScan()
-        devices.clear()
-        val generation = ++scanGeneration
-        val callback = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, scanResult: ScanResult) {
-                publishScanResult(scanResult)
-            }
-
-            override fun onBatchScanResults(results: MutableList<ScanResult>) {
-                results.forEach(::publishScanResult)
-            }
-
-            override fun onScanFailed(errorCode: Int) {
-                emit(mapOf("type" to "log", "log" to "BLE scan failed=$errorCode"))
-            }
-        }
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-        val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(EDGEZ_SERVICE_UUID))
-            .build()
-        scanCallback = callback
-        scanner.startScan(listOf(filter), settings, callback)
-        emit(mapOf("type" to "log", "log" to "BLE scan started for EdgeZ service $EDGEZ_SERVICE_UUID"))
+        if (requestWifiPermissions(result)) return
+        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        @Suppress("DEPRECATION")
+        wifi.startScan()
         mainHandler.postDelayed({
-            if (scanCallback == callback && scanGeneration == generation && devices.isEmpty()) {
-                emit(
-                    mapOf(
-                        "type" to "log",
-                        "log" to "BLE scan is running but no EdgeZ advertisements were received. Check permissions, Location services, and that the device advertises $EDGEZ_SERVICE_UUID.",
-                    ),
-                )
+            runCatching {
+                @Suppress("DEPRECATION")
+                wifi.scanResults
+                    .asSequence()
+                    .filter { it.SSID.startsWith("EdgeZ-") }
+                    .groupBy { it.SSID }
+                    .map { (ssid, scans) -> ssid to (scans.maxOfOrNull { it.level } ?: 0) }
+                    .sortedBy { it.first }
+            }.onSuccess { networks ->
+                networks.forEach { (ssid, rssi) ->
+                    emit(
+                        mapOf(
+                            "type" to "bleDevice",
+                            "bleDevice" to mapOf(
+                                "id" to ssid,
+                                "name" to ssid,
+                                "rssi" to rssi,
+                                "lastSeenMs" to System.currentTimeMillis(),
+                            ),
+                        ),
+                    )
+                }
+                result.success(null)
+            }.onFailure { error ->
+                result.error("wifi_scan_failed", error.message ?: "Wi-Fi scan failed", null)
             }
-        }, 6000)
-        result.success(null)
+        }, 1_500L)
+        emit(mapOf("type" to "log", "log" to "Wi-Fi device scan started"))
     }
 
-    @SuppressLint("MissingPermission")
-    private fun publishScanResult(result: ScanResult) {
-        val serviceUuids = result.scanRecord?.serviceUuids.orEmpty()
-        if (serviceUuids.none { it.uuid == EDGEZ_SERVICE_UUID }) return
-        val device = result.device ?: return
-        val id = device.address ?: return
-        val name = result.scanRecord?.deviceName ?: device.name ?: ""
-        devices[id] = device
-        emit(
-            mapOf(
-                "type" to "bleDevice",
-                "bleDevice" to mapOf(
-                    "id" to id,
-                    "name" to name,
-                    "rssi" to result.rssi,
-                    "lastSeenMs" to System.currentTimeMillis(),
-                ),
-            ),
-        )
-    }
+    private fun stopBleScan() = Unit
 
-    @SuppressLint("MissingPermission")
-    private fun stopBleScan() {
-        val callback = scanCallback ?: return
-        if (hasBlePermissions()) {
-            bluetoothAdapter?.bluetoothLeScanner?.stopScan(callback)
-        }
-        scanCallback = null
-        scanGeneration += 1
-    }
-
-    @SuppressLint("MissingPermission")
     private fun connectBle(deviceId: String, result: MethodChannel.Result) {
-        if (!hasBlePermissions()) {
-            result.error("ble_permission_required", "BLE permission required", null)
-            return
-        }
-        val device = devices[deviceId] ?: bluetoothAdapter?.getRemoteDevice(deviceId)
-        if (device == null) {
-            result.error("ble_device_missing", "BLE device not found", null)
-            return
-        }
-        cancelPendingUsbConnection()
-        stopBleScan()
-        closeUsb(false)
-        closeWifi(false)
-        closeGatt()
-        runCatching {
-            EdgezBleForegroundService.start(context, "")
-        }.onFailure { error ->
-            emit(
-                mapOf(
-                    "type" to "log",
-                    "log" to "BLE background service could not start: ${error.message}",
-                ),
-            )
-        }
-        if (device.bondState != BluetoothDevice.BOND_BONDED) {
-            pendingBondDevice = device
-            emit(mapOf("type" to "log", "log" to "Starting BLE pairing ${device.address}"))
-            if (!device.createBond()) {
-                pendingBondDevice = null
-                EdgezBleForegroundService.stop(context)
-                result.error("ble_pairing_failed", "BLE pairing could not start", null)
-                return
-            }
-            result.success(null)
-            return
-        }
-        connectGatt(device)
-        result.success(null)
+        connectWifi(deviceId, "", WIFI_DEFAULT_PORT, result)
     }
 
     @SuppressLint("MissingPermission")
