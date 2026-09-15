@@ -1,3 +1,18 @@
+## 0.4.0
+
+- Added concurrent Android discovery for current Wi-Fi SoftAP devices and
+  legacy Bluetooth LE firmware without changing the example's scan flow.
+- Added transparent Wi-Fi connection routing while retaining legacy BLE
+  initialization, messaging, and FFF5 firmware OTA support.
+- Added Android firmware caching so update checks can download firmware before
+  connecting to an offline device SoftAP and install it from local storage.
+- Added acknowledged firmware OTA over the Wi-Fi control stream.
+- Reduced push-to-talk live-audio payload bitrate and retained legacy ADPCM
+  decoding, voice activity detection, and Android noise suppression.
+- Fixed the Android 14+ connected-device foreground service permission and
+  prevented an invalid foreground-service configuration from causing a crash
+  loop.
+
 ## 0.3.1
 
 - Added cross-channel discovery and channel switching support.
