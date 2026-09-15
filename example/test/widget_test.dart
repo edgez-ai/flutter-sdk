@@ -348,7 +348,7 @@ void main() {
     expect(find.text('Device connection'), findsOneWidget);
   });
 
-  testWidgets('connection selector offers BLE and USB devices', (tester) async {
+  testWidgets('connection selector offers device scan results', (tester) async {
     await tester.pumpWidget(const EdgezExampleApp());
     await tester.tap(find.text('Settings').last);
     await tester.pumpAndSettle();
@@ -358,7 +358,8 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
     await tester.tap(find.widgetWithText(OutlinedButton, 'Select'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Select BLE or USB device'), findsOneWidget);
+    expect(find.text('Select BLE device'), findsOneWidget);
+    expect(find.text('USB'), findsNothing);
     expect(find.text('Scanning for EdgeZ devices'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Back'));

@@ -501,12 +501,19 @@ void main() {
       expect(initPacket.init.meshFrequencyKhz, 866000);
       expect(ble.callsFor('sendPacket'), isNotEmpty);
       expect(
-        ble.callsFor('sendPacket').first.packet.deviceSettings.action,
-        DeviceSettingsAction.DEVICE_SETTINGS_GET,
+        ble.callsFor('sendPacket').first.argumentMap['label'],
+        'SDK license authorization',
       );
-      expect(ble.callsFor('sendPacket'), hasLength(1));
+      expect(
+        ble.callsFor('sendPacket').any(
+              (call) =>
+                  call.packet.deviceSettings.action ==
+                  DeviceSettingsAction.DEVICE_SETTINGS_GET,
+            ),
+        isTrue,
+      );
 
-      // Android can rebuild the writable GATT channel without exposing the
+      // Android can rebuild the writable Wi-Fi channel without exposing the
       // brief disconnected state to Dart. A new ready event must resend INIT
       // even though the mesh configuration is unchanged.
       ble.emitReady();

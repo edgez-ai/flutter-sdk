@@ -884,8 +884,6 @@ class SettingsScreen extends StatefulWidget {
     required EdgezBleDevice? selectedBleDevice,
     required VoidCallback onBack,
     required ValueChanged<EdgezBleDevice> onSelectBle,
-    required ValueChanged<EdgezUsbDevice> onSelectUsb,
-    required Future<void> Function() onRefreshUsb,
   }) {
     return SafeArea(
       child: ListView(
@@ -900,44 +898,13 @@ class SettingsScreen extends StatefulWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                AppLocalizations.of(context).selectBleOrUsb,
+                AppLocalizations.of(context).selectBleDevice,
                 style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: () => unawaited(onRefreshUsb()),
-                tooltip: AppLocalizations.of(context).refreshUsb,
-                icon: const Icon(Icons.refresh),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(statusLine, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 12),
-          Text('USB', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
-          if (usbDevices.isEmpty)
-            Text(AppLocalizations.of(context).noUsbDevices)
-          else ...<Widget>[
-            for (final device in usbDevices) ...<Widget>[
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.usb),
-                  title: Text(device.label),
-                  subtitle: Text(
-                    device.transport == 'tinyusb-cdc-uart'
-                        ? 'TinyUSB CDC · mobile ping/pong on data port 0'
-                        : 'High-speed wired transport',
-                  ),
-                  trailing: selectedUsbDevice?.id == device.id
-                      ? const Icon(Icons.check_circle)
-                      : null,
-                  onTap: () => onSelectUsb(device),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ],
           const SizedBox(height: 8),
           Row(
             children: <Widget>[
@@ -1021,12 +988,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             _showDeviceSelection = false;
           });
         },
-        onSelectUsb: (device) {
-          widget.onStopBleScan();
-          widget.onConnectUsbDevice(device);
-          setState(() => _showDeviceSelection = false);
-        },
-        onRefreshUsb: widget.onRefreshUsbDevices,
       );
     }
     return widget._buildContent(
@@ -1038,7 +999,6 @@ class _SettingsScreenState extends State<SettingsScreen>
       },
       onSelectBle: () {
         widget.onConnectBle();
-        widget.onRefreshUsbDevices();
         setState(() => _showDeviceSelection = true);
       },
     );
