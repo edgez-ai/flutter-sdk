@@ -85,6 +85,7 @@ class MockBleTransport implements EdgezPlatformTransport {
     required String id,
     required String name,
     int rssi = -60,
+    String transport = 'ble',
   }) {
     _events.add(<Object?, Object?>{
       'type': 'bleDevice',
@@ -93,6 +94,7 @@ class MockBleTransport implements EdgezPlatformTransport {
         'name': name,
         'rssi': rssi,
         'lastSeenMs': DateTime.now().millisecondsSinceEpoch,
+        'transport': transport,
       },
     });
   }
@@ -180,7 +182,9 @@ class MockBleTransport implements EdgezPlatformTransport {
 
   void emitLog(String message, {bool diagnostic = false}) {
     _events.add(<Object?, Object?>{
-      'type': 'log', 'log': message, 'diagnostic': diagnostic,
+      'type': 'log',
+      'log': message,
+      'diagnostic': diagnostic,
     });
   }
 

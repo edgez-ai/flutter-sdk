@@ -168,14 +168,18 @@ class EdgezBleDevice {
     required this.name,
     required this.rssi,
     required this.lastSeenMs,
+    this.transport = 'ble',
   });
 
   final String id;
   final String name;
   final int rssi;
   final int lastSeenMs;
+  final String transport;
 
-  String get label => name.isEmpty ? id : '$name $id';
+  bool get isWifi => transport == 'wifi';
+
+  String get label => name.isEmpty || name == id ? id : '$name $id';
 
   factory EdgezBleDevice.fromMap(Map<Object?, Object?> map) {
     return EdgezBleDevice(
@@ -183,6 +187,7 @@ class EdgezBleDevice {
       name: map['name'] as String? ?? '',
       rssi: map['rssi'] as int? ?? 0,
       lastSeenMs: map['lastSeenMs'] as int? ?? 0,
+      transport: map['transport'] as String? ?? 'ble',
     );
   }
 }

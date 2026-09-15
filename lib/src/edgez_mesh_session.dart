@@ -287,7 +287,8 @@ class EdgezMeshSession extends ChangeNotifier {
   var _initRetryRequested = false;
   var _bleRecoveryInFlight = false;
   var _bleStatusReconnectAttempts = 0;
-  // The v0.3.3-facing API retains BLE names, but those calls now open Wi-Fi.
+  // The v0.3.3-facing API retains BLE names while Android transparently
+  // selects a legacy BLE or current Wi-Fi transport for the discovered ID.
   var _wifiTransportRequested = false;
   String? _lastBleDeviceId;
   var _locationUpdateInFlight = false;
@@ -461,25 +462,25 @@ class EdgezMeshSession extends ChangeNotifier {
   }
 
   Future<void> startBleScan() async {
+    _setState(
+      _state.copyWith(
+        bleDevices: const <String, EdgezBleDevice>{},
+        statusLine: 'Scanning for devices over Bluetooth and Wi-Fi',
+      ),
+    );
     try {
       await sdk.startBleScan();
-      _setState(
-        _state.copyWith(
-          bleDevices: const <String, EdgezBleDevice>{},
-          statusLine: 'BLE scan requested',
-        ),
-      );
     } catch (error) {
-      _setState(_state.copyWith(statusLine: 'BLE scan failed: $error'));
+      _setState(_state.copyWith(statusLine: 'Device scan failed: $error'));
     }
   }
 
   Future<void> stopBleScan() async {
     try {
       await sdk.stopBleScan();
-      _setState(_state.copyWith(statusLine: 'BLE scan stopped'));
+      _setState(_state.copyWith(statusLine: 'Device scan stopped'));
     } catch (error) {
-      _setState(_state.copyWith(statusLine: 'BLE stop scan failed: $error'));
+      _setState(_state.copyWith(statusLine: 'Device scan stop failed: $error'));
     }
   }
 
@@ -757,7 +758,7 @@ class EdgezMeshSession extends ChangeNotifier {
     _halowBootRetryTimer?.cancel();
     _halowBootRetryTimer = null;
     _lastBleDeviceId = deviceId;
-    _wifiTransportRequested = true;
+    _wifiTransportRequested = deviceId.startsWith('EdgeZ-');
     _bleStatusReconnectAttempts = 0;
     // SDK release authorization lives in firmware RAM. A reconnect may follow
     // a device reset, so the init/auth packet must be sent again even when the
@@ -765,10 +766,12 @@ class EdgezMeshSession extends ChangeNotifier {
     _lastInitKey = null;
     _recordAppDiagnostic(
       EdgezDeviceLogLevel.debug,
-      'BLE reconnect requested device=$deviceId previous=${_state.connection.name}',
+      'Device reconnect requested id=$deviceId transport='
+      '${_wifiTransportRequested ? 'wifi' : 'ble'} '
+      'previous=${_state.connection.name}',
     );
-    // A session owns exactly one physical transport. Close USB (or a previous
-    // BLE link) before Android starts a new BLE connection.
+    // A session owns one active control transport. Android selects Wi-Fi for
+    // an EdgeZ SSID and BLE for a legacy Bluetooth address.
     if (_state.connection != EdgezConnectionType.none) {
       await sdk.disconnect();
       _bleReady = false;
@@ -779,7 +782,7 @@ class EdgezMeshSession extends ChangeNotifier {
         clearStatus: true,
         clearDeviceSettings: true,
         statusLine:
-            'Starting BLE connection to ${_state.bleDevices[deviceId]?.label ?? deviceId}',
+            'Connecting to ${_state.bleDevices[deviceId]?.label ?? deviceId}',
       ),
     );
     try {
@@ -788,14 +791,15 @@ class EdgezMeshSession extends ChangeNotifier {
       _setState(
         _state.copyWith(
           bleReady: false,
-          statusLine: 'BLE connection requested; waiting for Android',
+          statusLine: 'Device connection requested; waiting for Android',
         ),
       );
     } catch (error) {
+      final transport = _wifiTransportRequested ? 'Wi-Fi' : 'BLE';
       _setState(
         _state.copyWith(
           bleConnecting: false,
-          statusLine: 'BLE connect failed: $error',
+          statusLine: '$transport connect failed: $error',
         ),
       );
     }
@@ -1434,7 +1438,7 @@ class EdgezMeshSession extends ChangeNotifier {
                 : _state.voiceCall,
             statusLine: switch (event.connection) {
               EdgezConnectionType.ble =>
-                'Device Wi-Fi connected; setting up control channel',
+                'Device connected; setting up control channel',
               EdgezConnectionType.usb => 'USB high-speed link connected',
               EdgezConnectionType.none => 'Device disconnected',
             },
@@ -1464,7 +1468,7 @@ class EdgezMeshSession extends ChangeNotifier {
         _setState(_state.copyWith(
           statusLine: _state.connection == EdgezConnectionType.usb
               ? 'USB protocol ready; initializing mesh'
-              : 'Device Wi-Fi control channel ready; requesting device status',
+              : 'Device control channel ready; requesting device status',
           bleReady: true,
           clearStatus: true,
         ));

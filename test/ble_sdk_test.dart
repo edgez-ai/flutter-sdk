@@ -420,6 +420,16 @@ void main() {
       expect(received[0].connection, EdgezConnectionType.ble);
       expect(received[1].bleDevice?.name, 'EdgeZ Mock');
       expect(received[1].bleDevice?.rssi, -47);
+      expect(received[1].bleDevice?.transport, 'ble');
+
+      ble.emitBleDevice(
+        id: 'EdgeZ-0011',
+        name: 'EdgeZ-0011',
+        rssi: -38,
+        transport: 'wifi',
+      );
+      await ble.flushEvents();
+      expect(received.last.bleDevice?.isWifi, isTrue);
 
       await subscription.cancel();
     });
@@ -501,8 +511,11 @@ void main() {
       expect(initPacket.init.meshFrequencyKhz, 866000);
       expect(ble.callsFor('sendPacket'), isNotEmpty);
       expect(
-        ble.callsFor('sendPacket').first.argumentMap['label'],
-        'SDK license authorization',
+        ble.callsFor('sendPacket').where(
+              (call) =>
+                  call.argumentMap['label'] == 'SDK license authorization',
+            ),
+        isEmpty,
       );
       expect(
         ble.callsFor('sendPacket').any(

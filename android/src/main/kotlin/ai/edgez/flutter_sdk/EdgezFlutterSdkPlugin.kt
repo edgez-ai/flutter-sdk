@@ -235,6 +235,7 @@ class EdgezFlutterSdkPlugin :
     @Volatile private var openManetTalkgroupPort: Int? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val devices = mutableMapOf<String, BluetoothDevice>()
+    private val wifiDeviceIds = mutableSetOf<String>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
     private var rxLen = 0
     private val forwardRxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
@@ -1736,7 +1737,9 @@ class EdgezFlutterSdkPlugin :
             }
             "playVoiceMessage" -> playVoiceMessage(call, result)
             "decodeVoiceMessageToWav" -> decodeVoiceMessageToWav(call, result)
-            "isOtaReady" -> result.success(wifiSocket != null)
+            "isOtaReady" -> result.success(
+                wifiSocket != null || (gatt != null && otaCharacteristic != null),
+            )
             "cacheOtaFirmware" -> cacheOtaFirmware(call, result)
             "hasCachedOtaFirmware" -> result.success(hasCachedOtaFirmware(call))
             "performCachedOta" -> performCachedOta(call, result)
@@ -2010,12 +2013,7 @@ class EdgezFlutterSdkPlugin :
             BLE_PERMISSION_REQUEST -> {
                 val result = pendingScanResult ?: return true
                 pendingScanResult = null
-                if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                    startBleScan(result)
-                } else {
-                    result.error("ble_permission_denied", "BLE permission denied", null)
-                    emit(mapOf("type" to "log", "log" to "BLE permission denied"))
-                }
+                startBleScan(result, requestPermissions = false)
                 return true
             }
             WIFI_PERMISSION_REQUEST -> {
@@ -2668,8 +2666,14 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun startOta(image: ByteArray, result: MethodChannel.Result) {
-        if (wifiSocket == null) {
-            result.error("ota_unavailable", "Connect to the device over Wi-Fi before OTA", null)
+        val bleOtaReady = gatt != null && otaCharacteristic != null
+        val streamOtaReady = wifiSocket != null
+        if (!bleOtaReady && !streamOtaReady) {
+            result.error(
+                "ota_unavailable",
+                "The active Bluetooth or Wi-Fi connection does not support OTA",
+                null,
+            )
             return
         }
         if (!otaInProgress.compareAndSet(false, true)) {
@@ -2680,7 +2684,12 @@ class EdgezFlutterSdkPlugin :
         thread(name = "edgez-ota") {
             runCatching {
                 writeOtaPacket(otaPacket(OTA_BEGIN, image.size))
-                val chunkSize = OTA_STREAM_DATA_MAX_CHUNK_SIZE
+                val chunkSize = if (bleOtaReady) {
+                    (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE)
+                        .coerceIn(20, OTA_DATA_MAX_CHUNK_SIZE)
+                } else {
+                    OTA_STREAM_DATA_MAX_CHUNK_SIZE
+                }
                 var sent = 0
                 while (sent < image.size) {
                     check(!otaAbortRequested.get()) { "Firmware update cancelled" }
@@ -2727,8 +2736,38 @@ class EdgezFlutterSdkPlugin :
             .put(image, offset, length)
             .array()
 
+    @SuppressLint("MissingPermission")
     private fun writeOtaPacket(packet: ByteArray) {
-        writeStreamOtaPacket(packet)
+        val activeGatt = gatt
+        if (activeGatt == null) {
+            writeStreamOtaPacket(packet)
+            return
+        }
+        val characteristic = otaCharacteristic
+            ?: throw IllegalStateException("BLE OTA characteristic FFF5 is unavailable")
+        synchronized(otaWriteLock) {
+            otaWriteStatus = null
+            val started = if (Build.VERSION.SDK_INT >= 33) {
+                activeGatt.writeCharacteristic(
+                    characteristic,
+                    packet,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                ) == BluetoothGatt.GATT_SUCCESS
+            } else {
+                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                characteristic.value = packet
+                activeGatt.writeCharacteristic(characteristic)
+            }
+            if (!started) throw IllegalStateException("BLE OTA write could not start")
+            val deadline = System.currentTimeMillis() + OTA_WRITE_TIMEOUT_MS
+            while (otaWriteStatus == null && System.currentTimeMillis() < deadline) {
+                otaWriteLock.wait((deadline - System.currentTimeMillis()).coerceAtLeast(1))
+            }
+            val status = otaWriteStatus ?: throw IllegalStateException("BLE OTA write timed out")
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                throw IllegalStateException("BLE OTA write failed: $status")
+            }
+        }
     }
 
     private fun writeStreamOtaPacket(packet: ByteArray) {
@@ -2737,8 +2776,12 @@ class EdgezFlutterSdkPlugin :
             streamOtaStatus = null
             streamOtaValue = 0
             streamOtaTransportClosed = false
-            check(wifiSocket != null) { "Wi-Fi control channel is not connected" }
-            writeWifiFrame(EDGEZ_OTA_PROTOCOL_MAGIC + packet).getOrThrow()
+            sendRealtimePacket(
+                protocolMagic = EDGEZ_OTA_PROTOCOL_MAGIC,
+                packet = packet,
+                dropStale = false,
+                preferWriteWithoutResponse = false,
+            ).getOrThrow()
 
             val deadline = System.currentTimeMillis() + OTA_WRITE_TIMEOUT_MS
             while (streamOtaStatus == null && !streamOtaTransportClosed &&
@@ -3001,15 +3044,23 @@ class EdgezFlutterSdkPlugin :
     }
 
     private fun requestBlePermissions(result: MethodChannel.Result): Boolean {
-        if (hasBlePermissions()) return false
+        val required = (requiredBlePermissions() + requiredWifiPermissions()).distinct()
+        val missing = required.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return false
         val currentActivity = activity
         if (currentActivity == null) {
-            result.error("ble_permission_required", "BLE permission required", null)
+            result.error(
+                "device_scan_permission_required",
+                "Bluetooth and nearby Wi-Fi permissions are required",
+                null,
+            )
             return true
         }
         pendingScanResult = result
-        currentActivity.requestPermissions(requiredBlePermissions(), BLE_PERMISSION_REQUEST)
-        emit(mapOf("type" to "log", "log" to "Requesting BLE permission: ${requiredBlePermissions().joinToString()}"))
+        currentActivity.requestPermissions(missing.toTypedArray(), BLE_PERMISSION_REQUEST)
+        emit(mapOf("type" to "log", "log" to "Requesting device discovery permissions: ${missing.joinToString()}"))
         return true
     }
 
@@ -3021,6 +3072,12 @@ class EdgezFlutterSdkPlugin :
             )
         } else {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private fun hasWifiPermissions(): Boolean {
+        return requiredWifiPermissions().all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -3049,46 +3106,182 @@ class EdgezFlutterSdkPlugin :
         }
     }
 
-    private fun startBleScan(result: MethodChannel.Result) {
-        if (requestWifiPermissions(result)) return
-        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        @Suppress("DEPRECATION")
-        wifi.startScan()
-        mainHandler.postDelayed({
-            runCatching {
-                @Suppress("DEPRECATION")
-                wifi.scanResults
-                    .asSequence()
-                    .filter { it.SSID.startsWith("EdgeZ-") }
-                    .groupBy { it.SSID }
-                    .map { (ssid, scans) -> ssid to (scans.maxOfOrNull { it.level } ?: 0) }
-                    .sortedBy { it.first }
-            }.onSuccess { networks ->
-                networks.forEach { (ssid, rssi) ->
-                    emit(
-                        mapOf(
-                            "type" to "bleDevice",
-                            "bleDevice" to mapOf(
-                                "id" to ssid,
-                                "name" to ssid,
-                                "rssi" to rssi,
-                                "lastSeenMs" to System.currentTimeMillis(),
-                            ),
-                        ),
-                    )
-                }
-                result.success(null)
-            }.onFailure { error ->
-                result.error("wifi_scan_failed", error.message ?: "Wi-Fi scan failed", null)
+    @SuppressLint("MissingPermission")
+    private fun startBleScan(
+        result: MethodChannel.Result,
+        requestPermissions: Boolean = true,
+    ) {
+        if (requestPermissions && requestBlePermissions(result)) return
+        val canScanBle = hasBlePermissions()
+        val canScanWifi = hasWifiPermissions()
+        if (!canScanBle && !canScanWifi) {
+            result.error(
+                "device_scan_permission_denied",
+                "Bluetooth and nearby Wi-Fi permissions were denied",
+                null,
+            )
+            return
+        }
+        stopBleScan()
+        devices.clear()
+        wifiDeviceIds.clear()
+        val generation = ++scanGeneration
+
+        val adapter = bluetoothAdapter
+        val scanner = if (canScanBle && adapter?.isEnabled == true) {
+            adapter.bluetoothLeScanner
+        } else {
+            null
+        }
+        if (scanner != null) {
+            if (!isLocationEnabled()) {
+                emit(mapOf("type" to "log", "log" to "Location services are off; Android may hide device scan results"))
             }
-        }, 1_500L)
-        emit(mapOf("type" to "log", "log" to "Wi-Fi device scan started"))
+            val callback = object : ScanCallback() {
+                override fun onScanResult(callbackType: Int, scanResult: ScanResult) {
+                    if (scanGeneration == generation) publishScanResult(scanResult)
+                }
+
+                override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                    if (scanGeneration == generation) results.forEach(::publishScanResult)
+                }
+
+                override fun onScanFailed(errorCode: Int) {
+                    emit(mapOf("type" to "log", "log" to "BLE scan failed=$errorCode; Wi-Fi discovery remains active"))
+                }
+            }
+            val settings = ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build()
+            val filter = ScanFilter.Builder()
+                .setServiceUuid(ParcelUuid(EDGEZ_SERVICE_UUID))
+                .build()
+            scanCallback = callback
+            scanner.startScan(listOf(filter), settings, callback)
+        } else {
+            emit(mapOf("type" to "log", "log" to "BLE unavailable or disabled; scanning Wi-Fi only"))
+        }
+
+        if (canScanWifi) {
+            val wifi = context.applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            wifi.startScan()
+            mainHandler.postDelayed({
+                if (scanGeneration != generation) return@postDelayed
+                runCatching {
+                    @Suppress("DEPRECATION")
+                    wifi.scanResults
+                        .asSequence()
+                        .filter { it.SSID.startsWith("EdgeZ-") }
+                        .groupBy { it.SSID }
+                        .map { (ssid, scans) -> ssid to (scans.maxOfOrNull { it.level } ?: 0) }
+                        .sortedBy { it.first }
+                }.onSuccess { networks ->
+                    networks.forEach { (ssid, rssi) ->
+                        wifiDeviceIds += ssid
+                        emit(
+                            mapOf(
+                                "type" to "bleDevice",
+                                "bleDevice" to mapOf(
+                                    "id" to ssid,
+                                    "name" to ssid,
+                                    "rssi" to rssi,
+                                    "lastSeenMs" to System.currentTimeMillis(),
+                                    "transport" to "wifi",
+                                ),
+                            ),
+                        )
+                    }
+                }.onFailure { error ->
+                    emit(mapOf("type" to "log", "log" to "Wi-Fi scan failed: ${error.message}"))
+                }
+            }, 1_500L)
+        } else {
+            emit(mapOf("type" to "log", "log" to "Nearby Wi-Fi permission denied; scanning BLE only"))
+        }
+        emit(mapOf("type" to "log", "log" to "Concurrent BLE and Wi-Fi device scan started"))
+        result.success(null)
     }
 
-    private fun stopBleScan() = Unit
+    @SuppressLint("MissingPermission")
+    private fun publishScanResult(result: ScanResult) {
+        val serviceUuids = result.scanRecord?.serviceUuids.orEmpty()
+        if (serviceUuids.none { it.uuid == EDGEZ_SERVICE_UUID }) return
+        val device = result.device ?: return
+        val id = device.address ?: return
+        val name = result.scanRecord?.deviceName ?: device.name ?: ""
+        devices[id] = device
+        emit(
+            mapOf(
+                "type" to "bleDevice",
+                "bleDevice" to mapOf(
+                    "id" to id,
+                    "name" to name,
+                    "rssi" to result.rssi,
+                    "lastSeenMs" to System.currentTimeMillis(),
+                    "transport" to "ble",
+                ),
+            ),
+        )
+    }
 
+    @SuppressLint("MissingPermission")
+    private fun stopBleScan() {
+        val callback = scanCallback
+        if (callback != null && hasBlePermissions()) {
+            bluetoothAdapter?.bluetoothLeScanner?.stopScan(callback)
+        }
+        scanCallback = null
+        scanGeneration += 1
+    }
+
+    @SuppressLint("MissingPermission")
     private fun connectBle(deviceId: String, result: MethodChannel.Result) {
-        connectWifi(deviceId, "", WIFI_DEFAULT_PORT, result)
+        if (wifiDeviceIds.contains(deviceId) || deviceId.startsWith("EdgeZ-")) {
+            connectWifi(deviceId, "", WIFI_DEFAULT_PORT, result)
+            return
+        }
+        if (!hasBlePermissions()) {
+            result.error("ble_permission_required", "BLE permission required", null)
+            return
+        }
+        val device = devices[deviceId] ?: runCatching {
+            bluetoothAdapter?.getRemoteDevice(deviceId)
+        }.getOrNull()
+        if (device == null) {
+            result.error("ble_device_missing", "BLE device not found", null)
+            return
+        }
+        cancelPendingUsbConnection()
+        stopBleScan()
+        closeUsb(false)
+        closeWifi(false)
+        closeGatt()
+        runCatching {
+            EdgezBleForegroundService.start(context, "")
+        }.onFailure { error ->
+            emit(
+                mapOf(
+                    "type" to "log",
+                    "log" to "BLE background service could not start: ${error.message}",
+                ),
+            )
+        }
+        if (device.bondState != BluetoothDevice.BOND_BONDED) {
+            pendingBondDevice = device
+            emit(mapOf("type" to "log", "log" to "Starting BLE pairing ${device.address}"))
+            if (!device.createBond()) {
+                pendingBondDevice = null
+                EdgezBleForegroundService.stop(context)
+                result.error("ble_pairing_failed", "BLE pairing could not start", null)
+                return
+            }
+            result.success(null)
+            return
+        }
+        connectGatt(device)
+        result.success(null)
     }
 
     @SuppressLint("MissingPermission")
